@@ -1,0 +1,11 @@
+# Test binary, built with `go test -c`
+*.test
+
+# Log files
+*.log
+
+# Temporary files
+/tmp/
+
+# Build artifacts
+/bin/
