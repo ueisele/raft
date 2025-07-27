@@ -114,6 +114,18 @@ func TestUpdateCommitIndexWithConfigChange(t *testing.T) {
 			},
 		},
 		applyCh: make(chan LogEntry, 10),
+		rand: rand.New(rand.NewSource(time.Now().UnixNano())),
+		electionTimeoutMin: 150 * time.Millisecond,
+		electionTimeoutMax: 300 * time.Millisecond,
+		heartbeatInterval: 50 * time.Millisecond,
+		lastMajorityContact: time.Now(), // Leader just started
+		lastPeerResponse: make([]time.Time, 3),
+		nextIndex: []int{2, 2, 2},
+	}
+	
+	// Initialize response times to simulate recent contact
+	for i := range rf.lastPeerResponse {
+		rf.lastPeerResponse[i] = time.Now()
 	}
 	
 	// This should not panic even with mismatched array sizes

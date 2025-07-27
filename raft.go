@@ -133,6 +133,7 @@ type Raft struct {
 	// Statistics
 	lastHeartbeat time.Time
 	lastMajorityContact time.Time
+	lastPeerResponse []time.Time // Track when each peer last responded
 
 	// Persistence
 	persister *Persister
@@ -208,6 +209,7 @@ func NewRaft(peers []int, me int, applyCh chan LogEntry) *Raft {
 	// Initialize leader state
 	rf.nextIndex = make([]int, len(peers))
 	rf.matchIndex = make([]int, len(peers))
+	rf.lastPeerResponse = make([]time.Time, len(peers))
 
 	// Set default RPC functions
 	rf.sendRequestVote = rf.defaultSendRequestVote
@@ -456,6 +458,15 @@ func (rf *Raft) initializeLeaderState() {
 		rf.matchIndex[i] = 0  // Reset match indices - leader must reconfirm all replication
 	}
 	
+	// Initialize response tracking
+	if len(rf.lastPeerResponse) != len(rf.peers) {
+		rf.lastPeerResponse = make([]time.Time, len(rf.peers))
+	}
+	// Clear previous response times
+	for i := range rf.lastPeerResponse {
+		rf.lastPeerResponse[i] = time.Time{}
+	}
+	
 	// Initialize majority contact time
 	rf.lastMajorityContact = time.Now()
 	
@@ -485,6 +496,13 @@ func (rf *Raft) broadcastAppendEntries() {
 		}
 		go rf.sendAppendEntriesToPeerByIndex(i)
 	}
+	
+	// Also check majority contact periodically during heartbeats
+	rf.mu.Lock()
+	if rf.state == Leader {
+		rf.updateCommitIndex()
+	}
+	rf.mu.Unlock()
 }
 
 // sendAppendEntriesToPeerByIndex sends AppendEntries RPC to a specific peer by array index
@@ -567,10 +585,12 @@ func (rf *Raft) sendAppendEntriesToPeerLocked(peerIndex int, peerID int) {
 	rf.mu.Unlock()
 
 	reply := AppendEntriesReply{}
-	if rf.sendAppendEntries(peerID, &args, &reply) {
-		rf.mu.Lock()
-		defer rf.mu.Unlock()
+	rpcSuccess := rf.sendAppendEntries(peerID, &args, &reply)
+	
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
+	if rpcSuccess {
 		if reply.Term > rf.currentTerm {
 			rf.currentTerm = reply.Term
 			rf.state = Follower
@@ -589,6 +609,12 @@ func (rf *Raft) sendAppendEntriesToPeerLocked(peerIndex int, peerID int) {
 			return
 		}
 
+		// We got a response - peer is alive
+		if peerIndex < len(rf.lastPeerResponse) {
+			rf.lastPeerResponse[peerIndex] = time.Now()
+			// log.Printf("Server %d: Got response from peer %d", rf.me, peerID)
+		}
+		
 		if reply.Success {
 			rf.nextIndex[peerIndex] = args.PrevLogIndex + len(args.Entries) + 1
 			rf.matchIndex[peerIndex] = args.PrevLogIndex + len(args.Entries)
@@ -603,23 +629,68 @@ func (rf *Raft) sendAppendEntriesToPeerLocked(peerIndex int, peerID int) {
 				go rf.sendInstallSnapshot(peerID)
 			}
 		}
+	} else {
+		// RPC failed - no response from peer
+		if rf.state == Leader && rf.currentTerm == args.Term {
+			// log.Printf("Server %d: Failed to send AppendEntries to peer %d", rf.me, peerID)
+			rf.updateCommitIndex()
+		}
 	}
 }
 
 
 // updateCommitIndex updates the commit index based on majority replication
 func (rf *Raft) updateCommitIndex() {
-	// Count active replicas
-	activeCount := 1 // Count self
+	// Track which peers have responded recently (within reasonable timeout)
+	recentResponseTimeout := 5 * rf.heartbeatInterval // Peers should respond within 5 heartbeats
+	responsivePeers := make([]int, 0)
+	responsivePeers = append(responsivePeers, rf.me) // Self is always responsive
+	
 	for i := range rf.peers {
-		if i != rf.me && i < len(rf.matchIndex) && rf.matchIndex[i] >= rf.commitIndex {
-			activeCount++
+		if i != rf.me && i < len(rf.lastPeerResponse) {
+			// Check if peer has responded recently
+			if !rf.lastPeerResponse[i].IsZero() && time.Since(rf.lastPeerResponse[i]) < recentResponseTimeout {
+				responsivePeers = append(responsivePeers, rf.peers[i])
+			} else if rf.state == Leader && !rf.lastPeerResponse[i].IsZero() {
+				// Debug: log unresponsive peers
+				// log.Printf("Server %d: Peer %d last responded %v ago", rf.me, rf.peers[i], time.Since(rf.lastPeerResponse[i]))
+			}
 		}
 	}
 
-	// Update last majority contact time if we have majority
-	if activeCount > len(rf.peers)/2 {
+	// Count voting members among responsive peers
+	votingResponsiveCount := 0
+	for _, peerID := range responsivePeers {
+		if rf.isVotingMember(peerID) {
+			votingResponsiveCount++
+		}
+	}
+	
+	// Check if we have majority contact
+	if votingResponsiveCount >= rf.getMajoritySize() {
 		rf.lastMajorityContact = time.Now()
+	} else {
+		// Check if we should step down due to lack of majority contact
+		timeSinceContact := time.Since(rf.lastMajorityContact)
+		// Use a reasonable timeout (e.g., 10x heartbeat interval)
+		if timeSinceContact > 10*rf.heartbeatInterval {
+			// Lost majority contact - step down
+			rf.state = Follower
+			rf.votedFor = nil
+			rf.persist()
+			rf.stopElectionTimer()
+			if rf.heartbeatTick != nil {
+				rf.heartbeatTick.Stop()
+			}
+			rf.resetElectionTimer()
+			log.Printf("Server %d stepping down due to lost majority contact (no responses for %v)", rf.me, timeSinceContact)
+			return
+		}
+		// Debug logging
+		// if rf.state == Leader {
+		// 	log.Printf("Server %d: Only %d voting members responsive, need %d (time since majority: %v)", 
+		// 		rf.me, votingResponsiveCount, rf.getMajoritySize(), timeSinceContact)
+		// }
 	}
 
 	// Find the highest index that can be committed from current term

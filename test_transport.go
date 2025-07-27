@@ -47,7 +47,7 @@ func (t *TestTransport) SendRequestVote(from, to int, args *RequestVoteArgs, rep
 		}
 	}
 	
-	// Check for asymmetric partition
+	// Check for asymmetric partition on the forward path
 	if asymPartitions, exists := t.asymmetricPartitions[from]; exists {
 		if asymPartitions[to] {
 			return false
@@ -61,7 +61,19 @@ func (t *TestTransport) SendRequestVote(from, to int, args *RequestVoteArgs, rep
 	
 	// Simulate network call
 	err := target.RequestVote(args, reply)
-	return err == nil
+	if err != nil {
+		return false
+	}
+	
+	// Check for asymmetric partition on the return path (response blocked)
+	if asymPartitions, exists := t.asymmetricPartitions[to]; exists {
+		if asymPartitions[from] {
+			// The RPC was processed but the response is blocked
+			return false
+		}
+	}
+	
+	return true
 }
 
 // SendAppendEntries sends an AppendEntries RPC to the target server
@@ -81,7 +93,7 @@ func (t *TestTransport) SendAppendEntries(from, to int, args *AppendEntriesArgs,
 		}
 	}
 	
-	// Check for asymmetric partition
+	// Check for asymmetric partition on the forward path
 	if asymPartitions, exists := t.asymmetricPartitions[from]; exists {
 		if asymPartitions[to] {
 			return false
@@ -95,7 +107,19 @@ func (t *TestTransport) SendAppendEntries(from, to int, args *AppendEntriesArgs,
 	
 	// Simulate network call
 	err := target.AppendEntries(args, reply)
-	return err == nil
+	if err != nil {
+		return false
+	}
+	
+	// Check for asymmetric partition on the return path (response blocked)
+	if asymPartitions, exists := t.asymmetricPartitions[to]; exists {
+		if asymPartitions[from] {
+			// The RPC was processed but the response is blocked
+			return false
+		}
+	}
+	
+	return true
 }
 
 // SendInstallSnapshot sends an InstallSnapshot RPC to the target server
@@ -115,7 +139,7 @@ func (t *TestTransport) SendInstallSnapshot(from, to int, args *InstallSnapshotA
 		}
 	}
 	
-	// Check for asymmetric partition
+	// Check for asymmetric partition on the forward path
 	if asymPartitions, exists := t.asymmetricPartitions[from]; exists {
 		if asymPartitions[to] {
 			return false
@@ -129,7 +153,19 @@ func (t *TestTransport) SendInstallSnapshot(from, to int, args *InstallSnapshotA
 	
 	// Simulate network call
 	err := target.InstallSnapshot(args, reply)
-	return err == nil
+	if err != nil {
+		return false
+	}
+	
+	// Check for asymmetric partition on the return path (response blocked)
+	if asymPartitions, exists := t.asymmetricPartitions[to]; exists {
+		if asymPartitions[from] {
+			// The RPC was processed but the response is blocked
+			return false
+		}
+	}
+	
+	return true
 }
 
 // TestRaft extends Raft with test-specific transport

@@ -623,6 +623,13 @@ func TestConfigurationChangeWithPartition(t *testing.T) {
 	newLeader := rafts[newLeaderIdx].Raft
 	t.Logf("New leader is server %d", newLeaderIdx)
 
+	// Wait for any pending configuration changes to complete
+	WaitForCondition(t, func() bool {
+		newLeader.mu.RLock()
+		defer newLeader.mu.RUnlock()
+		return !newLeader.inJointConsensus
+	}, 2*time.Second, "waiting for configuration change to complete")
+	
 	// Check if server 4 is still in the configuration
 	newLeader.mu.RLock()
 	server4InConfig := false

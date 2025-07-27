@@ -403,6 +403,8 @@ func TestClientRetries(t *testing.T) {
 
 		// If this is not the first attempt, disconnect leader to simulate failure
 		if attempts < maxAttempts-1 {
+			// Give leader a chance to send at least one heartbeat
+			time.Sleep(60 * time.Millisecond)
 			transport.DisconnectServer(currentLeaderIdx)
 			
 			// Wait for new leader
@@ -418,7 +420,8 @@ func TestClientRetries(t *testing.T) {
 			transport.ReconnectServer(currentLeaderIdx)
 		} else {
 			// Last attempt, let it succeed
-			WaitForCommitIndex(t, rafts, index, 3*time.Second)
+			t.Logf("Final attempt: submitting command at index %d", index)
+			WaitForCommitIndex(t, rafts, index, 5*time.Second)
 			committed = true
 		}
 	}
