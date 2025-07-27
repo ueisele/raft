@@ -358,6 +358,7 @@ func (rf *Raft) handleElectionTimeout() {
 	// Vote for self
 	votes := 1
 	finished := 1
+	totalVotingPeers := 1 // Count self as voting peer
 	cond := sync.NewCond(&rf.mu)
 
 	for i := range rf.peers {
@@ -369,6 +370,7 @@ func (rf *Raft) handleElectionTimeout() {
 		if !rf.isVotingMember(rf.peers[i]) {
 			continue
 		}
+		totalVotingPeers++
 
 		go func(peer int) {
 			args := RequestVoteArgs{
@@ -406,8 +408,8 @@ func (rf *Raft) handleElectionTimeout() {
 	// Get the majority size based on voting members only
 	majoritySize := rf.getMajoritySize()
 	
-	// Wait for majority or all responses
-	for votes < majoritySize && finished < len(rf.peers) {
+	// Wait for majority or all voting peer responses
+	for votes < majoritySize && finished < totalVotingPeers {
 		cond.Wait()
 	}
 
