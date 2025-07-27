@@ -356,6 +356,11 @@ func (rf *Raft) handleElectionTimeout() {
 		if i == rf.me {
 			continue
 		}
+		
+		// Skip non-voting members in elections
+		if !rf.isVotingMember(rf.peers[i]) {
+			continue
+		}
 
 		go func(peer int) {
 			args := RequestVoteArgs{
@@ -390,12 +395,15 @@ func (rf *Raft) handleElectionTimeout() {
 		}(i)
 	}
 
+	// Get the majority size based on voting members only
+	majoritySize := rf.getMajoritySize()
+	
 	// Wait for majority or all responses
-	for votes <= len(rf.peers)/2 && finished < len(rf.peers) {
+	for votes < majoritySize && finished < len(rf.peers) {
 		cond.Wait()
 	}
 
-	if rf.state == Candidate && votes > len(rf.peers)/2 {
+	if rf.state == Candidate && votes >= majoritySize {
 		// Won election
 		rf.state = Leader
 		rf.initializeLeaderState()
@@ -645,7 +653,7 @@ func (rf *Raft) updateCommitIndex() {
 	// Count active replicas
 	activeCount := 1 // Count self
 	for i := range rf.peers {
-		if i != rf.me && rf.matchIndex[i] >= rf.commitIndex {
+		if i != rf.me && i < len(rf.matchIndex) && rf.matchIndex[i] >= rf.commitIndex {
 			activeCount++
 		}
 	}
@@ -661,14 +669,18 @@ func (rf *Raft) updateCommitIndex() {
 			continue
 		}
 
-		count := 1 // Count self
+		count := 1 // Count self if voting member
+		if !rf.isVotingMember(rf.me) {
+			count = 0
+		}
+		
 		for i := range rf.peers {
-			if i != rf.me && rf.matchIndex[i] >= n {
+			if i != rf.me && i < len(rf.matchIndex) && rf.matchIndex[i] >= n && rf.isVotingMember(rf.peers[i]) {
 				count++
 			}
 		}
 
-		if count > len(rf.peers)/2 {
+		if count >= rf.getMajoritySize() {
 			// When committing current term entry, we can also commit all previous entries
 			rf.commitIndex = n
 			go rf.applyCommittedEntries()
@@ -817,6 +829,13 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) erro
 
 	// If votedFor is null or candidateId, and candidate's log is at least as up-to-date as receiver's log, grant vote
 	if (rf.votedFor == nil || *rf.votedFor == args.CandidateID) && rf.isLogUpToDate(args.LastLogIndex, args.LastLogTerm) {
+		// Check if we've heard from a current leader recently (within minimum election timeout)
+		// This prevents unnecessary elections when the leader is still active
+		if rf.state == Follower && time.Since(rf.lastHeartbeat) < rf.electionTimeoutMin {
+			// Deny vote as we have a current leader
+			return nil
+		}
+		
 		rf.votedFor = &args.CandidateID
 		reply.VoteGranted = true
 		rf.persist()
@@ -849,6 +868,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	rf.resetElectionTimer()
+	rf.lastHeartbeat = time.Now()
 
 	// Reply false if log doesn't contain an entry at prevLogIndex whose term matches prevLogTerm
 	if args.PrevLogIndex > 0 && (args.PrevLogIndex >= len(rf.log) || rf.log[args.PrevLogIndex].Term != args.PrevLogTerm) {

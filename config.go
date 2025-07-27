@@ -67,6 +67,48 @@ func (rf *Raft) AddServer(server ServerConfiguration) error {
 		}
 	}
 
+	// If the server is not marked as non-voting, we should ensure it has caught up
+	// before adding it as a voting member
+	if !server.NonVoting {
+		// First add as non-voting member to let it catch up
+		nonVotingServer := server
+		nonVotingServer.NonVoting = true
+		
+		// Add as non-voting member without joint consensus
+		nonVotingConfig := Configuration{
+			Servers: append(currentConfig.Servers, nonVotingServer),
+		}
+		
+		change := ConfigurationChange{
+			Type:      AddNonVotingServer,
+			Server:    nonVotingServer,
+			OldConfig: currentConfig,
+			NewConfig: nonVotingConfig,
+		}
+		
+		changeData, err := json.Marshal(change)
+		if err != nil {
+			return fmt.Errorf("failed to marshal non-voting configuration change: %v", err)
+		}
+		
+		index, term, isLeader := rf.Submit(changeData)
+		if !isLeader {
+			return fmt.Errorf("lost leadership during configuration change")
+		}
+		
+		if err := rf.waitForCommit(index, term); err != nil {
+			return fmt.Errorf("failed to add non-voting server: %v", err)
+		}
+		
+		// Now wait for the new server to catch up
+		if err := rf.waitForServerCatchUp(server.ID); err != nil {
+			return fmt.Errorf("new server failed to catch up: %v", err)
+		}
+		
+		// Update current config for the voting member addition
+		currentConfig = rf.getCurrentConfiguration()
+	}
+
 	newConfig := Configuration{
 		Servers: append(currentConfig.Servers, server),
 	}
@@ -199,7 +241,7 @@ func (rf *Raft) waitForCommit(index, term int) error {
 		case <-ticker.C:
 			rf.mu.RLock()
 			if rf.commitIndex >= index {
-				if index > 0 && index <= len(rf.log) && rf.log[index-1].Term == term {
+				if index > 0 && index < len(rf.log) && rf.log[index].Term == term {
 					rf.mu.RUnlock()
 					return nil
 				}
@@ -242,6 +284,59 @@ func (rf *Raft) applyConfigurationChange(change ConfigurationChange) {
 		// Direct configuration changes (without joint consensus)
 		rf.applyConfigurationLocked(change.NewConfig)
 		log.Printf("Server %d applied %s configuration change", rf.me, change.Type)
+		
+		// If this server was removed and is the leader, step down
+		if change.Type == RemoveServer && rf.state == Leader && !rf.isInConfiguration(change.NewConfig, rf.me) {
+			rf.state = Follower
+			rf.resetElectionTimer()
+			if rf.heartbeatTick != nil {
+				rf.heartbeatTick.Stop()
+			}
+			log.Printf("Server %d stepped down as it was removed from configuration", rf.me)
+		}
+	}
+}
+
+// waitForServerCatchUp waits for a server to catch up with the leader's log
+func (rf *Raft) waitForServerCatchUp(serverID int) error {
+	timeout := time.After(30 * time.Second) // Give server 30 seconds to catch up
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	
+	targetIndex := len(rf.log) - 1
+	
+	for {
+		select {
+		case <-timeout:
+			return fmt.Errorf("timeout waiting for server %d to catch up", serverID)
+		case <-ticker.C:
+			rf.mu.RLock()
+			
+			// Find the server's index in the peers array
+			serverIndex := -1
+			for i, peerID := range rf.peers {
+				if peerID == serverID {
+					serverIndex = i
+					break
+				}
+			}
+			
+			if serverIndex >= 0 && serverIndex < len(rf.matchIndex) {
+				// Check if server has caught up to within 10 entries of our target
+				if rf.matchIndex[serverIndex] >= targetIndex-10 {
+					rf.mu.RUnlock()
+					return nil
+				}
+			}
+			
+			// Check if we're still the leader
+			if rf.state != Leader {
+				rf.mu.RUnlock()
+				return fmt.Errorf("no longer the leader")
+			}
+			
+			rf.mu.RUnlock()
+		}
 	}
 }
 
@@ -304,9 +399,26 @@ func (rf *Raft) isInConfiguration(config Configuration, serverID int) bool {
 	return false
 }
 
+// isVotingMember checks if a server is a voting member in the current configuration
+func (rf *Raft) isVotingMember(serverID int) bool {
+	for _, server := range rf.currentConfig.Servers {
+		if server.ID == serverID {
+			return !server.NonVoting
+		}
+	}
+	return false
+}
+
 // getMajoritySize returns the majority size for the current configuration
 func (rf *Raft) getMajoritySize() int {
-	return len(rf.peers)/2 + 1
+	// Count only voting members
+	votingCount := 0
+	for _, server := range rf.currentConfig.Servers {
+		if !server.NonVoting {
+			votingCount++
+		}
+	}
+	return votingCount/2 + 1
 }
 
 // isConfigurationEntry checks if a log entry is a configuration change
