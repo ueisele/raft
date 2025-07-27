@@ -51,10 +51,16 @@ type ConfigurationChange struct {
 // AddServer adds a server to the cluster configuration
 func (rf *Raft) AddServer(server ServerConfiguration) error {
 	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
+	
 	if rf.state != Leader {
+		rf.mu.Unlock()
 		return fmt.Errorf("only leader can add servers")
+	}
+
+	// Check if a configuration change is already in progress
+	if rf.hasPendingConfigChange() {
+		rf.mu.Unlock()
+		return fmt.Errorf("configuration change already in progress")
 	}
 
 	// Create new configuration
@@ -63,10 +69,13 @@ func (rf *Raft) AddServer(server ServerConfiguration) error {
 	// Check if server already exists
 	for _, s := range currentConfig.Servers {
 		if s.ID == server.ID {
+			rf.mu.Unlock()
 			return fmt.Errorf("server %d already exists in configuration", server.ID)
 		}
 	}
 
+	var newConfig Configuration
+	
 	// If the server is not marked as non-voting, we should ensure it has caught up
 	// before adding it as a voting member
 	if !server.NonVoting {
@@ -88,8 +97,11 @@ func (rf *Raft) AddServer(server ServerConfiguration) error {
 		
 		changeData, err := json.Marshal(change)
 		if err != nil {
+			rf.mu.Unlock()
 			return fmt.Errorf("failed to marshal non-voting configuration change: %v", err)
 		}
+		
+		rf.mu.Unlock()
 		
 		index, term, isLeader := rf.Submit(changeData)
 		if !isLeader {
@@ -105,14 +117,34 @@ func (rf *Raft) AddServer(server ServerConfiguration) error {
 			return fmt.Errorf("new server failed to catch up: %v", err)
 		}
 		
-		// Update current config for the voting member addition
+		rf.mu.Lock()
+		// Update current config for the voting member promotion
 		currentConfig = rf.getCurrentConfiguration()
+		
+		// Replace the non-voting server with a voting one
+		newServers := make([]ServerConfiguration, 0, len(currentConfig.Servers))
+		for _, s := range currentConfig.Servers {
+			if s.ID == server.ID {
+				// Promote to voting member
+				votingServer := s
+				votingServer.NonVoting = false
+				newServers = append(newServers, votingServer)
+			} else {
+				newServers = append(newServers, s)
+			}
+		}
+		newConfig = Configuration{
+			Servers: newServers,
+		}
+		rf.mu.Unlock()
+	} else {
+		// Add new server directly
+		newConfig = Configuration{
+			Servers: append(currentConfig.Servers, server),
+		}
+		rf.mu.Unlock()
 	}
-
-	newConfig := Configuration{
-		Servers: append(currentConfig.Servers, server),
-	}
-
+	
 	// Use joint consensus for configuration change
 	return rf.changeConfiguration(currentConfig, newConfig)
 }
@@ -120,10 +152,16 @@ func (rf *Raft) AddServer(server ServerConfiguration) error {
 // RemoveServer removes a server from the cluster configuration
 func (rf *Raft) RemoveServer(serverID int) error {
 	rf.mu.Lock()
-	defer rf.mu.Unlock()
 
 	if rf.state != Leader {
-		return fmt.Errorf("only leader can remove servers")
+		rf.mu.Unlock()
+		return fmt.Errorf("not the leader")
+	}
+
+	// Check if a configuration change is already in progress
+	if rf.hasPendingConfigChange() {
+		rf.mu.Unlock()
+		return fmt.Errorf("configuration change already in progress")
 	}
 
 	currentConfig := rf.getCurrentConfiguration()
@@ -140,6 +178,7 @@ func (rf *Raft) RemoveServer(serverID int) error {
 	}
 
 	if !found {
+		rf.mu.Unlock()
 		return fmt.Errorf("server %d not found in configuration", serverID)
 	}
 
@@ -147,6 +186,64 @@ func (rf *Raft) RemoveServer(serverID int) error {
 		Servers: newServers,
 	}
 
+	// Special handling if we're removing ourselves (the leader)
+	if serverID == rf.me {
+		// We need to submit the configuration change first, then transfer leadership
+		// This ensures the configuration change is in the log and will be applied
+		
+		// Find a suitable target for leadership transfer
+		var targetServer int
+		found := false
+		for _, s := range newServers {
+			if rf.isVotingMember(s.ID) && s.ID != rf.me {
+				// Check if this server is reasonably caught up
+				for i, peerID := range rf.peers {
+					if peerID == s.ID && i < len(rf.matchIndex) {
+						// If the server is caught up (within 10 entries), use it
+						if rf.matchIndex[i] >= rf.getLastLogIndex()-10 {
+							targetServer = s.ID
+							found = true
+							break
+						}
+					}
+				}
+				if found {
+					break
+				}
+			}
+		}
+		
+		if !found {
+			// If no suitable target found, still proceed with the configuration change
+			log.Printf("Server %d: No suitable target for leadership transfer, proceeding with self-removal", rf.me)
+		}
+		
+		rf.mu.Unlock()
+		
+		// Submit the configuration change (this will add it to the log)
+		err := rf.changeConfiguration(currentConfig, newConfig)
+		if err != nil {
+			return fmt.Errorf("failed to submit configuration change: %v", err)
+		}
+		
+		// Now transfer leadership if we found a suitable target
+		if found {
+			log.Printf("Server %d transferring leadership to %d after submitting configuration change", rf.me, targetServer)
+			
+			// Transfer leadership
+			if err := rf.TransferLeadership(targetServer); err != nil {
+				// Log but don't fail - configuration change is already in progress
+				log.Printf("Server %d: Failed to transfer leadership: %v", rf.me, err)
+			}
+			
+			return fmt.Errorf("leadership transferred")
+		}
+		
+		return nil
+	}
+
+	rf.mu.Unlock()
+	
 	return rf.changeConfiguration(currentConfig, newConfig)
 }
 
@@ -202,6 +299,8 @@ func (rf *Raft) changeConfiguration(oldConfig, newConfig Configuration) error {
 		OldConfig: oldConfig,
 		NewConfig: newConfig,
 	}
+	
+	log.Printf("Server %d submitting final configuration", rf.me)
 
 	finalData, err := json.Marshal(finalChange)
 	if err != nil {
@@ -228,6 +327,23 @@ func (rf *Raft) getCurrentConfiguration() Configuration {
 	return rf.currentConfig
 }
 
+// hasPendingConfigChange checks if there's a configuration change in the log that hasn't been applied yet
+func (rf *Raft) hasPendingConfigChange() bool {
+	// Check if we're in joint consensus
+	if rf.inJointConsensus {
+		return true
+	}
+	
+	// Check if there are any configuration entries after lastApplied
+	for i := rf.lastApplied + 1; i <= rf.getLastLogIndex(); i++ {
+		entry := rf.getLogEntry(i)
+		if entry != nil && rf.isConfigurationEntry(*entry) {
+			return true
+		}
+	}
+	return false
+}
+
 // waitForCommit waits for a log entry to be committed
 func (rf *Raft) waitForCommit(index, term int) error {
 	timeout := time.After(5 * time.Second)
@@ -241,7 +357,8 @@ func (rf *Raft) waitForCommit(index, term int) error {
 		case <-ticker.C:
 			rf.mu.RLock()
 			if rf.commitIndex >= index {
-				if index > 0 && index < len(rf.log) && rf.log[index].Term == term {
+				entry := rf.getLogEntry(index)
+				if entry != nil && entry.Term == term {
 					rf.mu.RUnlock()
 					return nil
 				}
@@ -270,14 +387,27 @@ func (rf *Raft) applyConfigurationChange(change ConfigurationChange) {
 		log.Printf("Server %d applied final configuration", rf.me)
 		
 		// If this server is not in the new configuration and is the leader,
-		// step down after committing the new configuration
+		// delay stepping down to ensure configuration propagates
 		if rf.state == Leader && !rf.isInConfiguration(change.NewConfig, rf.me) {
-			rf.state = Follower
-			rf.stopElectionTimer()
-			if rf.heartbeatTick != nil {
-				rf.heartbeatTick.Stop()
-			}
-			log.Printf("Server %d stepped down as it's not in new configuration", rf.me)
+			// Schedule step down after a delay to allow configuration to propagate
+			go func() {
+				// Wait for configuration to propagate
+				time.Sleep(500 * time.Millisecond)
+				
+				rf.mu.Lock()
+				defer rf.mu.Unlock()
+				
+				// Check if we're still the leader before stepping down
+				if rf.state == Leader {
+					rf.state = Follower
+					rf.stopElectionTimer()
+					if rf.heartbeatTick != nil {
+						rf.heartbeatTick.Stop()
+					}
+					rf.resetElectionTimer()
+					log.Printf("Server %d stepped down as it's not in new configuration", rf.me)
+				}
+			}()
 		}
 		
 	case AddServer, RemoveServer, AddNonVotingServer, PromoteServer:
@@ -303,7 +433,9 @@ func (rf *Raft) waitForServerCatchUp(serverID int) error {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	
-	targetIndex := len(rf.log) - 1
+	rf.mu.RLock()
+	targetIndex := rf.getLastLogIndex()
+	rf.mu.RUnlock()
 	
 	for {
 		select {
@@ -375,7 +507,7 @@ func (rf *Raft) applyConfigurationLocked(config Configuration) {
 			
 			// Initialize new entries
 			for i := oldLen; i < newLen; i++ {
-				newNextIndex[i] = len(rf.log)
+				newNextIndex[i] = rf.getLastLogIndex() + 1
 				newMatchIndex[i] = 0
 			}
 			

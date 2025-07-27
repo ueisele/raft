@@ -3,6 +3,7 @@ package raft
 import (
 	"fmt"
 	"log"
+	"time"
 )
 
 // Snapshot represents a point-in-time snapshot of the state machine
@@ -28,7 +29,18 @@ func (rf *Raft) TakeSnapshot(snapshot []byte, index int) error {
 	}
 
 	// Get the term at the snapshot index
-	lastIncludedTerm := rf.log[index].Term
+	var lastIncludedTerm int
+	found := false
+	for _, entry := range rf.log {
+		if entry.Index == index {
+			lastIncludedTerm = entry.Term
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("log entry at index %d not found", index)
+	}
 
 	// Save the snapshot
 	if rf.persister != nil {
@@ -116,13 +128,20 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 
 	// If existing log entry has same index and term as snapshot's last included entry,
 	// retain log entries following it
-	if args.LastIncludedIndex < len(rf.log) && rf.log[args.LastIncludedIndex].Term == args.LastIncludedTerm {
+	existingEntry := rf.getLogEntry(args.LastIncludedIndex)
+	if existingEntry != nil && existingEntry.Term == args.LastIncludedTerm {
 		// Keep entries after the snapshot
-		rf.log = rf.log[args.LastIncludedIndex:]
-		rf.log[0] = LogEntry{
+		newLog := []LogEntry{{
 			Term:  args.LastIncludedTerm,
 			Index: args.LastIncludedIndex,
+		}}
+		// Keep all entries after the snapshot
+		for _, entry := range rf.log {
+			if entry.Index > args.LastIncludedIndex {
+				newLog = append(newLog, entry)
+			}
 		}
+		rf.log = newLog
 	} else {
 		// Discard the entire log
 		rf.log = []LogEntry{{
@@ -138,6 +157,24 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	rf.lastSnapshotTerm = args.LastIncludedTerm
 
 	rf.persist()
+
+	// Apply the snapshot to the state machine via apply channel
+	if rf.applyCh != nil && rf.incomingSnapshot != nil {
+		// Save snapshot data before clearing
+		snapshotData := rf.incomingSnapshot.data
+		// Send snapshot to apply channel
+		go func() {
+			select {
+			case rf.applyCh <- LogEntry{
+				Term:    args.LastIncludedTerm,
+				Index:   args.LastIncludedIndex,
+				Command: snapshotData, // The snapshot data
+			}:
+			case <-time.After(1 * time.Second):
+				log.Printf("Server %d: Failed to send snapshot to apply channel", rf.me)
+			}
+		}()
+	}
 
 	// Clear the incomplete snapshot since we're done
 	rf.incomingSnapshot = nil
@@ -200,8 +237,18 @@ func (rf *Raft) sendInstallSnapshot(peer int) {
 		}
 
 		if rf.state == Leader && args.Term == rf.currentTerm {
-			rf.nextIndex[peer] = args.LastIncludedIndex + 1
-			rf.matchIndex[peer] = args.LastIncludedIndex
+			// Find the peer index
+			peerIndex := -1
+			for i, peerID := range rf.peers {
+				if peerID == peer {
+					peerIndex = i
+					break
+				}
+			}
+			if peerIndex != -1 && peerIndex < len(rf.nextIndex) && peerIndex < len(rf.matchIndex) {
+				rf.nextIndex[peerIndex] = args.LastIncludedIndex + 1
+				rf.matchIndex[peerIndex] = args.LastIncludedIndex
+			}
 		}
 	}
 }
@@ -213,20 +260,14 @@ func (rf *Raft) sendInstallSnapshotRPC(peer int, args *InstallSnapshotArgs, repl
 
 // trimLog trims the log up to the given index
 func (rf *Raft) trimLog(index int) {
-	if index < len(rf.log) {
-		// Create new log starting from the snapshot index
-		newLog := make([]LogEntry, len(rf.log)-index)
-		copy(newLog, rf.log[index:])
-		rf.log = newLog
-		
-		// Update the first entry to mark the snapshot point
-		if len(rf.log) > 0 {
-			rf.log[0] = LogEntry{
-				Term:  rf.log[0].Term,
-				Index: index,
-			}
+	// Keep a dummy entry at index 0 for compatibility
+	newLog := []LogEntry{{Term: 0, Index: 0}}
+	for _, entry := range rf.log {
+		if entry.Index > index {
+			newLog = append(newLog, entry)
 		}
 	}
+	rf.log = newLog
 }
 
 // getLastSnapshotIndex returns the index of the last snapshot

@@ -151,21 +151,8 @@ func TestConfigurationChangeIntegration(t *testing.T) {
 	}()
 
 	// Wait for leader election
-	time.Sleep(1 * time.Second)
-	
-	// Find the leader
-	var leader *Raft
-	for i := 0; i < 3; i++ {
-		_, isLeader := rafts[i].Raft.GetState()
-		if isLeader {
-			leader = rafts[i].Raft
-			break
-		}
-	}
-	
-	if leader == nil {
-		t.Fatal("No leader elected")
-	}
+	leaderIndex := WaitForLeader(t, rafts, 2*time.Second)
+	leader := rafts[leaderIndex].Raft
 	
 	// Test adding a server
 	newServer := ServerConfiguration{
@@ -194,8 +181,12 @@ func TestConfigurationChangeIntegration(t *testing.T) {
 		t.Fatal("Lost leadership")
 	}
 	
-	// Wait for commit
-	time.Sleep(500 * time.Millisecond)
+	// Wait for configuration to be committed
+	WaitForCondition(t, func() bool {
+		leader.mu.Lock()
+		defer leader.mu.Unlock()
+		return len(leader.currentConfig.Servers) == 4
+	}, 1*time.Second, "configuration should be updated")
 	
 	// Verify configuration was applied
 	config := leader.getCurrentConfiguration()

@@ -28,21 +28,7 @@ func TestVoteDenialWithActiveLeader(t *testing.T) {
 	// We'll stop servers manually in this test
 
 	// Wait for a leader to be elected
-	time.Sleep(1 * time.Second)
-	
-	// Find the leader
-	leaderID := -1
-	for i := 0; i < 3; i++ {
-		_, isLeader := rafts[i].Raft.GetState()
-		if isLeader {
-			leaderID = i
-			break
-		}
-	}
-	
-	if leaderID == -1 {
-		t.Fatal("No leader elected")
-	}
+	leaderID := WaitForLeader(t, rafts, 5*time.Second)
 	
 	// Find a follower
 	followerID := -1
@@ -58,8 +44,12 @@ func TestVoteDenialWithActiveLeader(t *testing.T) {
 	// Record the current term
 	leaderTerm, _ := rafts[leaderID].Raft.GetState()
 	
-	// Wait a bit to ensure heartbeats have been sent
-	time.Sleep(100 * time.Millisecond)
+	// Wait to ensure heartbeats have been sent
+	WaitForCondition(t, func() bool {
+		followerRaft.mu.Lock()
+		defer followerRaft.mu.Unlock()
+		return time.Since(followerRaft.lastHeartbeat) < followerRaft.electionTimeoutMin
+	}, 2*time.Second, "follower should receive heartbeat")
 	
 	// Now simulate a candidate from another node trying to start an election
 	// with a higher term while the leader is still active
@@ -95,8 +85,15 @@ func TestVoteDenialWithActiveLeader(t *testing.T) {
 	// Now disconnect the leader for long enough that followers should grant votes
 	rafts[leaderID].Raft.Stop()
 	
+	// Give time for the stop to take effect
+	time.Sleep(100 * time.Millisecond)
+	
 	// Wait for more than the minimum election timeout
-	time.Sleep(200 * time.Millisecond)
+	WaitForCondition(t, func() bool {
+		followerRaft.mu.Lock()
+		defer followerRaft.mu.Unlock()
+		return time.Since(followerRaft.lastHeartbeat) > followerRaft.electionTimeoutMin
+	}, 2*time.Second, "heartbeat timeout should expire")
 	
 	// Now the follower should grant the vote
 	args.Term = leaderTerm + 2
@@ -146,29 +143,14 @@ func TestVoteDenialPreventsUnnecessaryElections(t *testing.T) {
 	}()
 
 	// Wait for initial leader election
-	time.Sleep(1 * time.Second)
-	
-	// Find the leader
-	leaderID := -1
-	initialTerm := 0
-	for i := 0; i < 5; i++ {
-		term, isLeader := rafts[i].Raft.GetState()
-		if isLeader {
-			leaderID = i
-			initialTerm = term
-			break
-		}
-	}
-	
-	if leaderID == -1 {
-		t.Fatal("No leader elected")
-	}
+	leaderID := WaitForLeader(t, rafts, 2*time.Second)
+	initialTerm, _ := rafts[leaderID].Raft.GetState()
 	
 	// For this test, we'll just rely on natural network timing
 	// In a real test, we would slow down the leader's messages
 	
 	// Wait for a bit - with vote denial, no new election should occur
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 	
 	// Check that we still have the same leader
 	currentTerm, stillLeader := rafts[leaderID].Raft.GetState()

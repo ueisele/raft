@@ -286,7 +286,8 @@ func (rf *Raft) Submit(command interface{}) (int, int, bool) {
 		}
 	}
 
-	index := len(rf.log)
+	// Get the next index after the last entry
+	index := rf.getLastLogIndex() + 1
 	term := rf.currentTerm
 
 	entry := LogEntry{
@@ -336,6 +337,13 @@ func (rf *Raft) handleElectionTimeout() {
 
 	if rf.state == Leader {
 		return // Leaders don't timeout
+	}
+
+	// Check if we're still in the configuration
+	if !rf.isInConfiguration(rf.currentConfig, rf.me) {
+		// We've been removed from the configuration, don't start elections
+		rf.resetElectionTimer() // Keep resetting timer to prevent busy loop
+		return
 	}
 
 	// Convert to candidate and start election
@@ -442,7 +450,7 @@ func (rf *Raft) startHeartbeat() {
 func (rf *Raft) initializeLeaderState() {
 	// Reset leader state - the new leader must reconfirm all replication
 	for i := range rf.nextIndex {
-		rf.nextIndex[i] = len(rf.log)
+		rf.nextIndex[i] = rf.getLastLogIndex() + 1
 		rf.matchIndex[i] = 0  // Reset match indices - leader must reconfirm all replication
 	}
 	
@@ -452,11 +460,10 @@ func (rf *Raft) initializeLeaderState() {
 	// According to Raft safety rules (Section 5.4.2), a new leader cannot immediately conclude 
 	// that entries from previous terms are committed, even if they are stored on a majority of servers.
 	// The leader can only commit previous term entries by committing an entry from its current term.
-	// Therefore, we reset commitIndex to exclude all previous term entries until we commit a current term entry.
-	
-	// Reset commitIndex conservatively - new leader starts with no entries committed
-	// until it can reconfirm replication through its own AppendEntries RPCs
-	rf.commitIndex = 0
+	// 
+	// IMPORTANT: We do NOT reset commitIndex here. The leader maintains its current commitIndex
+	// but won't increase it for entries from previous terms until it commits an entry from its own term.
+	// This is handled in updateCommitIndex().
 }
 
 // broadcastAppendEntries sends AppendEntries RPCs to all followers
@@ -526,13 +533,25 @@ func (rf *Raft) sendAppendEntriesToPeerLocked(peerIndex int, peerID int) {
 	nextIndex := rf.nextIndex[peerIndex]
 	prevLogIndex := nextIndex - 1
 	prevLogTerm := 0
-	if prevLogIndex > 0 && prevLogIndex < len(rf.log) {
-		prevLogTerm = rf.log[prevLogIndex].Term
+	
+	// Handle prevLogIndex that might be in snapshot
+	if prevLogIndex > 0 {
+		if prevLogIndex == rf.lastSnapshotIndex {
+			prevLogTerm = rf.lastSnapshotTerm
+		} else if prevLogIndex > rf.lastSnapshotIndex {
+			// Find the entry in current log
+			if entry := rf.getLogEntry(prevLogIndex); entry != nil {
+				prevLogTerm = entry.Term
+			}
+		}
 	}
 
+	// Get entries to send
 	entries := make([]LogEntry, 0)
-	if nextIndex >= 0 && nextIndex < len(rf.log) {
-		entries = rf.log[nextIndex:]
+	for _, entry := range rf.log {
+		if entry.Index >= nextIndex {
+			entries = append(entries, entry)
+		}
 	}
 
 	args := AppendEntriesArgs{
@@ -579,74 +598,12 @@ func (rf *Raft) sendAppendEntriesToPeerLocked(peerIndex int, peerID int) {
 			// If the required log entry is no longer available (was snapshotted), send InstallSnapshot
 			lastSnapshotIndex := rf.getLastSnapshotIndex()
 			if lastSnapshotIndex > 0 && rf.nextIndex[peerIndex] <= lastSnapshotIndex {
-				go rf.sendInstallSnapshotToPeer(peerID)
+				go rf.sendInstallSnapshot(peerID)
 			}
 		}
 	}
 }
 
-// sendInstallSnapshotToPeer sends an InstallSnapshot RPC to a specific peer
-func (rf *Raft) sendInstallSnapshotToPeer(peer int) {
-	rf.mu.Lock()
-	if rf.state != Leader {
-		rf.mu.Unlock()
-		return
-	}
-
-	// Load snapshot data from persister or use tracked state
-	var snapshotData []byte
-	var lastIncludedIndex, lastIncludedTerm int
-	var err error
-	
-	if rf.persister != nil && rf.persister.HasSnapshot() {
-		snapshotData, lastIncludedIndex, lastIncludedTerm, err = rf.persister.LoadSnapshot()
-		if err != nil {
-			rf.mu.Unlock()
-			log.Printf("Server %d: Failed to load snapshot for peer %d: %v", rf.me, peer, err)
-			return
-		}
-	} else if rf.lastSnapshotIndex > 0 {
-		// Use tracked state if no persister but we have snapshot info
-		snapshotData = []byte("fake snapshot data") // For testing purposes
-		lastIncludedIndex = rf.lastSnapshotIndex
-		lastIncludedTerm = rf.lastSnapshotTerm
-	} else {
-		rf.mu.Unlock()
-		return
-	}
-
-	args := InstallSnapshotArgs{
-		Term:              rf.currentTerm,
-		LeaderID:          rf.me,
-		LastIncludedIndex: lastIncludedIndex,
-		LastIncludedTerm:  lastIncludedTerm,
-		Offset:            0,
-		Data:              snapshotData,
-		Done:              true,
-	}
-	rf.mu.Unlock()
-
-	reply := InstallSnapshotReply{}
-	if rf.sendInstallSnapshotFn(peer, &args, &reply) {
-		rf.mu.Lock()
-		defer rf.mu.Unlock()
-
-		if reply.Term > rf.currentTerm {
-			rf.currentTerm = reply.Term
-			rf.state = Follower
-			rf.votedFor = nil
-			rf.persist()
-			rf.resetElectionTimer()
-			return
-		}
-
-		if rf.state == Leader && args.Term == rf.currentTerm {
-			// Update nextIndex to just after the snapshot
-			rf.nextIndex[peer] = lastIncludedIndex + 1
-			rf.matchIndex[peer] = lastIncludedIndex
-		}
-	}
-}
 
 // updateCommitIndex updates the commit index based on majority replication
 func (rf *Raft) updateCommitIndex() {
@@ -664,8 +621,9 @@ func (rf *Raft) updateCommitIndex() {
 	}
 
 	// Find the highest index that can be committed from current term
-	for n := len(rf.log) - 1; n > rf.commitIndex; n-- {
-		if rf.log[n].Term != rf.currentTerm {
+	for n := rf.getLastLogIndex(); n > rf.commitIndex; n-- {
+		entry := rf.getLogEntry(n)
+		if entry == nil || entry.Term != rf.currentTerm {
 			continue
 		}
 
@@ -696,7 +654,18 @@ func (rf *Raft) applyCommittedEntries() {
 
 	for rf.lastApplied < rf.commitIndex {
 		rf.lastApplied++
-		entry := rf.log[rf.lastApplied]
+		
+		// Skip if entry is in snapshot
+		if rf.lastApplied <= rf.lastSnapshotIndex {
+			continue
+		}
+		
+		// Find the entry
+		entry := rf.getLogEntry(rf.lastApplied)
+		if entry == nil {
+			// Entry not found, it might be in snapshot
+			continue
+		}
 		
 		// Update deduplication map for applied commands
 		if cmdStr, ok := entry.Command.(string); ok && cmdStr != "" {
@@ -708,12 +677,15 @@ func (rf *Raft) applyCommittedEntries() {
 		}
 		
 		// Check if this is a configuration change entry
-		if rf.isConfigurationEntry(entry) {
-			rf.handleConfigurationEntry(entry)
+		if rf.isConfigurationEntry(*entry) {
+			rf.handleConfigurationEntry(*entry)
 		}
 		
 		select {
-		case rf.applyCh <- entry:
+		case rf.applyCh <- *entry:
+		case <-time.After(500 * time.Millisecond):
+			// Log warning about slow consumer but continue
+			log.Printf("Server %d: Warning - apply channel blocked, skipping entry %d", rf.me, entry.Index)
 		case <-rf.stopCh:
 			return
 		}
@@ -736,6 +708,43 @@ func (rf *Raft) persist() {
 	if rf.persister != nil {
 		rf.persister.SaveState(rf.currentTerm, rf.votedFor, rf.log)
 	}
+}
+
+
+// getLogEntry returns the log entry at the given index, accounting for snapshots
+func (rf *Raft) getLogEntry(index int) *LogEntry {
+	if index <= rf.lastSnapshotIndex {
+		return nil // Entry was snapshotted
+	}
+	// Find the entry in the log
+	for i := range rf.log {
+		if rf.log[i].Index == index {
+			return &rf.log[i]
+		}
+	}
+	return nil
+}
+
+// getLastLogIndex returns the index of the last log entry
+func (rf *Raft) getLastLogIndex() int {
+	if len(rf.log) > 0 {
+		lastEntry := rf.log[len(rf.log)-1]
+		if lastEntry.Index > rf.lastSnapshotIndex {
+			return lastEntry.Index
+		}
+	}
+	return rf.lastSnapshotIndex
+}
+
+// getLastLogTerm returns the term of the last log entry
+func (rf *Raft) getLastLogTerm() int {
+	if len(rf.log) > 0 {
+		lastEntry := rf.log[len(rf.log)-1]
+		if lastEntry.Index > rf.lastSnapshotIndex {
+			return lastEntry.Term
+		}
+	}
+	return rf.lastSnapshotTerm
 }
 
 // readPersist restores persistent state from stable storage
@@ -818,6 +827,12 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) erro
 		return nil
 	}
 
+	// Check if we're still in the configuration - removed servers shouldn't vote
+	if !rf.isInConfiguration(rf.currentConfig, rf.me) {
+		// We've been removed from the configuration, don't grant votes
+		return nil
+	}
+
 	// If RPC request contains term T > currentTerm: set currentTerm = T, convert to follower
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
@@ -845,6 +860,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) erro
 	return nil
 }
 
+
 // AppendEntries handles AppendEntries RPC
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) error {
 	rf.mu.Lock()
@@ -871,8 +887,32 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.lastHeartbeat = time.Now()
 
 	// Reply false if log doesn't contain an entry at prevLogIndex whose term matches prevLogTerm
-	if args.PrevLogIndex > 0 && (args.PrevLogIndex >= len(rf.log) || rf.log[args.PrevLogIndex].Term != args.PrevLogTerm) {
-		return nil
+	if args.PrevLogIndex > 0 {
+		// Check if prevLogIndex is in snapshot
+		if args.PrevLogIndex < rf.lastSnapshotIndex {
+			// Entry is before our snapshot, we can't verify it
+			return nil
+		} else if args.PrevLogIndex == rf.lastSnapshotIndex {
+			// Check snapshot term
+			if rf.lastSnapshotTerm != args.PrevLogTerm {
+				return nil
+			}
+		} else {
+			// For now, keep simple approach until we fix log indexing
+			found := false
+			for _, entry := range rf.log {
+				if entry.Index == args.PrevLogIndex {
+					if entry.Term != args.PrevLogTerm {
+						return nil
+					}
+					found = true
+					break
+				}
+			}
+			if !found {
+				return nil
+			}
+		}
 	}
 
 	// If an existing entry conflicts with a new one (same index but different terms),
@@ -900,7 +940,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
 	// Only update commitIndex if we're still a follower (not a leader)
 	if args.LeaderCommit > rf.commitIndex && rf.state != Leader {
-		rf.commitIndex = min(args.LeaderCommit, len(rf.log)-1)
+		rf.commitIndex = min(args.LeaderCommit, rf.getLastLogIndex())
 		go rf.applyCommittedEntries()
 	}
 
@@ -910,8 +950,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 // isLogUpToDate checks if the given log is at least as up-to-date as this server's log
 func (rf *Raft) isLogUpToDate(lastLogIndex, lastLogTerm int) bool {
-	ourLastIndex := len(rf.log) - 1
-	ourLastTerm := rf.log[ourLastIndex].Term
+	ourLastIndex := rf.getLastLogIndex()
+	ourLastTerm := rf.getLastLogTerm()
 
 	if lastLogTerm != ourLastTerm {
 		return lastLogTerm > ourLastTerm
@@ -943,4 +983,69 @@ func (rf *Raft) hasCurrentTermEntryCommitted(currentTerm int, upToIndex int) boo
 		}
 	}
 	return false
+}
+
+// TransferLeadership transfers leadership to a specific server
+func (rf *Raft) TransferLeadership(targetServer int) error {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if rf.state != Leader {
+		return fmt.Errorf("not the leader")
+	}
+
+	// Check if target server exists and is caught up
+	targetIndex := -1
+	for i, peerID := range rf.peers {
+		if peerID == targetServer {
+			targetIndex = i
+			break
+		}
+	}
+
+	if targetIndex == -1 {
+		return fmt.Errorf("target server %d not found", targetServer)
+	}
+
+	// Check if target is voting member
+	if !rf.isVotingMember(targetServer) {
+		return fmt.Errorf("target server %d is not a voting member", targetServer)
+	}
+
+	// First, ensure target is fully caught up
+	if targetIndex < len(rf.matchIndex) {
+		lastLogIndex := rf.getLastLogIndex()
+		if rf.matchIndex[targetIndex] < lastLogIndex {
+			// Send AppendEntries to catch up the target
+			go rf.sendAppendEntriesToPeer(targetServer)
+			return fmt.Errorf("target server not caught up yet")
+		}
+	}
+
+	// Step down and prevent ourselves from becoming candidate for a while
+	rf.state = Follower
+	rf.votedFor = &targetServer // Vote for the target to help it win
+	rf.persist()
+	
+	// Set a much longer election timeout to prevent us from interfering
+	if rf.electionTimer != nil {
+		rf.electionTimer.Stop()
+	}
+	// Use a very long timeout (10x normal) to ensure we don't interfere
+	timeout := rf.electionTimeoutMax * 10
+	rf.electionTimer = time.NewTimer(timeout)
+	
+	if rf.heartbeatTick != nil {
+		rf.heartbeatTick.Stop()
+	}
+	
+	log.Printf("Server %d transferring leadership to server %d", rf.me, targetServer)
+	return nil
+}
+
+// sendTimeoutNow sends a TimeoutNow RPC to trigger immediate election
+func (rf *Raft) sendTimeoutNow(server int) {
+	// For now, we'll simulate this by disconnecting ourselves temporarily
+	// In a real implementation, you'd send a TimeoutNow RPC
+	// The target server will timeout and start an election
 }

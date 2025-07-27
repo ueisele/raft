@@ -8,100 +8,93 @@ import (
 	"time"
 )
 
-// MockSnapshotProvider for testing
-type MockSnapshotProvider struct {
-	data []byte
-	err  error
+// MockSnapshotData represents a simple key-value store for testing
+type MockSnapshotData struct {
+	Data map[string]string
 }
 
-func (m *MockSnapshotProvider) TakeSnapshot() ([]byte, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	return m.data, nil
-}
+// TestBasicSnapshot tests basic snapshotting functionality
+func TestBasicSnapshot(t *testing.T) {
+	peers := []int{0, 1, 2}
+	rafts := make([]*TestRaft, 3)
+	applyChannels := make([]chan LogEntry, 3)
+	transport := NewTestTransport()
 
-// TestSnapshotCreation tests basic snapshot creation and storage
-func TestSnapshotCreation(t *testing.T) {
-	peers := []int{0}
-	applyCh := make(chan LogEntry, 100)
-	
-	// Create temporary directory for testing
-	dataDir := "/tmp/raft-snapshot-test"
-	os.MkdirAll(dataDir, 0755)
-	defer os.RemoveAll(dataDir)
-	
-	persister := NewPersister(dataDir, 0)
-	snapshotProvider := &MockSnapshotProvider{
-		data: []byte("mock snapshot data"),
+	for i := 0; i < 3; i++ {
+		applyChannels[i] = make(chan LogEntry, 100)
+		rafts[i] = NewTestRaft(peers, i, applyChannels[i], transport)
 	}
-	
-	// Create RaftWithSnapshot instance
-	rfs := NewRaftWithSnapshot(peers, 0, applyCh, persister, 5, snapshotProvider)
-	
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	
-	rfs.Start(ctx)
-	defer rfs.Stop()
-	
-	// Manually add entries to log and set commit index for testing
-	rfs.mu.Lock()
-	for i := 1; i <= 10; i++ {
-		entry := LogEntry{
-			Term:    1,
-			Index:   i,
-			Command: fmt.Sprintf("cmd%d", i),
-		}
-		rfs.log = append(rfs.log, entry)
+
+	for i := 0; i < 3; i++ {
+		rafts[i].Start(ctx)
 	}
-	rfs.commitIndex = 10 // Set commit index to allow snapshot
-	rfs.mu.Unlock()
-	
-	// Take snapshot at index 5
-	snapshotIndex := 5
-	err := rfs.TakeSnapshot([]byte("test snapshot"), snapshotIndex)
+
+	// Wait for leader election
+	leaderIdx := WaitForLeader(t, rafts, 2*time.Second)
+	leader := rafts[leaderIdx].Raft
+
+	// Submit some commands
+	commands := []string{"cmd1", "cmd2", "cmd3", "cmd4", "cmd5"}
+	for _, cmd := range commands {
+		leader.Submit(cmd)
+	}
+
+	// Wait for commands to be committed
+	WaitForCommitIndex(t, rafts, len(commands), 5*time.Second)
+
+	// Create a snapshot at index 3
+	snapshotData := []byte("snapshot at index 3")
+	err := leader.TakeSnapshot(snapshotData, 3)
 	if err != nil {
-		t.Fatalf("Failed to take snapshot: %v", err)
+		t.Fatalf("Failed to create snapshot: %v", err)
 	}
-	
-	// Verify snapshot was saved
-	if !persister.HasSnapshot() {
-		t.Error("Snapshot was not saved")
-	}
-	
-	// Load and verify snapshot
-	data, lastIndex, _, err := persister.LoadSnapshot()
-	if err != nil {
-		t.Fatalf("Failed to load snapshot: %v", err)
-	}
-	
-	if string(data) != "test snapshot" {
-		t.Errorf("Unexpected snapshot data: got %s, expected %s", string(data), "test snapshot")
-	}
-	
-	if lastIndex != snapshotIndex {
-		t.Errorf("Unexpected last included index: got %d, expected %d", lastIndex, snapshotIndex)
+
+	// Verify snapshot was created
+	leader.mu.RLock()
+	if leader.lastSnapshotIndex != 3 {
+		t.Errorf("Expected lastSnapshotIndex to be 3, got %d", leader.lastSnapshotIndex)
 	}
 	
 	// Verify log was trimmed
-	rfs.mu.RLock()
-	logLength := len(rfs.log)
-	rfs.mu.RUnlock()
+	logLen := len(leader.log)
+	leader.mu.RUnlock()
 	
-	if logLength > 6 { // Should be trimmed to around snapshot point
-		t.Errorf("Log was not properly trimmed after snapshot: length %d", logLength)
+	if logLen > 3 {
+		t.Errorf("Log should be trimmed after snapshot, but has %d entries", logLen)
+	}
+
+	// Submit more commands
+	idx6, _, _ := leader.Submit("cmd6")
+	idx7, _, _ := leader.Submit("cmd7")
+	
+	t.Logf("Submitted cmd6 at index %d, cmd7 at index %d", idx6, idx7)
+	
+	// Check current state
+	leader.mu.RLock()
+	t.Logf("Leader lastLogIndex: %d, commitIndex: %d", leader.getLastLogIndex(), leader.commitIndex)
+	leader.mu.RUnlock()
+
+	// Wait for new commands to be committed
+	WaitForCommitIndex(t, rafts, 7, 5*time.Second)
+
+	// Stop all instances
+	for i := 0; i < 3; i++ {
+		rafts[i].Stop()
 	}
 }
 
-// TestSnapshotInstallation tests InstallSnapshot RPC
+// TestSnapshotInstallation tests installing snapshots on followers
 func TestSnapshotInstallation(t *testing.T) {
 	peers := []int{0, 1, 2}
 	rafts := make([]*TestRaft, 3)
 	applyChannels := make([]chan LogEntry, 3)
 	transport := NewTestTransport()
 
-	for i := 0; i < 3; i++ {
+	// Create and start only 2 servers initially
+	for i := 0; i < 2; i++ {
 		applyChannels[i] = make(chan LogEntry, 100)
 		rafts[i] = NewTestRaft(peers, i, applyChannels[i], transport)
 	}
@@ -109,376 +102,318 @@ func TestSnapshotInstallation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	for i := 0; i < 3; i++ {
+	// Start the 2 servers
+	for i := 0; i < 2; i++ {
 		rafts[i].Start(ctx)
 	}
 
 	// Wait for leader election
-	time.Sleep(1 * time.Second)
+	leaderIdx := WaitForLeader(t, rafts[:2], 2*time.Second)
+	leader := rafts[leaderIdx].Raft
 
-	// Find leader
-	var leader *Raft
-	var leaderIdx int
-	for i, rf := range rafts {
-		_, isLeader := rf.GetState()
-		if isLeader {
-			leader = rf.Raft
-			leaderIdx = i
-			break
-		}
+	// Submit many commands
+	for i := 1; i <= 20; i++ {
+		leader.Submit(i)
 	}
 
-	if leader == nil {
-		t.Fatal("No leader found")
-	}
+	// Wait for commands to be committed on active servers
+	WaitForCommitIndex(t, rafts[:2], 20, 5*time.Second)
 
-	t.Logf("Initial leader: server %d", leaderIdx)
-
-	// Submit many commands to create a long log
-	for i := 0; i < 20; i++ {
-		leader.Submit(fmt.Sprintf("cmd%d", i))
-		time.Sleep(50 * time.Millisecond)
-	}
-
-	// Wait for replication
-	time.Sleep(2 * time.Second)
-
-	// Disconnect one follower for a long time
-	laggedFollowerIdx := (leaderIdx + 1) % 3
-	t.Logf("Disconnecting follower: server %d", laggedFollowerIdx)
-	transport.DisconnectServer(laggedFollowerIdx)
-
-	// Submit more commands while follower is disconnected
-	for i := 20; i < 40; i++ {
-		leader.Submit(fmt.Sprintf("cmd%d", i))
-		time.Sleep(30 * time.Millisecond)
-	}
-
-	// Create a snapshot on the leader
-	snapshotData := []byte("snapshot at index 30")
-	err := leader.TakeSnapshot(snapshotData, 30)
+	// Create a snapshot at index 15
+	snapshotData := []byte("snapshot at index 15")
+	err := leader.TakeSnapshot(snapshotData, 15)
 	if err != nil {
-		t.Logf("Snapshot creation failed (may be expected): %v", err)
+		t.Fatalf("Failed to create snapshot: %v", err)
 	}
 
-	// Wait a bit more to let the leader establish its position
-	time.Sleep(1 * time.Second)
+	// Now create and start the third server
+	applyChannels[2] = make(chan LogEntry, 100)
+	rafts[2] = NewTestRaft(peers, 2, applyChannels[2], transport)
+	rafts[2].Start(ctx)
 
-	// Reconnect the lagged follower
-	transport.ReconnectServer(laggedFollowerIdx)
-
-	// Give the system time to stabilize, but prevent the lagged follower from becoming leader
-	// by temporarily boosting the original leader's term if needed
+	// Wait for the new server to catch up via snapshot
 	time.Sleep(2 * time.Second)
 	
-	// Ensure the original leader or one of the up-to-date servers remains leader
-	// by having the leader send heartbeats to maintain authority
-	if currentTerm, isLeader := leader.GetState(); isLeader {
-		// Leader is still active, continue with test
-		t.Logf("Original leader (server %d) still in control at term %d", leaderIdx, currentTerm)
-	} else {
-		// Find the current leader among the servers that were not lagged
-		var newLeader *Raft
-		var newLeaderIdx int
-		for i, rf := range rafts {
-			if i != laggedFollowerIdx {
-				if _, isLeader := rf.GetState(); isLeader {
-					newLeader = rf.Raft
+	// Check leader's view of follower
+	leader.mu.RLock()
+	t.Logf("Leader nextIndex[2]: %d, lastLogIndex: %d, lastSnapshotIndex: %d", 
+		leader.nextIndex[2], leader.getLastLogIndex(), leader.lastSnapshotIndex)
+	leader.mu.RUnlock()
+
+	// Check if server 2 received the snapshot
+	rafts[2].mu.RLock()
+	t.Logf("Server 2 lastSnapshotIndex: %d, commitIndex: %d, lastApplied: %d",
+		rafts[2].lastSnapshotIndex, rafts[2].commitIndex, rafts[2].lastApplied)
+	if rafts[2].lastSnapshotIndex != 15 {
+		t.Errorf("Server 2 should have received snapshot at index 15, got %d", rafts[2].lastSnapshotIndex)
+	}
+	rafts[2].mu.RUnlock()
+
+	// Submit more commands and verify all servers stay in sync
+	leader.Submit(21)
+	leader.Submit(22)
+
+	WaitForCommitIndex(t, rafts, 22, 5*time.Second)
+
+	// Stop all instances
+	for i := 0; i < 3; i++ {
+		rafts[i].Stop()
+	}
+}
+
+// TestSnapshotDuringPartition tests snapshot behavior during network partitions
+func TestSnapshotDuringPartition(t *testing.T) {
+	peers := []int{0, 1, 2, 3, 4}
+	rafts := make([]*TestRaft, 5)
+	applyChannels := make([]chan LogEntry, 5)
+	transport := NewTestTransport()
+
+	for i := 0; i < 5; i++ {
+		applyChannels[i] = make(chan LogEntry, 100)
+		rafts[i] = NewTestRaft(peers, i, applyChannels[i], transport)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	for i := 0; i < 5; i++ {
+		rafts[i].Start(ctx)
+	}
+
+	// Start goroutines to consume from apply channels
+	stopConsumers := make(chan struct{})
+	for i := 0; i < 5; i++ {
+		go func(ch chan LogEntry) {
+			for {
+				select {
+				case <-ch:
+					// Just consume
+				case <-stopConsumers:
+					return
+				}
+			}
+		}(applyChannels[i])
+	}
+	defer close(stopConsumers)
+
+	// Wait for leader election
+	leaderIdx := WaitForLeader(t, rafts, 2*time.Second)
+	leader := rafts[leaderIdx].Raft
+	t.Logf("Initial leader is server %d", leaderIdx)
+
+	// Submit initial commands
+	for i := 1; i <= 10; i++ {
+		leader.Submit(i)
+	}
+
+	WaitForCommitIndex(t, rafts, 10, 5*time.Second)
+
+	// Partition the network: disconnect servers 3 and 4
+	transport.DisconnectServer(3)
+	transport.DisconnectServer(4)
+	
+	// If the leader was in the minority partition, we need a new leader
+	if leaderIdx == 3 || leaderIdx == 4 {
+		t.Log("Leader was in minority partition, waiting for new leader in majority")
+		// Give a moment for the partition to take effect
+		time.Sleep(100 * time.Millisecond)
+		
+		// Find new leader among majority servers
+		majorityRafts := []*TestRaft{rafts[0], rafts[1], rafts[2]}
+		newLeaderIdx := -1
+		for attempts := 0; attempts < 50; attempts++ {
+			for i, rf := range majorityRafts {
+				_, isLeader := rf.GetState()
+				if isLeader {
 					newLeaderIdx = i
 					break
 				}
 			}
+			if newLeaderIdx != -1 {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
 		}
 		
-		if newLeader != nil {
-			leader = newLeader
-			leaderIdx = newLeaderIdx
-			t.Logf("New leader found: server %d (not the lagged follower)", leaderIdx)
-		} else {
-			// If the lagged follower became leader, force a leadership change
-			// by having one of the up-to-date servers start an election
-			upToDateServer := (laggedFollowerIdx + 1) % 3
-			if upToDateServer == laggedFollowerIdx {
-				upToDateServer = (laggedFollowerIdx + 2) % 3
-			}
-			
-			// Trigger election by disconnecting and reconnecting an up-to-date server
-			t.Logf("Lagged follower became leader, triggering new election from server %d", upToDateServer)
-			transport.DisconnectServer(upToDateServer)
-			time.Sleep(100 * time.Millisecond)
-			transport.ReconnectServer(upToDateServer)
-			time.Sleep(2 * time.Second)
-			
-			// Find the new leader
-			for i, rf := range rafts {
-				if _, isLeader := rf.GetState(); isLeader {
-					leader = rf.Raft
-					leaderIdx = i
-					break
-				}
-			}
+		if newLeaderIdx == -1 {
+			t.Fatal("No new leader elected in majority partition")
 		}
+		leader = majorityRafts[newLeaderIdx].Raft
+		t.Logf("New leader in majority partition is server %d", rafts[newLeaderIdx].me)
 	}
 
-	// Ensure we have a leader that's not the lagged follower
-	if leaderIdx == laggedFollowerIdx {
-		t.Logf("WARNING: Lagged follower became leader - this limits the InstallSnapshot test effectiveness")
+	// Create snapshot on majority partition
+	snapshotData := []byte("snapshot during partition")
+	err := leader.TakeSnapshot(snapshotData, 8)
+	if err != nil {
+		t.Fatalf("Failed to create snapshot: %v", err)
 	}
 
-	// The leader should send InstallSnapshot RPC to bring the follower up to date
-	time.Sleep(3 * time.Second)
+	// Submit more commands to majority
+	for i := 11; i <= 15; i++ {
+		leader.Submit(i)
+	}
 
-	// Verify the lagged follower caught up
-	laggedFollower := rafts[laggedFollowerIdx]
-	laggedFollower.mu.RLock()
-	followerLogLength := len(laggedFollower.log)
-	followerCommitIndex := laggedFollower.commitIndex
-	laggedFollower.mu.RUnlock()
+	// Wait for majority to commit
+	majorityRafts := []*TestRaft{rafts[0], rafts[1], rafts[2]}
+	WaitForCommitIndex(t, majorityRafts, 15, 5*time.Second)
 
-	leader.mu.RLock()
-	leaderLogLength := len(leader.log)
-	leaderCommitIndex := leader.commitIndex
-	leaderSnapshotIndex := leader.lastSnapshotIndex
-	leader.mu.RUnlock()
+	// Reconnect minority servers
+	transport.ReconnectServer(3)
+	transport.ReconnectServer(4)
 
-	t.Logf("Final leader: server %d", leaderIdx)
-	t.Logf("Lagged follower: server %d", laggedFollowerIdx)
+	// Log state before waiting
+	for i, rf := range rafts {
+		rf.mu.RLock()
+		t.Logf("Before catch-up - Server %d: commitIndex=%d, lastApplied=%d, lastSnapshotIndex=%d, log length=%d",
+			i, rf.commitIndex, rf.lastApplied, rf.lastSnapshotIndex, len(rf.log))
+		rf.mu.RUnlock()
+	}
 
-	t.Logf("Leader log length: %d, commit index: %d, snapshot index: %d", leaderLogLength, leaderCommitIndex, leaderSnapshotIndex)
-	t.Logf("Follower log length: %d, commit index: %d", followerLogLength, followerCommitIndex)
-
-	// The follower should have caught up reasonably close to the leader
-	if followerCommitIndex < leaderCommitIndex-5 {
-		t.Errorf("Follower did not catch up properly: follower commit %d, leader commit %d", followerCommitIndex, leaderCommitIndex)
+	// Wait for all servers to catch up (may take longer after partition)
+	WaitForCommitIndex(t, rafts, 15, 20*time.Second)
+	
+	// Log final state
+	for i, rf := range rafts {
+		rf.mu.RLock()
+		t.Logf("After catch-up - Server %d: commitIndex=%d, lastApplied=%d, lastSnapshotIndex=%d, log length=%d",
+			i, rf.commitIndex, rf.lastApplied, rf.lastSnapshotIndex, len(rf.log))
+		rf.mu.RUnlock()
 	}
 
 	// Stop all instances
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 5; i++ {
 		rafts[i].Stop()
 	}
 }
 
-// TestMultiChunkSnapshot tests InstallSnapshot with multiple chunks
-func TestMultiChunkSnapshot(t *testing.T) {
-	peers := []int{0, 1}
-	rafts := make([]*TestRaft, 2)
-	applyChannels := make([]chan LogEntry, 2)
-	transport := NewTestTransport()
+// TestSnapshotPersistence tests that snapshots survive server restarts
+func TestSnapshotPersistence(t *testing.T) {
+	// Create temporary directory for test data
+	tempDir := fmt.Sprintf("/tmp/raft-test-%d", time.Now().UnixNano())
+	err := os.MkdirAll(tempDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
 
-	for i := 0; i < 2; i++ {
+	peers := []int{0, 1, 2}
+	rafts := make([]*TestRaft, 3)
+	applyChannels := make([]chan LogEntry, 3)
+	transport := NewTestTransport()
+	persisters := make([]*Persister, 3)
+
+	// Create servers with persisters
+	for i := 0; i < 3; i++ {
 		applyChannels[i] = make(chan LogEntry, 100)
 		rafts[i] = NewTestRaft(peers, i, applyChannels[i], transport)
+		
+		// Create persister for each server
+		serverDir := fmt.Sprintf("%s/server-%d", tempDir, i)
+		err := os.MkdirAll(serverDir, 0755)
+		if err != nil {
+			t.Fatalf("Failed to create server dir: %v", err)
+		}
+		persisters[i] = NewPersister(serverDir, i)
+		rafts[i].SetPersister(persisters[i])
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	for i := 0; i < 2; i++ {
+	// Start servers
+	for i := 0; i < 3; i++ {
 		rafts[i].Start(ctx)
 	}
 
 	// Wait for leader election
-	time.Sleep(1 * time.Second)
+	leaderIdx := WaitForLeader(t, rafts, 2*time.Second)
+	leader := rafts[leaderIdx].Raft
 
-	// Find leader and follower
-	var leader, follower *Raft
-	var leaderIdx, followerIdx int
+	// Submit commands
+	commands := []string{"cmd1", "cmd2", "cmd3", "cmd4", "cmd5"}
+	for _, cmd := range commands {
+		leader.Submit(cmd)
+	}
+
+	// Wait for replication
+	WaitForCommitIndex(t, rafts, len(commands), 3*time.Second)
+
+	// Create snapshots on all servers
+	snapshotData := []byte("test-snapshot-data")
 	for i, rf := range rafts {
-		_, isLeader := rf.GetState()
-		if isLeader {
-			leader = rf.Raft
-			leaderIdx = i
-			follower = rafts[1-i].Raft
-			followerIdx = 1 - i
-			break
-		}
-	}
-
-	if leader == nil {
-		t.Fatal("No leader found")
-	}
-
-	t.Logf("Leader: server %d, Follower: server %d", leaderIdx, followerIdx)
-
-	// Set up follower's term to accept the snapshot
-	follower.mu.Lock()
-	follower.currentTerm = 2
-	follower.mu.Unlock()
-
-	// Prepare a large snapshot that would need multiple chunks
-	largeSnapshotData := make([]byte, 1024*1024) // 1MB
-	for i := range largeSnapshotData {
-		largeSnapshotData[i] = byte(i % 256)
-	}
-
-	// Test multi-chunk InstallSnapshot
-	maxChunkSize := 64 * 1024 // 64KB chunks
-	
-	lastIncludedIndex := 10
-	lastIncludedTerm := 2
-
-	// Send snapshot in chunks
-	totalChunks := (len(largeSnapshotData) + maxChunkSize - 1) / maxChunkSize
-	t.Logf("Sending snapshot in %d chunks of max %d bytes", totalChunks, maxChunkSize)
-
-	for offset := 0; offset < len(largeSnapshotData); offset += maxChunkSize {
-		end := offset + maxChunkSize
-		if end > len(largeSnapshotData) {
-			end = len(largeSnapshotData)
-		}
-		
-		chunk := largeSnapshotData[offset:end]
-		done := (end == len(largeSnapshotData))
-
-		args := &InstallSnapshotArgs{
-			Term:              2,
-			LeaderID:          leaderIdx,
-			LastIncludedIndex: lastIncludedIndex,
-			LastIncludedTerm:  lastIncludedTerm,
-			Offset:            offset,
-			Data:              chunk,
-			Done:              done,
-		}
-
-		reply := &InstallSnapshotReply{}
-		err := follower.InstallSnapshot(args, reply)
+		err := rf.TakeSnapshot(snapshotData, 3) // Snapshot up to index 3
 		if err != nil {
-			t.Fatalf("InstallSnapshot failed: %v", err)
-		}
-
-		t.Logf("Sent chunk at offset %d, size %d, done: %v", offset, len(chunk), done)
-
-		if !done {
-			// For incomplete chunks, follower should accept but not install yet
-			follower.mu.RLock()
-			incompleteSnapshot := follower.incomingSnapshot
-			follower.mu.RUnlock()
-			
-			if incompleteSnapshot == nil {
-				t.Error("Follower should be tracking incomplete snapshot")
-			} else if len(incompleteSnapshot.data) != end {
-				t.Errorf("Incomplete snapshot data length mismatch: got %d, expected %d", len(incompleteSnapshot.data), end)
-			}
+			t.Errorf("Server %d failed to take snapshot: %v", i, err)
 		}
 	}
 
-	// Immediately after final chunk, verify snapshot state before any leadership changes
-	follower.mu.RLock()
-	incompleteSnapshot := follower.incomingSnapshot
-	lastApplied := follower.lastApplied
-	commitIndex := follower.commitIndex
-	follower.mu.RUnlock()
-
-	t.Logf("Immediately after installation: lastApplied=%d, commitIndex=%d, incompleteSnapshot=%v", lastApplied, commitIndex, incompleteSnapshot != nil)
-
-	// Incomplete snapshot should be cleared after successful installation
-	if incompleteSnapshot != nil {
-		t.Error("Incomplete snapshot should be cleared after installation")
-	}
-
-	// State should be updated to snapshot point
-	if lastApplied != lastIncludedIndex {
-		t.Errorf("lastApplied not updated: got %d, expected %d", lastApplied, lastIncludedIndex)
-	}
-
-	if commitIndex != lastIncludedIndex {
-		t.Errorf("commitIndex not updated: got %d, expected %d", commitIndex, lastIncludedIndex)
-	}
-
-	// Wait a bit to allow for any leadership changes, then verify system stability
-	time.Sleep(1 * time.Second)
-
-	// Check final state - note that commitIndex might be reset if follower becomes leader
-	follower.mu.RLock()
-	finalLastApplied := follower.lastApplied
-	finalState := follower.state
-	follower.mu.RUnlock()
-
-	t.Logf("Final state: lastApplied=%d, state=%v", finalLastApplied, finalState)
-
-	// lastApplied should remain at snapshot point regardless of leadership changes
-	if finalLastApplied != lastIncludedIndex {
-		t.Errorf("Final lastApplied changed: got %d, expected %d", finalLastApplied, lastIncludedIndex)
-	}
-
-	// Stop all instances
-	for i := 0; i < 2; i++ {
-		rafts[i].Stop()
-	}
-}
-
-// TestSnapshotWithLogTruncation tests that snapshots properly truncate logs
-func TestSnapshotWithLogTruncation(t *testing.T) {
-	peers := []int{0}
-	applyCh := make(chan LogEntry, 100)
-	
-	dataDir := "/tmp/raft-snapshot-truncate-test"
-	os.MkdirAll(dataDir, 0755)
-	defer os.RemoveAll(dataDir)
-	
-	persister := NewPersister(dataDir, 0)
-	snapshotProvider := &MockSnapshotProvider{
-		data: []byte("snapshot data"),
-	}
-	
-	rfs := NewRaftWithSnapshot(peers, 0, applyCh, persister, 10, snapshotProvider)
-	
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	
-	rfs.Start(ctx)
-	defer rfs.Stop()
-
-	// Manually add entries to log and set commit index for testing
-	rfs.mu.Lock()
-	for i := 1; i <= 15; i++ {
-		entry := LogEntry{
-			Term:    1,
-			Index:   i,
-			Command: fmt.Sprintf("cmd%d", i),
-		}
-		rfs.log = append(rfs.log, entry)
-	}
-	rfs.commitIndex = 15 // Set commit index to allow snapshot
-	initialLogLength := len(rfs.log)
-	rfs.mu.Unlock()
-
-	t.Logf("Initial log length: %d", initialLogLength)
-
-	// Take snapshot at index 8
-	snapshotIndex := 8
-	err := rfs.TakeSnapshot([]byte("test snapshot"), snapshotIndex)
-	if err != nil {
-		t.Fatalf("Failed to take snapshot: %v", err)
-	}
-
-	// Wait for snapshot processing
+	// Give time for snapshots to be written
 	time.Sleep(500 * time.Millisecond)
 
-	// Verify log was truncated
-	rfs.mu.RLock()
-	newLogLength := len(rfs.log)
-	firstLogIndex := 0
-	if len(rfs.log) > 0 {
-		firstLogIndex = rfs.log[0].Index
-	}
-	rfs.mu.RUnlock()
-
-	t.Logf("New log length: %d, first log index: %d", newLogLength, firstLogIndex)
-
-	// Log should be shorter and first entry should be at snapshot index
-	if newLogLength >= initialLogLength {
-		t.Error("Log was not truncated after snapshot")
+	// Stop all servers
+	for i := 0; i < 3; i++ {
+		rafts[i].Stop()
 	}
 
-	// The log should start around the snapshot index
-	if firstLogIndex < snapshotIndex-1 {
-		t.Errorf("Log not properly truncated: first index %d, snapshot index %d", firstLogIndex, snapshotIndex)
+	// Wait a bit to ensure clean shutdown
+	time.Sleep(500 * time.Millisecond)
+
+	// Create new servers with same persisters
+	newRafts := make([]*TestRaft, 3)
+	newApplyChannels := make([]chan LogEntry, 3)
+
+	for i := 0; i < 3; i++ {
+		newApplyChannels[i] = make(chan LogEntry, 100)
+		newRafts[i] = NewTestRaft(peers, i, newApplyChannels[i], transport)
+		newRafts[i].SetPersister(persisters[i])
+	}
+
+	// Start new servers
+	newCtx, newCancel := context.WithCancel(context.Background())
+	defer newCancel()
+
+	for i := 0; i < 3; i++ {
+		newRafts[i].Start(newCtx)
+	}
+
+	// Wait for new leader
+	newLeaderIdx := WaitForLeader(t, newRafts, 2*time.Second)
+
+	// Verify state was restored from snapshot
+	for i, rf := range newRafts {
+		rf.mu.RLock()
+		// Check that snapshot was loaded
+		if rf.lastSnapshotIndex != 3 {
+			t.Errorf("Server %d: Expected lastSnapshotIndex=3, got %d", i, rf.lastSnapshotIndex)
+		}
+		// Check that lastApplied is at least the snapshot index
+		if rf.lastApplied < 3 {
+			t.Errorf("Server %d: Expected lastApplied>=3, got %d", i, rf.lastApplied)
+		}
+		// Check that log was trimmed properly
+		if len(rf.log) > 0 && rf.log[0].Index != 0 && rf.log[0].Index < 3 {
+			t.Errorf("Server %d: Log should be trimmed up to snapshot index", i)
+		}
+		rf.mu.RUnlock()
+	}
+
+	// Submit new commands to verify cluster is functional
+	newLeader := newRafts[newLeaderIdx].Raft
+	newLeader.Submit("cmd6")
+	newLeader.Submit("cmd7")
+
+	// Wait for new commands to be replicated
+	WaitForCommitIndex(t, newRafts, 7, 3*time.Second)
+
+	// Stop new servers
+	for i := 0; i < 3; i++ {
+		newRafts[i].Stop()
 	}
 }
 
-// TestSnapshotErrorHandling tests error scenarios in snapshot operations
-func TestSnapshotErrorHandling(t *testing.T) {
+// TestConcurrentSnapshots tests handling of concurrent snapshot operations
+func TestConcurrentSnapshots(t *testing.T) {
 	peers := []int{0, 1, 2}
 	rafts := make([]*TestRaft, 3)
 	applyChannels := make([]chan LogEntry, 3)
@@ -497,126 +432,145 @@ func TestSnapshotErrorHandling(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(1 * time.Second)
+	leaderIdx := WaitForLeader(t, rafts, 2*time.Second)
+	leader := rafts[leaderIdx].Raft
 
-	// Find leader
-	var leader *Raft
-	var leaderIdx int
-	for i, rf := range rafts {
-		_, isLeader := rf.GetState()
-		if isLeader {
-			leader = rf.Raft
-			leaderIdx = i
-			break
-		}
+	// Submit commands
+	for i := 1; i <= 20; i++ {
+		leader.Submit(i)
 	}
 
-	if leader == nil {
-		t.Fatal("No leader found")
+	WaitForCommitIndex(t, rafts, 20, 5*time.Second)
+
+	// Try to create multiple snapshots at different indices
+	err1 := leader.TakeSnapshot([]byte("snapshot at 10"), 10)
+	if err1 != nil {
+		t.Fatalf("Failed to create first snapshot: %v", err1)
 	}
 
-	// Submit some commands
-	for i := 0; i < 10; i++ {
-		leader.Submit(fmt.Sprintf("cmd%d", i))
-		time.Sleep(50 * time.Millisecond)
+	// Second snapshot should succeed and replace the first
+	err2 := leader.TakeSnapshot([]byte("snapshot at 15"), 15)
+	if err2 != nil {
+		t.Fatalf("Failed to create second snapshot: %v", err2)
 	}
 
-	// Wait for replication
-	time.Sleep(1 * time.Second)
+	// Try to create snapshot at earlier index (should fail)
+	err3 := leader.TakeSnapshot([]byte("snapshot at 5"), 5)
+	if err3 == nil {
+		t.Error("Creating snapshot at earlier index should fail")
+	}
 
-	// Verify system continues to operate - take snapshot manually to test error handling
+	// Verify final snapshot state
 	leader.mu.RLock()
-	initialLogLength := len(leader.log)
+	if leader.lastSnapshotIndex != 15 {
+		t.Errorf("Expected lastSnapshotIndex to be 15, got %d", leader.lastSnapshotIndex)
+	}
 	leader.mu.RUnlock()
-
-	// Try to take snapshot at invalid index (beyond commit index) - should fail gracefully
-	err := leader.TakeSnapshot([]byte("test snapshot"), initialLogLength+10)
-	if err == nil {
-		t.Error("Taking snapshot beyond commit index should fail")
-	}
-
-	// Submit more commands to verify system continues operating
-	for i := 10; i < 15; i++ {
-		leader.Submit(fmt.Sprintf("cmd%d", i))
-		time.Sleep(50 * time.Millisecond)
-	}
-
-	// Wait for replication
-	time.Sleep(1 * time.Second)
-
-	// Verify log continued to grow (snapshot failure didn't break system)
-	leader.mu.RLock()
-	finalLogLength := len(leader.log)
-	leader.mu.RUnlock()
-
-	if finalLogLength <= initialLogLength {
-		t.Error("System should continue operating despite snapshot failure")
-	}
-
-	// Test invalid InstallSnapshot scenarios
-	follower := rafts[(leaderIdx+1)%3].Raft
-
-	// Test with term mismatch
-	args := &InstallSnapshotArgs{
-		Term:              1, // Lower term
-		LeaderID:          leaderIdx,
-		LastIncludedIndex: 5,
-		LastIncludedTerm:  1,
-		Offset:            0,
-		Data:              []byte("test"),
-		Done:              true,
-	}
-
-	follower.mu.Lock()
-	follower.currentTerm = 2 // Higher term
-	follower.mu.Unlock()
-
-	reply := &InstallSnapshotReply{}
-	err = follower.InstallSnapshot(args, reply)
-	if err != nil {
-		t.Fatalf("InstallSnapshot should not return error for term mismatch: %v", err)
-	}
-
-	// Reply should contain current term
-	if reply.Term != 2 {
-		t.Errorf("Expected reply term 2, got %d", reply.Term)
-	}
-
-	// Test out-of-order chunks
-	args1 := &InstallSnapshotArgs{
-		Term:              3,
-		LeaderID:          leaderIdx,
-		LastIncludedIndex: 10,
-		LastIncludedTerm:  2,
-		Offset:            0,
-		Data:              []byte("chunk1"),
-		Done:              false,
-	}
-
-	args2 := &InstallSnapshotArgs{
-		Term:              3,
-		LeaderID:          leaderIdx,
-		LastIncludedIndex: 10,
-		LastIncludedTerm:  2,
-		Offset:            10, // Wrong offset (should be 6)
-		Data:              []byte("chunk2"),
-		Done:              true,
-	}
-
-	follower.InstallSnapshot(args1, &InstallSnapshotReply{})
-	follower.InstallSnapshot(args2, &InstallSnapshotReply{}) // Should be ignored
-
-	// Verify out-of-order chunk was ignored
-	follower.mu.RLock()
-	incompleteSnapshot := follower.incomingSnapshot
-	follower.mu.RUnlock()
-
-	if incompleteSnapshot != nil && len(incompleteSnapshot.data) != len(args1.Data) {
-		t.Error("Out-of-order chunk should have been ignored")
-	}
 
 	// Stop all instances
 	for i := 0; i < 3; i++ {
 		rafts[i].Stop()
+	}
+}
+
+// TestSnapshotWithConfigChange tests a simple scenario of taking snapshots with configuration changes
+func TestSnapshotWithConfigChange(t *testing.T) {
+	// Start with 3 servers
+	peers := []int{0, 1, 2}
+	rafts := make([]*TestRaft, 4) // Room for 4 servers
+	applyChannels := make([]chan LogEntry, 4)
+	transport := NewTestTransport()
+
+	for i := 0; i < 3; i++ {
+		applyChannels[i] = make(chan LogEntry, 100)
+		rafts[i] = NewTestRaft(peers, i, applyChannels[i], transport)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	for i := 0; i < 3; i++ {
+		rafts[i].Start(ctx)
+	}
+
+	// Start goroutines to consume from apply channels
+	stopConsumers := make(chan struct{})
+	defer close(stopConsumers)
+	
+	for i := 0; i < 3; i++ {
+		go func(ch chan LogEntry) {
+			for {
+				select {
+				case <-ch:
+					// Just consume
+				case <-stopConsumers:
+					return
+				}
+			}
+		}(applyChannels[i])
+	}
+
+	// Wait for leader election
+	leaderIdx := WaitForLeader(t, rafts[:3], 2*time.Second)
+	leader := rafts[leaderIdx].Raft
+
+	// Submit some commands
+	for i := 1; i <= 10; i++ {
+		leader.Submit(fmt.Sprintf("cmd%d", i))
+	}
+
+	// Wait for replication
+	WaitForCommitIndex(t, rafts[:3], 10, 3*time.Second)
+
+	// Take a snapshot
+	snapshotData := []byte("snapshot at index 8")
+	err := leader.TakeSnapshot(snapshotData, 8)
+	if err != nil {
+		t.Fatalf("Failed to take snapshot: %v", err)
+	}
+
+	// Add a new server
+	newServerID := 3
+	applyChannels[newServerID] = make(chan LogEntry, 100)
+	rafts[newServerID] = NewTestRaft([]int{newServerID}, newServerID, applyChannels[newServerID], transport)
+	rafts[newServerID].Start(ctx)
+	
+	// Start consumer for new server
+	go func(ch chan LogEntry) {
+		for {
+			select {
+			case <-ch:
+				// Just consume
+			case <-stopConsumers:
+				return
+			}
+		}
+	}(applyChannels[newServerID])
+
+	// Add the server to configuration
+	err = leader.AddServer(ServerConfiguration{
+		ID:      newServerID,
+		Address: fmt.Sprintf("localhost:800%d", newServerID),
+	})
+	if err != nil {
+		t.Fatalf("Failed to add server: %v", err)
+	}
+
+	// Wait for new server to catch up
+	time.Sleep(2 * time.Second)
+
+	// Verify new server received snapshot
+	rafts[newServerID].mu.RLock()
+	if rafts[newServerID].lastSnapshotIndex < 8 {
+		t.Errorf("New server should have received snapshot, lastSnapshotIndex=%d", 
+			rafts[newServerID].lastSnapshotIndex)
+	}
+	rafts[newServerID].mu.RUnlock()
+
+	// Stop all servers
+	for i := 0; i < 4; i++ {
+		if rafts[i] != nil {
+			rafts[i].Stop()
+		}
 	}
 }

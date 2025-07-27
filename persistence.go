@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // PersistentState represents the persistent state of a Raft server
@@ -207,6 +208,40 @@ func (rf *Raft) SetPersister(persister *Persister) {
 			rf.votedFor = votedFor
 			rf.log = log
 			rf.mu.Unlock()
+		}
+		
+		// Load snapshot if available
+		if persister.HasSnapshot() {
+			snapshotData, lastIncludedIndex, lastIncludedTerm, err := persister.LoadSnapshot()
+			if err == nil && snapshotData != nil {
+				rf.mu.Lock()
+				rf.lastSnapshotIndex = lastIncludedIndex
+				rf.lastSnapshotTerm = lastIncludedTerm
+				// Update lastApplied and commitIndex if they're behind the snapshot
+				if rf.lastApplied < lastIncludedIndex {
+					rf.lastApplied = lastIncludedIndex
+				}
+				if rf.commitIndex < lastIncludedIndex {
+					rf.commitIndex = lastIncludedIndex
+				}
+				// Send snapshot to application
+				rf.mu.Unlock()
+				
+				// Apply the snapshot to the state machine
+				if rf.applyCh != nil {
+					go func() {
+						select {
+						case rf.applyCh <- LogEntry{
+							Term:    lastIncludedTerm,
+							Index:   lastIncludedIndex,
+							Command: snapshotData,
+						}:
+						case <-time.After(1 * time.Second):
+							// Server failed to send snapshot to apply channel
+						}
+					}()
+				}
+			}
 		}
 	}
 }

@@ -29,24 +29,9 @@ func TestBasicRaft(t *testing.T) {
 		rafts[i].Start(ctx)
 	}
 
-	// Wait a bit for leader election
-	time.Sleep(1 * time.Second)
-
-	// Find the leader
-	var leader *Raft
-	leaderIndex := -1
-	for i, rf := range rafts {
-		_, isLeader := rf.GetState()
-		if isLeader {
-			leader = rf.Raft
-			leaderIndex = i
-			break
-		}
-	}
-
-	if leader == nil {
-		t.Fatal("No leader elected")
-	}
+	// Wait for leader election
+	leaderIndex := WaitForLeader(t, rafts, 2*time.Second)
+	leader := rafts[leaderIndex].Raft
 
 	t.Logf("Leader elected: server %d", leaderIndex)
 
@@ -60,8 +45,10 @@ func TestBasicRaft(t *testing.T) {
 	t.Logf("Command submitted: index=%d, term=%d", index, term)
 
 	// Wait for command to be applied
-	// In a real test, we would wait for the command to be committed and applied
-	time.Sleep(500 * time.Millisecond)
+	applied := WaitForAppliedEntries(t, applyChannels[leaderIndex], 1, 1*time.Second)
+	if applied[0].Command != command {
+		t.Fatalf("Applied command mismatch: got %v, want %v", applied[0].Command, command)
+	}
 
 	// Stop all Raft instances
 	for i := 0; i < 3; i++ {
@@ -89,15 +76,15 @@ func TestLeaderElection(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(2 * time.Second)
+	leaderIndex := WaitForLeader(t, rafts, 2*time.Second)
+	t.Logf("Server %d is leader", leaderIndex)
 
-	// Count leaders
+	// Verify only one leader
 	leaderCount := 0
-	for i, rf := range rafts {
+	for _, rf := range rafts {
 		_, isLeader := rf.GetState()
 		if isLeader {
 			leaderCount++
-			t.Logf("Server %d is leader", i)
 		}
 	}
 
@@ -131,21 +118,8 @@ func TestLogReplication(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(1 * time.Second)
-
-	// Find leader
-	var leader *Raft
-	for _, rf := range rafts {
-		_, isLeader := rf.GetState()
-		if isLeader {
-			leader = rf.Raft
-			break
-		}
-	}
-
-	if leader == nil {
-		t.Fatal("No leader found")
-	}
+	leaderIndex := WaitForLeader(t, rafts, 2*time.Second)
+	leader := rafts[leaderIndex].Raft
 
 	// Submit multiple commands
 	commands := []string{"cmd1", "cmd2", "cmd3"}
@@ -157,7 +131,7 @@ func TestLogReplication(t *testing.T) {
 	}
 
 	// Wait for replication
-	time.Sleep(1 * time.Second)
+	WaitForCommitIndex(t, rafts, len(commands), 2*time.Second)
 
 	// Check that all servers have the same log length
 	expectedLogLength := len(commands) + 1 // +1 for dummy entry
@@ -244,7 +218,7 @@ func BenchmarkLeaderElection(b *testing.B) {
 		}
 
 		// Wait for leader election
-		time.Sleep(500 * time.Millisecond)
+		WaitForLeader(b, rafts, 1*time.Second)
 
 		cancel()
 		for j := 0; j < 3; j++ {
