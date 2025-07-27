@@ -2,6 +2,8 @@
 
 This document provides a comprehensive overview of the Raft consensus algorithm implementation following the extended Raft paper by Diego Ongaro and John Ousterhout.
 
+**Last Updated**: After implementing all paper requirements including vote denial, non-voting members, and configuration change safety.
+
 ## Implementation Overview
 
 ### Core Components Implemented
@@ -23,6 +25,7 @@ This document provides a comprehensive overview of the Raft consensus algorithm 
    - Leader Completeness Property enforcement
    - State Machine Safety guarantees
    - Proper handling of entries from previous terms
+   - Vote denial when current leader exists (prevents unnecessary elections)
 
 4. **Persistence (Implementation Detail)**
    - Durable storage of currentTerm, votedFor, and log
@@ -38,11 +41,14 @@ This document provides a comprehensive overview of the Raft consensus algorithm 
    - Joint consensus approach for safe reconfiguration
    - Two-phase protocol (Cold,new → Cnew)
    - Support for adding/removing servers dynamically
+   - Non-voting member support for safe server additions
+   - Automatic leader step-down when removed from configuration
 
 7. **Client Interaction (Section 8)**
    - HTTP-based RPC interface
    - Command submission with linearizable semantics
    - Read-only operations with proper leader checks
+   - Idempotent command handling with deduplication
 
 ## Key Features
 
@@ -125,6 +131,10 @@ These satisfy: `broadcastTime ≪ electionTimeout ≪ MTBF`
 3. **Log replication**: Consistency across servers
 4. **Persistence**: State recovery after restart
 5. **Performance**: Leader election timing
+6. **Vote denial**: Prevention of unnecessary elections
+7. **Non-voting members**: Correct consensus calculations
+8. **Configuration changes**: Safe membership updates with bounds checking
+9. **Safety properties**: All five properties from the paper verified
 
 ### Test Transport
 - In-memory RPC simulation for deterministic testing
@@ -202,6 +212,14 @@ The implementation ensures safety through:
 2. **Log consistency**: AppendEntries consistency check
 3. **Leader completeness**: Up-to-date restriction in elections
 4. **Persistence**: Durable state survives crashes
+5. **Vote denial**: Followers reject votes when they have an active leader
+6. **Non-voting members**: Only voting members participate in consensus
+
+### Recent Fixes Applied
+1. **Vote Denial**: Added check to deny votes if heard from leader within election timeout
+2. **Non-Voting Members**: New servers added as non-voting first, then promoted after catch-up
+3. **Bounds Checking**: Fixed index out of bounds during configuration changes
+4. **Leader Step-Down**: Leaders step down when removed from configuration
 
 ### Testing Validation
 - Comprehensive unit tests verify core functionality
