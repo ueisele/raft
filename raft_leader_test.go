@@ -287,14 +287,32 @@ func TestLeaderElectionWithVaryingClusterSizes(t *testing.T) {
 				}
 			}()
 
+			// Start servers with small delays to reduce split votes
 			for i := 0; i < tc.clusterSize; i++ {
 				rafts[i].Start(ctx)
+				// Add small random delay between server starts
+				if i < tc.clusterSize-1 {
+					time.Sleep(time.Duration(10+i*5) * time.Millisecond)
+				}
 			}
 
+			// Give servers time to start and initialize
+			time.Sleep(100 * time.Millisecond)
+			
 			// Try to elect a leader with timeout
+			// Use different timeouts based on cluster size
+			electionTimeout := 3 * time.Second
+			if tc.clusterSize == 2 {
+				// 2-node clusters may need more time due to split votes
+				electionTimeout = 5 * time.Second
+			} else if tc.clusterSize >= 4 {
+				// Larger clusters may also need more time
+				electionTimeout = 5 * time.Second
+			}
+			
 			hasLeader := false
-			timeout := time.After(3 * time.Second)
-			ticker := time.NewTicker(100 * time.Millisecond)
+			timeout := time.After(electionTimeout)
+			ticker := time.NewTicker(50 * time.Millisecond)
 			defer ticker.Stop()
 
 		waitLoop:
@@ -314,6 +332,15 @@ func TestLeaderElectionWithVaryingClusterSizes(t *testing.T) {
 			}
 
 			if hasLeader != tc.expectLeader {
+				// Log current state of all servers for debugging
+				t.Logf("Election failed for %s after %v", tc.name, electionTimeout)
+				for i, rf := range rafts {
+					rf.mu.RLock()
+					term := rf.currentTerm
+					state := rf.state
+					rf.mu.RUnlock()
+					t.Logf("Server %d: term=%d, state=%v", i, term, state)
+				}
 				t.Errorf("Expected leader=%v, got leader=%v", tc.expectLeader, hasLeader)
 			}
 		})

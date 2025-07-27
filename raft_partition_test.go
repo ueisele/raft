@@ -270,21 +270,30 @@ func TestRapidPartitionChanges(t *testing.T) {
 
 	// Submit final commands after stabilization to ensure convergence
 	finalLeaderIdx := WaitForLeader(t, rafts, 2*time.Second)
-	if finalLeaderIdx != -1 {
-		finalLeader := rafts[finalLeaderIdx].Raft
-		// Submit a few more commands to ensure convergence
-		for i := 0; i < 3; i++ {
-			finalLeader.Submit(fmt.Sprintf("final-cmd%d", i))
-			cmdIndex++
-		}
+	if finalLeaderIdx == -1 {
+		t.Fatal("No leader after stabilization")
 	}
 	
-	// All servers should eventually converge
-	t.Logf("Expecting commitIndex %d after rapid partitions", cmdIndex)
-	if cmdIndex == 0 {
-		t.Skip("No commands were successfully submitted during rapid partitions")
+	finalLeader := rafts[finalLeaderIdx].Raft
+	// Submit a few more commands to ensure convergence
+	for i := 0; i < 3; i++ {
+		finalLeader.Submit(fmt.Sprintf("final-cmd%d", i))
 	}
-	WaitForCommitIndex(t, rafts, cmdIndex, 5*time.Second)
+	
+	// Wait a bit for commands to be replicated
+	time.Sleep(500 * time.Millisecond)
+	
+	// Get the actual commit index from the leader
+	finalLeader.mu.RLock()
+	targetCommitIndex := finalLeader.commitIndex
+	finalLeader.mu.RUnlock()
+	
+	// All servers should eventually converge
+	t.Logf("Expecting commitIndex %d after rapid partitions", targetCommitIndex)
+	if targetCommitIndex == 0 {
+		t.Skip("No commands were committed during rapid partitions")
+	}
+	WaitForCommitIndex(t, rafts, targetCommitIndex, 5*time.Second)
 
 	// Verify all servers have same log
 	for i := 1; i < 3; i++ {

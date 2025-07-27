@@ -1,6 +1,8 @@
 package raft
 
 import (
+	"encoding/json"
+	"os"
 	"testing"
 	"time"
 )
@@ -264,4 +266,144 @@ func DrainApplyChannel(applyCh chan LogEntry) {
 			return
 		}
 	}
+}
+
+// CreateTestPersister creates a persister for testing with a temporary directory
+func CreateTestPersister(t *testing.T, serverID int) (*Persister, func()) {
+	tempDir, err := os.MkdirTemp("", "raft-test-")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	
+	cleanup := func() {
+		os.RemoveAll(tempDir)
+	}
+	
+	return NewPersister(tempDir, serverID), cleanup
+}
+
+// CreateTestRaftWithPersistence creates a Raft instance with persistence enabled
+func CreateTestRaftWithPersistence(t *testing.T, peers []int, me int, applyCh chan LogEntry) (*TestRaft, *Persister, func()) {
+	persister, cleanup := CreateTestPersister(t, me)
+	
+	rf := NewRaft(peers, me, applyCh)
+	rf.SetPersister(persister)
+	
+	transport := NewTestTransport()
+	testRf := &TestRaft{
+		Raft:      rf,
+		transport: transport,
+	}
+	testRf.setupTestTransport()
+	transport.RegisterServer(me, rf)
+	
+	return testRf, persister, cleanup
+}
+
+// SimulateCrashAndRecover simulates a server crash and recovery
+func SimulateCrashAndRecover(t *testing.T, rf *TestRaft, persister *Persister, peers []int, applyCh chan LogEntry) *TestRaft {
+	// Don't call Stop() here - the caller should have already stopped it
+	// This avoids double-closing channels
+	
+	// Create a new instance with same ID and persister
+	newRf := NewRaft(peers, rf.me, applyCh)
+	newRf.SetPersister(persister)
+	
+	// Re-register with transport
+	newTestRf := &TestRaft{
+		Raft:      newRf,
+		transport: rf.transport,
+	}
+	newTestRf.setupTestTransport()
+	rf.transport.RegisterServer(rf.me, newRf)
+	
+	return newTestRf
+}
+
+// VerifyPersistentState verifies that persistent state matches expected values
+func VerifyPersistentState(t *testing.T, persister *Persister, expectedTerm int, expectedVotedFor *int, minLogLength int) {
+	term, votedFor, log, err := persister.LoadState()
+	if err != nil {
+		t.Fatalf("Failed to load state: %v", err)
+	}
+	
+	if term != expectedTerm {
+		t.Errorf("Expected term %d, got %d", expectedTerm, term)
+	}
+	
+	if expectedVotedFor == nil && votedFor != nil {
+		t.Errorf("Expected votedFor nil, got %d", *votedFor)
+	} else if expectedVotedFor != nil && votedFor == nil {
+		t.Errorf("Expected votedFor %d, got nil", *expectedVotedFor)
+	} else if expectedVotedFor != nil && votedFor != nil && *expectedVotedFor != *votedFor {
+		t.Errorf("Expected votedFor %d, got %d", *expectedVotedFor, *votedFor)
+	}
+	
+	if len(log) < minLogLength {
+		t.Errorf("Expected log length at least %d, got %d", minLogLength, len(log))
+	}
+}
+
+// WaitForPersistence waits for state to be persisted
+func WaitForPersistence(t *testing.T, persister *Persister, checkFunc func(term int, votedFor *int, log []LogEntry) bool, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		term, votedFor, log, err := persister.LoadState()
+		if err == nil && checkFunc(term, votedFor, log) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("Persistence condition not met within timeout")
+}
+
+// CreateSnapshotData creates test snapshot data
+func CreateSnapshotData(entries []LogEntry) []byte {
+	data, _ := json.Marshal(entries)
+	return data
+}
+
+// VerifySnapshot verifies that a snapshot exists with expected properties
+func VerifySnapshot(t *testing.T, persister *Persister, expectedIndex int, expectedTerm int) {
+	if !persister.HasSnapshot() {
+		t.Fatal("Expected snapshot to exist")
+	}
+	
+	_, lastIndex, lastTerm, err := persister.LoadSnapshot()
+	if err != nil {
+		t.Fatalf("Failed to load snapshot: %v", err)
+	}
+	
+	if lastIndex != expectedIndex {
+		t.Errorf("Expected snapshot index %d, got %d", expectedIndex, lastIndex)
+	}
+	
+	if lastTerm != expectedTerm {
+		t.Errorf("Expected snapshot term %d, got %d", expectedTerm, lastTerm)
+	}
+}
+
+// CleanupTestPersistence removes all persistence files for a test
+func CleanupTestPersistence(dataDir string) {
+	os.RemoveAll(dataDir)
+}
+
+// WaitForSnapshotInstallation waits for a snapshot to be installed on a server
+func WaitForSnapshotInstallation(t *testing.T, rf *Raft, minIndex int, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		rf.mu.RLock()
+		lastSnapshotIndex := rf.lastSnapshotIndex
+		rf.mu.RUnlock()
+		
+		if lastSnapshotIndex >= minIndex {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	
+	rf.mu.RLock()
+	currentIndex := rf.lastSnapshotIndex
+	rf.mu.RUnlock()
+	t.Fatalf("Snapshot not installed: expected index >= %d, got %d", minIndex, currentIndex)
 }
