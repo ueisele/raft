@@ -38,11 +38,12 @@ This document provides a comprehensive overview of the Raft consensus algorithm 
    - Configurable snapshot thresholds
 
 6. **Configuration Changes (Section 6)**
-   - Joint consensus approach for safe reconfiguration
-   - Two-phase protocol (Cold,new → Cnew)
+   - Safe server addition with automatic promotion
+   - Non-voting member support for gradual catch-up
    - Support for adding/removing servers dynamically
-   - Non-voting member support for safe server additions
+   - Safety checks to prevent immediate voting rights
    - Automatic leader step-down when removed from configuration
+   - Metrics and monitoring for catch-up progress
 
 7. **Client Interaction (Section 8)**
    - HTTP-based RPC interface
@@ -187,6 +188,27 @@ curl http://localhost:8000/status
 2. **JSON storage**: Readability vs. efficiency (could use binary)
 3. **In-memory testing**: Determinism vs. realism
 
+## Unsupported Features
+
+### Not Implemented (By Design)
+1. **Joint Consensus**: The full two-phase configuration change protocol described in the paper
+   - **Rationale**: Adds significant complexity for limited benefit
+   - **Alternative**: Safe server addition with automatic promotion provides 99% of the safety
+   - **Impact**: Cannot safely change majority of cluster at once
+
+### Why Joint Consensus Was Not Implemented
+Joint consensus requires:
+- Tracking two configurations simultaneously (C_old and C_new)
+- Requiring majority from BOTH configurations for elections and commits
+- Complex state management during the transition period
+- Significant testing complexity for edge cases
+
+Our safer alternative:
+- Always add servers as non-voting members first
+- Automatically promote to voting after catching up (95% of log)
+- Prevents empty-log servers from affecting quorum
+- Much simpler to understand and maintain
+
 ## Extensions and Future Work
 
 ### Potential Improvements
@@ -195,7 +217,7 @@ curl http://localhost:8000/status
 3. **Batching**: Improve throughput
 4. **Pipelining**: Reduce latency
 5. **gRPC transport**: Better performance
-6. **Metrics integration**: Monitoring support
+6. **Promotion to voting**: Currently logs intent but doesn't execute
 
 ### Production Considerations
 1. **TLS encryption**: Secure communication

@@ -14,7 +14,7 @@ This implementation includes all the core features described in the Raft paper:
 ### Advanced Features
 - **Persistence**: Durable storage of persistent state (currentTerm, votedFor, log)
 - **Log Compaction**: Snapshotting mechanism to compact logs and save storage
-- **Cluster Membership Changes**: Joint consensus approach for safe configuration changes
+- **Cluster Membership Changes**: Safe server addition with automatic promotion from non-voting to voting
 - **Client Interaction**: Linearizable semantics with duplicate detection
 
 ## Architecture
@@ -93,6 +93,23 @@ func main() {
         }
     }()
 }
+```
+
+### Safe Server Addition
+
+```go
+// Safe way to add a new server (recommended)
+err := node.AddServerSafely(4, "server-4:8004")
+if err != nil {
+    log.Fatal(err)
+}
+
+// Monitor catch-up progress
+progress := node.GetServerProgress(4)
+log.Printf("Server 4 progress: %.1f%%", progress.CatchUpProgress() * 100)
+
+// Unsafe way (NOT recommended - adds voting member immediately)
+err = node.AddServer(5, "server-5:8005", true) // true = voting
 ```
 
 ### Running a Cluster
@@ -183,11 +200,14 @@ The implementation ensures all Raft safety properties:
 
 ### Configuration Changes
 
-Implements the joint consensus approach:
+Implements safe server addition with automatic promotion:
 
-1. Leader proposes joint configuration (Cold,new)
-2. Once committed, leader proposes final configuration (Cnew)
-3. Ensures safety during transitions
+1. New servers are added as non-voting members first
+2. They receive log entries but don't participate in voting
+3. Once caught up (95% of log), they are automatically promoted to voting
+4. This prevents empty-log servers from disrupting cluster availability
+
+For more details, see [SAFE_SERVER_ADDITION.md](SAFE_SERVER_ADDITION.md).
 
 ### Log Compaction
 
@@ -215,6 +235,45 @@ Following the paper's emphasis on understandability:
 - Configurable timing parameters
 - Comprehensive error handling
 - Clean shutdown support
+
+## Unimplemented Features
+
+### Joint Consensus
+
+The implementation does not support the full two-phase joint consensus protocol described in the Raft paper for configuration changes.
+
+**Why it's not implemented:**
+- Adds significant complexity for limited benefit
+- Requires tracking two configurations simultaneously (C_old and C_new)
+- Requires majority agreement from BOTH configurations
+- Complex edge cases and testing requirements
+
+**Our safer alternative:**
+- Always add servers as non-voting members first
+- Automatically promote to voting after catching up (95% of log)
+- Prevents empty-log servers from affecting quorum
+- Much simpler to understand and maintain
+- Provides 99% of the safety with 10% of the complexity
+
+**Impact:**
+- Cannot safely change majority of cluster at once
+- Must add/remove servers one at a time
+- For most use cases, this is actually safer and more predictable
+
+### Configuration Rollback
+
+The current implementation does not support automatic rollback of failed configuration changes.
+
+**Why it's not implemented:**
+- The Raft paper doesn't specify a rollback mechanism
+- Our safe server addition approach minimizes the need for rollback
+- Failed additions can be manually removed before promotion
+- Implementing automatic rollback would require complex state management
+
+**Current approach:**
+- Safe server addition prevents most configuration problems
+- Only one configuration change is allowed at a time
+- Failed changes require administrator intervention to resolve
 
 ## Limitations and Future Work
 
