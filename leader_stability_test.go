@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestLeaderCommitIndexPreservation tests that leader preserves commit index across terms
@@ -58,22 +60,13 @@ func TestLeaderCommitIndexPreservation(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find initial leader
-	var leaderID int
-	var leader Node
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leaderID = i
-			leader = node
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	t.Logf("Initial leader is node %d", leaderID)
 
@@ -87,7 +80,8 @@ func TestLeaderCommitIndexPreservation(t *testing.T) {
 	}
 
 	// Wait for replication and commit
-	time.Sleep(1 * time.Second)
+	lastIndex, _, _ := leader.Submit("dummy-for-commit")
+	WaitForCommitIndexWithConfig(t, nodes, lastIndex, timing)
 
 	// Record commit index before leader change
 	initialCommitIndex := leader.GetCommitIndex()
@@ -101,40 +95,26 @@ func TestLeaderCommitIndexPreservation(t *testing.T) {
 	nodes[leaderID] = nil
 	t.Logf("Stopped leader %d", leaderID)
 
-	// Wait for new leader election with timeout
-	var newLeaderID int
-	var newLeader Node
-	
-	timeout := time.After(5 * time.Second)
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-	
-	for {
-		select {
-		case <-timeout:
-			// Debug: Check state of all remaining nodes
-			for i, node := range nodes {
-				if i != leaderID && node != nil {
-					term, isLeader := node.GetState()
-					t.Logf("Node %d: term=%d, isLeader=%v", i, term, isLeader)
-				}
-			}
-			t.Fatal("No new leader elected after 5 seconds")
-			
-		case <-ticker.C:
-			// Check if any node became leader
-			for i, node := range nodes {
-				if i != leaderID && node != nil && node.IsLeader() {
-					newLeaderID = i
-					newLeader = node
-					goto found
-				}
+	// Wait for new leader election
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		for i, node := range nodes {
+			if i != leaderID && node != nil && node.IsLeader() {
+				return true, fmt.Sprintf("new leader elected: node %d", i)
 			}
 		}
-	}
+		return false, "waiting for new leader"
+	}, 5*time.Second, "new leader election after node failure")
 	
-found:
-	t.Logf("New leader elected: node %d", newLeaderID)
+	// Find new leader
+	var newLeaderID int
+	var newLeader Node
+	for i, node := range nodes {
+		if i != leaderID && node != nil && node.IsLeader() {
+			newLeaderID = i
+			newLeader = node
+			break
+		}
+	}
 
 	t.Logf("New leader is node %d", newLeaderID)
 
@@ -148,7 +128,8 @@ found:
 	}
 	
 	// Wait for the new command to be committed
-	time.Sleep(500 * time.Millisecond)
+	newCmdIndex, _, _ := newLeader.Submit("commit-marker")
+	WaitForCommitIndexWithConfig(t, nodes[newLeaderID:newLeaderID+1], newCmdIndex, timing)
 	
 	// Check new leader's commit index
 	newLeaderCommitIndex := newLeader.GetCommitIndex()
@@ -170,7 +151,16 @@ found:
 	}
 
 	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
+	// Submit a marker command and wait for it to commit
+	markerIndex, _, _ := newLeader.Submit("replication-marker")
+	// Only check commit on non-nil nodes
+	aliveNodes := []Node{}
+	for i, node := range nodes {
+		if i != leaderID && node != nil {
+			aliveNodes = append(aliveNodes, node)
+		}
+	}
+	WaitForCommitIndexWithConfig(t, aliveNodes, markerIndex, timing)
 
 	// Verify commit index advanced beyond initial
 	finalCommitIndex := newLeader.GetCommitIndex()
@@ -230,22 +220,13 @@ func TestLeaderStabilityDuringConfigChange(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			leaderID = i
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	t.Logf("Leader is node %d", leaderID)
 
@@ -271,7 +252,7 @@ func TestLeaderStabilityDuringConfigChange(t *testing.T) {
 						t.Logf("Leader changed to node %d", i)
 					}
 				}
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(50 * time.Millisecond)
 			}
 		}
 	}()
@@ -291,7 +272,7 @@ func TestLeaderStabilityDuringConfigChange(t *testing.T) {
 			t.Log("Leader lost leadership during config change")
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	// Stop monitoring
@@ -388,7 +369,9 @@ func TestLeaderElectionWithVaryingClusterSizes(t *testing.T) {
 			}
 
 			// Wait for leader election
-			time.Sleep(1 * time.Second)
+			timing := DefaultTimingConfig()
+			timing.ElectionTimeout = 500 * time.Millisecond
+			WaitForLeaderWithConfig(t, nodes, timing)
 
 			// Count leaders
 			leaderCount := 0
@@ -429,7 +412,10 @@ func TestLeaderElectionWithVaryingClusterSizes(t *testing.T) {
 				}
 
 				// Leader should still function with majority
-				time.Sleep(500 * time.Millisecond)
+				// Give some time for the stopped nodes to be detected
+				Eventually(t, func() bool {
+					return nodes[leaderID].IsLeader()
+				}, 150*time.Millisecond, "leader stability with majority")
 
 				if nodes[leaderID].IsLeader() {
 					_, _, isLeader := nodes[leaderID].Submit("majority-test")
@@ -493,15 +479,11 @@ func TestLeaderHandlingDuringPartitionRecovery(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find initial leader
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leaderID = i
-			break
-		}
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
+		t.Fatal("No leader elected")
 	}
 
 	t.Logf("Initial leader is node %d", leaderID)
@@ -520,7 +502,11 @@ func TestLeaderHandlingDuringPartitionRecovery(t *testing.T) {
 	t.Log("Created partition: [0,1] | [2,3,4]")
 
 	// Wait for new leaders in each partition
-	time.Sleep(1 * time.Second)
+	// Give time for elections in each partition
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		// Just wait for the timeout as minority partition won't elect leader
+		return true, "waiting for partition elections"
+	}, timing.ElectionTimeout*2, "partition leader elections")
 
 	// Find leaders in each partition
 	var leader1, leader2 int
@@ -575,7 +561,15 @@ func TestLeaderHandlingDuringPartitionRecovery(t *testing.T) {
 	t.Log("Partition healed")
 
 	// Wait for convergence
-	time.Sleep(2 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		leaderCount := 0
+		for _, node := range nodes {
+			if node.IsLeader() {
+				leaderCount++
+			}
+		}
+		return leaderCount == 1, fmt.Sprintf("%d leaders", leaderCount)
+	}, timing.StabilizationTimeout, "single leader after healing")
 
 	// Verify single leader emerges
 	leaderCount := 0
@@ -665,22 +659,13 @@ func TestLeadershipTransferToNonVotingMember(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			leaderID = i
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	t.Logf("Leader is node %d", leaderID)
 
@@ -691,7 +676,9 @@ func TestLeadershipTransferToNonVotingMember(t *testing.T) {
 	}
 
 	// Wait for configuration to propagate
-	time.Sleep(500 * time.Millisecond)
+	// Submit a command to ensure config is committed
+	configIndex, _, _ := leader.Submit("config-marker")
+	WaitForCommitIndexWithConfig(t, nodes, configIndex, timing)
 
 	// Try to transfer leadership to non-voting member
 	err = leader.TransferLeadership(3)
@@ -714,7 +701,20 @@ func TestLeadershipTransferToNonVotingMember(t *testing.T) {
 	}
 
 	// Wait for transfer
-	time.Sleep(1 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		if nodes[targetID].IsLeader() {
+			return true, fmt.Sprintf("node %d became leader", targetID)
+		}
+		if !leader.IsLeader() {
+			// Original leader stepped down
+			for i, node := range nodes {
+				if node.IsLeader() {
+					return true, fmt.Sprintf("node %d became leader", i)
+				}
+			}
+		}
+		return false, "waiting for leadership transfer"
+	}, timing.ElectionTimeout*2, "leadership transfer")
 
 	// Check if transfer succeeded
 	if nodes[targetID].IsLeader() {

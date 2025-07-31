@@ -41,12 +41,15 @@ func TestSnapshotCreation(t *testing.T) {
 		}
 		t.Logf("Submitted command %d at index %d", i, index)
 
-		// Give time for processing
-		time.Sleep(50 * time.Millisecond)
+		// Small delay between commands for processing
+		if i < 14 {
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 
 	// Wait for entries to be applied first
-	time.Sleep(1 * time.Second)
+	timing := test.DefaultTimingConfig()
+	test.WaitForCommitIndexWithConfig(t, []raft.Node{node}, 15, timing)
 	
 	// Get commit index to verify entries are committed
 	commitIndex := node.GetCommitIndex()
@@ -98,22 +101,13 @@ func TestSnapshotInstallation(t *testing.T) {
 	}
 
 	// Wait for leader election among first 2 nodes
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader raft.Node
-	var leaderID int
-	for i := 0; i < 2; i++ {
-		if cluster.Nodes[i].IsLeader() {
-			leader = cluster.Nodes[i]
-			leaderID = i
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := test.DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := test.WaitForLeaderWithConfig(t, cluster.Nodes[:2], timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected among first 2 nodes")
 	}
+	leader := cluster.Nodes[leaderID]
 
 	t.Logf("Leader is node %d", leaderID)
 
@@ -127,7 +121,13 @@ func TestSnapshotInstallation(t *testing.T) {
 	}
 
 	// Wait for snapshot creation
-	time.Sleep(500 * time.Millisecond)
+	test.WaitForConditionWithProgress(t, func() (bool, string) {
+		if persistence := cluster.Persistences[leaderID]; persistence != nil {
+			hasSnapshot := persistence.HasSnapshot()
+			return hasSnapshot, fmt.Sprintf("has snapshot: %v", hasSnapshot)
+		}
+		return false, "no persistence"
+	}, timing.ReplicationTimeout, "snapshot creation")
 
 	// Verify snapshot was created
 	if persistence := cluster.Persistences[leaderID]; persistence != nil {
@@ -144,7 +144,11 @@ func TestSnapshotInstallation(t *testing.T) {
 	t.Log("Started lagging node 2")
 
 	// Wait for snapshot installation
-	time.Sleep(2 * time.Second)
+	test.WaitForConditionWithProgress(t, func() (bool, string) {
+		leaderCommit := leader.GetCommitIndex()
+		node2Commit := cluster.Nodes[2].GetCommitIndex()
+		return node2Commit >= leaderCommit-2, fmt.Sprintf("node2 commit: %d, leader commit: %d", node2Commit, leaderCommit)
+	}, 2*time.Second, "node 2 catch up via snapshot")
 
 	// Check if node 2 caught up via snapshot
 	leaderCommit := leader.GetCommitIndex()
@@ -159,8 +163,8 @@ func TestSnapshotInstallation(t *testing.T) {
 
 	// Verify state machine content is consistent
 	// Submit a read command to verify
-	leader.Submit("read-check")
-	time.Sleep(500 * time.Millisecond)
+	readIndex, _, _ := leader.Submit("read-check")
+	test.WaitForCommitIndexWithConfig(t, cluster.Nodes, readIndex, timing)
 
 	// Check state machine consistency
 	sm0 := cluster.StateMachines[0]
@@ -218,14 +222,18 @@ func TestSnapshotWithConcurrentWrites(t *testing.T) {
 							cmdNum++
 						}
 					}
-					time.Sleep(20 * time.Millisecond)
+					time.Sleep(10 * time.Millisecond) // Small delay for pacing
 				}
 			}
 		}(writerID)
 	}
 
 	// Let writers run and trigger snapshots
-	time.Sleep(3 * time.Second)
+	timing := test.DefaultTimingConfig()
+	test.WaitForConditionWithProgress(t, func() (bool, string) {
+		count := atomic.LoadInt32(&successCount)
+		return count >= 50, fmt.Sprintf("submitted %d commands", count)
+	}, 3*time.Second, "concurrent command submission")
 
 	// Stop writers
 	close(stopCh)
@@ -235,7 +243,7 @@ func TestSnapshotWithConcurrentWrites(t *testing.T) {
 	t.Logf("Successfully submitted %d commands", successfulCommands)
 
 	// Wait for system to stabilize
-	time.Sleep(500 * time.Millisecond)
+	test.WaitForStableLeader(t, cluster.Nodes, timing)
 
 	// Verify all nodes have consistent state
 	commitIndices := make([]int, 3)
@@ -264,8 +272,21 @@ func TestSnapshotWithConcurrentWrites(t *testing.T) {
 		t.Logf("Created %d snapshots with concurrent writes", snapshotCount)
 	}
 
-	// Give more time for consistency after concurrent writes
-	time.Sleep(3 * time.Second)
+	// Wait for consistency after concurrent writes
+	test.Eventually(t, func() bool {
+		minCommit := int(^uint(0) >> 1)
+		maxCommit := 0
+		for _, node := range cluster.Nodes {
+			commit := node.GetCommitIndex()
+			if commit < minCommit {
+				minCommit = commit
+			}
+			if commit > maxCommit {
+				maxCommit = commit
+			}
+		}
+		return maxCommit-minCommit <= 20
+	}, 3*time.Second, "nodes converge after concurrent writes")
 	
 	// Custom consistency check for concurrent writes
 	// Allow more tolerance since nodes may be at different stages
@@ -379,8 +400,13 @@ func TestSnapshotEdgeCases(t *testing.T) {
 			cluster.SubmitCommand(fmt.Sprintf("cmd%d", i))
 		}
 
-		// Give time for snapshot attempt
-		time.Sleep(500 * time.Millisecond)
+		// Wait for snapshot attempt
+		timing := test.DefaultTimingConfig()
+		test.WaitForConditionWithProgress(t, func() (bool, string) {
+			// Check if snapshot was attempted (it will fail)
+			logLength := cluster.Nodes[0].GetLogLength()
+			return logLength >= 10, fmt.Sprintf("log length: %d", logLength)
+		}, timing.ReplicationTimeout, "snapshot trigger")
 
 		// Node should still be functional despite snapshot failure
 		if !cluster.Nodes[0].IsLeader() {

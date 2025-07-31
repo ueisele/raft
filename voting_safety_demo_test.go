@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestVotingSafetyDemonstrationSimple shows the concrete danger of immediate voting rights
@@ -60,22 +62,13 @@ func TestVotingSafetyDemonstrationSimple(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			leaderID = i
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	t.Logf("Initial leader is node %d", leaderID)
 
@@ -90,7 +83,7 @@ func TestVotingSafetyDemonstrationSimple(t *testing.T) {
 	}
 
 	// Wait for replication
-	time.Sleep(1 * time.Second)
+	WaitForCommitIndexWithConfig(t, nodes, len(importantData), timing)
 
 	// Verify data is committed
 	commitIndex := leader.GetCommitIndex()
@@ -138,7 +131,8 @@ func TestVotingSafetyDemonstrationSimple(t *testing.T) {
 	}
 
 	// Wait for configuration change
-	time.Sleep(500 * time.Millisecond)
+	markerIndex, _, _ := leader.Submit("config-marker")
+	WaitForCommitIndexWithConfig(t, nodes, markerIndex, timing)
 
 	// Now simulate a scenario where the new node can cause problems
 	// Partition the old leader and one follower from the rest
@@ -169,7 +163,18 @@ func TestVotingSafetyDemonstrationSimple(t *testing.T) {
 		[]int{leaderID, 3 - leaderID - followerID}, followerID, newNodeID)
 
 	// Wait for new election in the minority partition
-	time.Sleep(1 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		// Check if any node in the minority partition became leader
+		term, isLeader := newNode.GetState()
+		if isLeader {
+			return true, fmt.Sprintf("new node is leader in term %d", term)
+		}
+		term2, isLeader2 := nodes[followerID].GetState()
+		if isLeader2 {
+			return true, fmt.Sprintf("node %d is leader in term %d", followerID, term2)
+		}
+		return false, "waiting for new leader in minority partition"
+	}, timing.ElectionTimeout*2, "new leader election")
 
 	// Check if the new node became leader
 	if newNode.IsLeader() {
@@ -268,20 +273,13 @@ func TestImmediateVotingDanger(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	for _, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	// Build up a significant log
 	for i := 0; i < 100; i++ {
@@ -290,7 +288,7 @@ func TestImmediateVotingDanger(t *testing.T) {
 	}
 
 	// Wait for replication
-	time.Sleep(2 * time.Second)
+	WaitForCommitIndexWithConfig(t, nodes, 100, timing)
 
 	originalCommit := leader.GetCommitIndex()
 	t.Logf("Original commit index: %d", originalCommit)
@@ -343,7 +341,8 @@ func TestImmediateVotingDanger(t *testing.T) {
 	}
 
 	// Wait for configuration changes
-	time.Sleep(1 * time.Second)
+	configMarker, _, _ := leader.Submit("config-complete")
+	WaitForCommitIndexWithConfig(t, nodes, configMarker, timing)
 
 	// Now we have 6 nodes total: 3 original (with full logs) and 3 new (with empty logs)
 	// The new nodes with empty logs now count toward the majority!
@@ -369,7 +368,9 @@ func TestImmediateVotingDanger(t *testing.T) {
 		t.Logf("Submitted command at index %d", index)
 		
 		// Wait and check if it gets committed
-		time.Sleep(2 * time.Second)
+		Eventually(t, func() bool {
+			return leader.GetCommitIndex() > originalCommit
+		}, 2*time.Second, "new command to be committed")
 		
 		newCommit := leader.GetCommitIndex()
 		if newCommit == originalCommit {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // ExampleClientInteraction shows how clients should properly interact with Raft
@@ -39,22 +41,15 @@ func TestExampleClientInteraction(t *testing.T) {
 		t.Logf("Command submitted at index=%d, term=%d", index, term)
 
 		// Client MUST wait for commit
-		maxWait := 5 * time.Second
-		pollInterval := 10 * time.Millisecond
-		start := time.Now()
-
-		for time.Since(start) < maxWait {
+		WaitForConditionWithProgress(t, func() (bool, string) {
 			commitIndex := leader.GetCommitIndex()
 			if commitIndex >= index {
-				t.Logf("Command committed! CommitIndex=%d", commitIndex)
-				break
+				return true, fmt.Sprintf("command committed at index %d", commitIndex)
 			}
-			time.Sleep(pollInterval)
-		}
-
-		if leader.GetCommitIndex() < index {
-			t.Error("Command was not committed within timeout")
-		}
+			return false, fmt.Sprintf("waiting for commit, current index %d, need %d", commitIndex, index)
+		}, 5*time.Second, "command commit")
+		
+		t.Logf("Command committed! CommitIndex=%d", leader.GetCommitIndex())
 	})
 
 	// Example 2: What happens if leader crashes
@@ -74,16 +69,18 @@ func TestExampleClientInteraction(t *testing.T) {
 		leader.Stop()
 
 		// Wait for new leader
-		time.Sleep(2 * time.Second)
-
-		// Find new leader
+		timing := DefaultTimingConfig()
+		timing.ElectionTimeout = 2 * time.Second
 		var newLeader Node
-		for _, node := range nodes {
-			if node.IsLeader() {
-				newLeader = node
-				break
+		WaitForConditionWithProgress(t, func() (bool, string) {
+			for _, node := range nodes {
+				if node.IsLeader() {
+					newLeader = node
+					return true, "new leader elected"
+				}
 			}
-		}
+			return false, "waiting for new leader"
+		}, timing.ElectionTimeout, "new leader election")
 
 		if newLeader == nil {
 			t.Fatal("No new leader elected")
@@ -221,10 +218,9 @@ func makeRange(start, end int) []int {
 
 // waitForLeader waits for a single leader to be elected
 func waitForLeader(t *testing.T, nodes []Node) {
-	maxAttempts := 30
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		time.Sleep(100 * time.Millisecond)
-		
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 3 * time.Second
+	WaitForConditionWithProgress(t, func() (bool, string) {
 		leaderCount := 0
 		for _, node := range nodes {
 			_, isLeader := node.GetState()
@@ -234,13 +230,13 @@ func waitForLeader(t *testing.T, nodes []Node) {
 		}
 		
 		if leaderCount == 1 {
-			return // Success
+			return true, "single leader elected"
 		}
 		
 		if leaderCount > 1 {
 			t.Fatalf("Multiple leaders detected: %d", leaderCount)
 		}
-	}
-	
-	t.Fatal("No leader elected within timeout")
+		
+		return false, fmt.Sprintf("%d leaders", leaderCount)
+	}, timing.ElectionTimeout, "leader election")
 }

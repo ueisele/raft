@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // localTransport is a simple in-memory transport for testing
@@ -142,22 +144,13 @@ func TestSafeServerAddition(t *testing.T) {
 	}
 	
 	// Wait for leader election
-	time.Sleep(1 * time.Second)
-	
-	// Find leader
-	var leader Node
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			leaderID = i
-			break
-		}
-	}
-	
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 1 * time.Second
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 	
 	t.Logf("Leader is node %d", leaderID)
 	
@@ -172,7 +165,7 @@ func TestSafeServerAddition(t *testing.T) {
 	}
 	
 	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
+	WaitForCommitIndexWithConfig(t, nodes, 20, timing)
 	
 	commitIndex := leader.GetCommitIndex()
 	t.Logf("Commit index before adding server: %d", commitIndex)
@@ -222,8 +215,16 @@ func TestSafeServerAddition(t *testing.T) {
 		t.Fatalf("Failed to add server safely: %v", err)
 	}
 	
-	// Wait a bit for configuration to propagate
-	time.Sleep(200 * time.Millisecond)
+	// Wait for configuration to propagate
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		config := leader.GetConfiguration()
+		for _, server := range config.Servers {
+			if server.ID == newServerID {
+				return true, fmt.Sprintf("server %d added to configuration", newServerID)
+			}
+		}
+		return false, "waiting for configuration to include new server"
+	}, 2*time.Second, "configuration propagation")
 	
 	// Monitor catch-up progress
 	t.Log("Monitoring catch-up progress...")
@@ -281,7 +282,7 @@ func TestSafeServerAddition(t *testing.T) {
 			}
 		}
 		
-		time.Sleep(500 * time.Millisecond) // Check every 500ms
+		time.Sleep(50 * time.Millisecond) // Small polling interval
 		promotionCheckCount++
 	}
 	

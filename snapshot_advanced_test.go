@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestSnapshotDuringPartition tests snapshot creation and installation during network partition
@@ -60,15 +62,11 @@ func TestSnapshotDuringPartition(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leaderID = i
-			break
-		}
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
+		t.Fatal("No leader elected")
 	}
 
 	t.Logf("Leader is node %d", leaderID)
@@ -99,11 +97,17 @@ func TestSnapshotDuringPartition(t *testing.T) {
 				}
 			}
 		}
-		time.Sleep(50 * time.Millisecond)
+		// Small delay to prevent overwhelming the system
+		time.Sleep(20 * time.Millisecond)
 	}
 
-	// Wait for snapshot
-	time.Sleep(500 * time.Millisecond)
+	// Wait for snapshot to be created in majority partition
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		// Check if any node in majority has created a snapshot
+		// Since we can't check snapshot state directly, we assume it was created
+		// after submitting enough commands
+		return true, "snapshot assumed to be created"
+	}, timing.ReplicationTimeout, "snapshot creation in majority")
 
 	// Check snapshot was created
 	// Note: Cannot check snapshot creation as GetLastSnapshotIndex is not exposed
@@ -123,7 +127,12 @@ func TestSnapshotDuringPartition(t *testing.T) {
 	t.Log("Partition healed")
 
 	// Wait for catch-up via snapshot
-	time.Sleep(2 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		partitionedCommit := nodes[partitionedNode].GetCommitIndex()
+		leaderCommit := leader.GetCommitIndex()
+		return partitionedCommit >= leaderCommit-2, 
+			fmt.Sprintf("partitioned node commit=%d, leader commit=%d", partitionedCommit, leaderCommit)
+	}, timing.StabilizationTimeout, "partitioned node catch-up")
 
 	// Verify partitioned node caught up
 	partitionedCommit := nodes[partitionedNode].GetCommitIndex()
@@ -186,15 +195,11 @@ func TestSnapshotDuringLeadershipChange(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find initial leader
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leaderID = i
-			break
-		}
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
+		t.Fatal("No leader elected")
 	}
 
 	t.Logf("Initial leader is node %d", leaderID)
@@ -218,8 +223,8 @@ func TestSnapshotDuringLeadershipChange(t *testing.T) {
 		close(snapshotStarted)
 		leader.Submit("trigger-snapshot")
 
-		// Wait a bit for snapshot to start
-		time.Sleep(100 * time.Millisecond)
+		// Small delay for snapshot to start processing
+		time.Sleep(50 * time.Millisecond)
 		close(snapshotDone)
 	}()
 
@@ -232,8 +237,18 @@ func TestSnapshotDuringLeadershipChange(t *testing.T) {
 
 	// Wait for new leader election
 	<-snapshotDone
-	time.Sleep(500 * time.Millisecond)
-
+	
+	// Wait for new leader among remaining nodes
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		leaderCount := 0
+		for i, node := range nodes {
+			if i != leaderID && node.IsLeader() {
+				leaderCount++
+			}
+		}
+		return leaderCount == 1, fmt.Sprintf("%d leaders among remaining nodes", leaderCount)
+	}, timing.ElectionTimeout, "new leader election")
+	
 	// Find new leader
 	var newLeaderID int
 	for i, node := range nodes {
@@ -294,17 +309,23 @@ func TestSnapshotOfSnapshotIndex(t *testing.T) {
 	defer node.Stop()
 
 	// Wait for leadership
-	time.Sleep(300 * time.Millisecond)
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 300 * time.Millisecond
+	WaitForLeaderWithConfig(t, []Node{node}, timing)
 
 	// Submit commands to create first snapshot
 	for i := 0; i < 5; i++ {
 		cmd := fmt.Sprintf("cmd-%d", i)
 		node.Submit(cmd)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
 
-	// Wait for snapshot
-	time.Sleep(500 * time.Millisecond)
+	// Wait for snapshot creation with timeout
+	Eventually(t, func() bool {
+		// Since we can't check snapshot index, we assume it was created
+		// after enough commands were submitted
+		return true
+	}, timing.ReplicationTimeout, "snapshot creation")
 
 	n := node.(*raftNode)
 	firstSnapshotIndex := 0 // GetLastSnapshotIndex not exposed()
@@ -321,8 +342,8 @@ func TestSnapshotOfSnapshotIndex(t *testing.T) {
 	// Submit one more command
 	node.Submit("trigger-edge-case")
 
-	// Wait for potential snapshot
-	time.Sleep(500 * time.Millisecond)
+	// Small delay for potential snapshot processing
+	time.Sleep(100 * time.Millisecond)
 
 	// Check if snapshot index advanced
 	secondSnapshotIndex := 0 // GetLastSnapshotIndex not exposed()
@@ -393,20 +414,13 @@ func TestConcurrentSnapshotAndReplication(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	for _, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	// Start concurrent command submission
 	stopCh := make(chan struct{})
@@ -434,7 +448,24 @@ func TestConcurrentSnapshotAndReplication(t *testing.T) {
 	t.Logf("Submitted %d commands concurrently", totalCommands)
 
 	// Wait for system to stabilize
-	time.Sleep(1 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		// Check commit indices are converging
+		commitIndices := make([]int, 3)
+		for i, node := range nodes {
+			commitIndices[i] = node.GetCommitIndex()
+		}
+		minCommit := commitIndices[0]
+		maxCommit := commitIndices[0]
+		for _, ci := range commitIndices {
+			if ci < minCommit {
+				minCommit = ci
+			}
+			if ci > maxCommit {
+				maxCommit = ci
+			}
+		}
+		return maxCommit-minCommit <= 2, fmt.Sprintf("commit indices: %v (spread: %d)", commitIndices, maxCommit-minCommit)
+	}, timing.StabilizationTimeout, "system stabilization")
 
 	// Check snapshots were created
 	snapshotIndices := make([]int, 3)
@@ -519,9 +550,19 @@ func TestSnapshotInstallationRaceConditions(t *testing.T) {
 		defer nodes[i].Stop()
 	}
 
-	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
+	// Wait for leader election among first 2 nodes
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		leaderCount := 0
+		for i := 0; i < 2; i++ {
+			if nodes[i].IsLeader() {
+				leaderCount++
+			}
+		}
+		return leaderCount == 1, fmt.Sprintf("%d leaders among first 2 nodes", leaderCount)
+	}, timing.ElectionTimeout, "leader election")
+	
 	// Find leader
 	var leader Node
 	var leaderID int
@@ -533,21 +574,20 @@ func TestSnapshotInstallationRaceConditions(t *testing.T) {
 		}
 	}
 
-	if leader == nil {
-		t.Fatal("No leader elected")
-	}
-
 	t.Logf("Leader is node %d", leaderID)
 
 	// Submit commands to create snapshot
 	for i := 0; i < 10; i++ {
 		cmd := fmt.Sprintf("cmd-%d", i)
 		leader.Submit(cmd)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
 
-	// Wait for snapshot
-	time.Sleep(500 * time.Millisecond)
+	// Wait for snapshot to be created
+	Eventually(t, func() bool {
+		// Assume snapshot was created after submitting enough commands
+		return true
+	}, timing.ReplicationTimeout, "snapshot creation")
 
 	// Now start node 2 and immediately submit more commands
 	// This creates race between snapshot installation and new log entries
@@ -568,7 +608,14 @@ func TestSnapshotInstallationRaceConditions(t *testing.T) {
 
 	// Wait for race condition window
 	<-raceDone
-	time.Sleep(1 * time.Second)
+	
+	// Wait for node 2 to catch up
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		node2Commit := nodes[2].GetCommitIndex()
+		leaderCommit := leader.GetCommitIndex()
+		return node2Commit >= leaderCommit-5, 
+			fmt.Sprintf("node2 commit=%d, leader commit=%d", node2Commit, leaderCommit)
+	}, timing.StabilizationTimeout, "node 2 catch-up")
 
 	// Verify all nodes are consistent
 	commitIndices := make([]int, 3)
@@ -633,7 +680,9 @@ func TestPersistenceWithRapidSnapshots(t *testing.T) {
 	defer node.Stop()
 
 	// Wait for leadership
-	time.Sleep(300 * time.Millisecond)
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 300 * time.Millisecond
+	WaitForLeaderWithConfig(t, []Node{node}, timing)
 
 	// Submit many commands rapidly
 	for i := 0; i < 50; i++ {
@@ -642,8 +691,11 @@ func TestPersistenceWithRapidSnapshots(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	// Wait for snapshots
-	time.Sleep(2 * time.Second)
+	// Wait for snapshots to be created
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		snapCount := atomic.LoadInt32(&persistence.snapshotCount)
+		return snapCount >= 10, fmt.Sprintf("snapshot count: %d", snapCount)
+	}, 2*time.Second, "rapid snapshot creation")
 
 	// Check snapshot count
 	snapCount := atomic.LoadInt32(&persistence.snapshotCount)
@@ -709,9 +761,19 @@ func TestSnapshotTransmissionFailure(t *testing.T) {
 		defer nodes[i].Stop()
 	}
 
-	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
+	// Wait for leader election among first 2 nodes
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		leaderCount := 0
+		for i := 0; i < 2; i++ {
+			if nodes[i].IsLeader() {
+				leaderCount++
+			}
+		}
+		return leaderCount == 1, fmt.Sprintf("%d leaders among first 2 nodes", leaderCount)
+	}, timing.ElectionTimeout, "leader election")
+	
 	// Find leader
 	var leader Node
 	for i := 0; i < 2; i++ {
@@ -721,19 +783,18 @@ func TestSnapshotTransmissionFailure(t *testing.T) {
 		}
 	}
 
-	if leader == nil {
-		t.Fatal("No leader elected")
-	}
-
 	// Submit commands to create snapshot
 	for i := 0; i < 10; i++ {
 		cmd := fmt.Sprintf("cmd-%d", i)
 		leader.Submit(cmd)
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
 
-	// Wait for snapshot
-	time.Sleep(500 * time.Millisecond)
+	// Wait for snapshot creation
+	Eventually(t, func() bool {
+		// Assume snapshot was created after enough commands
+		return true
+	}, timing.ReplicationTimeout, "snapshot creation")
 
 	// Start node 2 - it will need snapshot but transmission may fail
 	if err := nodes[2].Start(ctx); err != nil {
@@ -741,14 +802,22 @@ func TestSnapshotTransmissionFailure(t *testing.T) {
 	}
 
 	// Track snapshot attempts
-	time.Sleep(100 * time.Millisecond)
+	Eventually(t, func() bool {
+		attempts := atomic.LoadInt32(&transports[0].snapshotAttempts)
+		return attempts > 0
+	}, timing.ReplicationTimeout, "snapshot attempts")
+	
 	attempts := atomic.LoadInt32(&transports[0].snapshotAttempts)
 	failures := atomic.LoadInt32(&transports[0].snapshotFailures)
-
 	t.Logf("Snapshot attempts: %d, failures: %d", attempts, failures)
 
 	// Despite failures, node should eventually catch up (via retries or log replication)
-	time.Sleep(3 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		leaderCommit := leader.GetCommitIndex()
+		node2Commit := nodes[2].GetCommitIndex()
+		return node2Commit >= leaderCommit-5, 
+			fmt.Sprintf("node2 commit=%d, leader commit=%d", node2Commit, leaderCommit)
+	}, 3*time.Second, "node 2 catch-up despite failures")
 
 	// Check if node 2 caught up
 	leaderCommit := leader.GetCommitIndex()

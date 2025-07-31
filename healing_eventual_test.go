@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestClusterEventualHealing tests if a cluster heals without intervention
@@ -57,22 +59,13 @@ func TestClusterEventualHealing(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			leaderID = i
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	t.Logf("Initial leader is node %d", leaderID)
 
@@ -85,29 +78,31 @@ func TestClusterEventualHealing(t *testing.T) {
 		}
 		indices = append(indices, index)
 		t.Logf("Submitted command-%d at index %d", i+1, index)
-		time.Sleep(100 * time.Millisecond) // Small delay between commands
+		time.Sleep(10 * time.Millisecond) // Small delay between commands for ordering
 	}
 
 	// Wait for replication
-	time.Sleep(200 * time.Millisecond)
+	if len(indices) > 0 {
+		WaitForCommitIndexWithConfig(t, nodes, indices[len(indices)-1], timing)
+	}
 
 	// Now cause leadership changes by stopping the leader
 	t.Logf("Stopping leader node %d", leaderID)
 	nodes[leaderID].Stop()
 
 	// Wait for new leader
-	time.Sleep(1 * time.Second)
-
-	// Find new leader
 	var newLeader Node
 	var newLeaderID int
-	for i, node := range nodes {
-		if i != leaderID && node.IsLeader() {
-			newLeader = node
-			newLeaderID = i
-			break
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		for i, node := range nodes {
+			if i != leaderID && node.IsLeader() {
+				newLeader = node
+				newLeaderID = i
+				return true, fmt.Sprintf("new leader is node %d", i)
+			}
 		}
-	}
+		return false, "waiting for new leader"
+	}, timing.ElectionTimeout*2, "new leader election")
 
 	if newLeader == nil {
 		t.Fatal("No new leader elected")
@@ -125,15 +120,11 @@ func TestClusterEventualHealing(t *testing.T) {
 	// Now wait and see if all nodes converge WITHOUT any intervention
 	t.Log("Waiting for cluster to heal naturally...")
 
-	maxWaitTime := 30 * time.Second
-	checkInterval := 500 * time.Millisecond
-	startTime := time.Now()
-
 	var lastLogState string
 	stuckCount := 0
+	lastProgressTime := time.Now()
 
-	for time.Since(startTime) < maxWaitTime {
-		time.Sleep(checkInterval)
+	WaitForConditionWithProgress(t, func() (bool, string) {
 
 		// Get state of remaining nodes
 		states := make(map[int]string)
@@ -177,23 +168,12 @@ func TestClusterEventualHealing(t *testing.T) {
 			stuckCount++
 		} else {
 			stuckCount = 0
+			lastProgressTime = time.Now()
 		}
 		lastLogState = currentLogState
 
-		elapsed := time.Since(startTime)
-		if elapsed.Truncate(5*time.Second) == elapsed {
-			t.Logf("Time: %.1fs, States: %v, Converged: %v, AllHaveFinal: %v", 
-				elapsed.Seconds(), states, converged, allHaveFinal)
-		}
-
-		if converged && allHaveFinal {
-			t.Logf("SUCCESS: Cluster converged naturally after %.1f seconds", elapsed.Seconds())
-			return
-		}
-
-		// If stuck for too long, log more details
-		if stuckCount > 20 { // 10 seconds stuck
-			t.Logf("WARNING: Cluster appears stuck at state: %v", states)
+		// Log progress periodically
+		if time.Since(lastProgressTime) > 5*time.Second {
 			// Check who is leader
 			var currentLeaderID *int
 			for i, node := range nodes {
@@ -204,13 +184,17 @@ func TestClusterEventualHealing(t *testing.T) {
 				}
 			}
 			if currentLeaderID != nil {
-				t.Logf("Current leader: node %d", *currentLeaderID)
-			} else {
-				t.Log("No current leader!")
+				// Leader info already logged in status
 			}
+			lastProgressTime = time.Now()
 		}
-	}
 
-	t.Fatalf("Cluster did NOT heal naturally after %.1f seconds. Final state: %s", 
-		maxWaitTime.Seconds(), lastLogState)
+		if converged && allHaveFinal {
+			return true, fmt.Sprintf("cluster converged with all nodes having final command")
+		}
+
+		return false, fmt.Sprintf("states: %v, converged: %v, allHaveFinal: %v", states, converged, allHaveFinal)
+	}, 30*time.Second, "cluster natural healing")
+
+	t.Log("SUCCESS: Cluster converged naturally")
 }

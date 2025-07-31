@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestVoteDenialWithActiveLeader tests that followers deny votes when they have an active leader
@@ -57,7 +59,9 @@ func TestVoteDenialWithActiveLeader(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	WaitForLeaderWithConfig(t, nodes, timing)
 
 	var leaderID int
 	var followerNode Node
@@ -77,8 +81,8 @@ func TestVoteDenialWithActiveLeader(t *testing.T) {
 
 	// Submit a command to ensure followers are receiving heartbeats
 	leader := nodes[leaderID]
-	leader.Submit("test command")
-	time.Sleep(100 * time.Millisecond)
+	idx, _, _ := leader.Submit("test command")
+	WaitForCommitIndexWithConfig(t, nodes, idx, timing)
 
 	// Now simulate a disruptive candidate by manually sending RequestVote
 	// This simulates a node that hasn't heard from the leader trying to start an election
@@ -158,7 +162,9 @@ func TestVoteGrantingAfterTimeout(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	WaitForLeaderWithConfig(t, nodes, timing)
 
 	var leaderID int
 	for i, node := range nodes {
@@ -181,30 +187,31 @@ func TestVoteGrantingAfterTimeout(t *testing.T) {
 	t.Log("Leader partitioned from followers")
 
 	// Wait for election timeout
-	time.Sleep(400 * time.Millisecond)
+	Eventually(t, func() bool {
+		// Check if followers are ready to grant votes (after election timeout)
+		for i, node := range nodes {
+			if i != leaderID {
+				// Check if node has incremented term (indicating timeout)
+				if node.GetCurrentTerm() > nodes[leaderID].GetCurrentTerm() {
+					return true
+				}
+			}
+		}
+		return false
+	}, timing.ElectionTimeout*2, "followers to timeout")
 
 	// Now followers should grant votes to each other
 	// Find a follower and check if it can win an election
-	var newLeaderFound bool
-	for i := 0; i < 10; i++ {
-		time.Sleep(100 * time.Millisecond)
-
+	WaitForConditionWithProgress(t, func() (bool, string) {
 		for j, node := range nodes {
 			if j != leaderID && node.IsLeader() {
-				newLeaderFound = true
-				t.Logf("New leader elected: node %d", j)
-				break
+				return true, fmt.Sprintf("new leader elected: node %d", j)
 			}
 		}
-
-		if newLeaderFound {
-			break
-		}
-	}
-
-	if !newLeaderFound {
-		t.Error("Followers should elect a new leader after being partitioned from old leader")
-	}
+		return false, "waiting for new leader"
+	}, timing.ElectionTimeout*3, "new leader election")
+	
+	// If we got here, a new leader was elected successfully
 }
 
 // partitionableTransport is a transport that can simulate network partitions
@@ -365,7 +372,9 @@ func TestVoteDenialPreventsUnnecessaryElections(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	WaitForLeaderWithConfig(t, nodes, timing)
 
 	// Find leader
 	var leaderID int
@@ -414,7 +423,12 @@ func TestVoteDenialPreventsUnnecessaryElections(t *testing.T) {
 
 	// The isolated node will try to start elections but should be denied
 	// because other nodes have a more recent log from the current leader
-	time.Sleep(1 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		// Wait for isolated node to attempt election
+		isolatedTerm := nodes[isolatedNode].GetCurrentTerm()
+		return isolatedTerm > termsBeforeReconnect[isolatedNode], 
+			fmt.Sprintf("isolated node term: %d (was %d)", isolatedTerm, termsBeforeReconnect[isolatedNode])
+	}, timing.ElectionTimeout*2, "isolated node election attempt")
 
 	// Check if unnecessary elections were prevented
 	unnecessaryElections := false

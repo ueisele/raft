@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestBasicMembershipChange tests basic server addition and removal
@@ -60,20 +62,13 @@ func TestBasicMembershipChange(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	for _, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	// Test 1: Add a voting server
 	t.Log("Test 1: Adding voting server")
@@ -121,7 +116,7 @@ func TestBasicMembershipChange(t *testing.T) {
 	}
 
 	// Wait for configuration to propagate and new node to catch up
-	time.Sleep(2 * time.Second)
+	WaitForStableLeader(t, append(nodes, newNode), timing)
 	
 	// Submit a dummy command to force replication to the new node
 	// This ensures the new node's log is synchronized
@@ -131,21 +126,7 @@ func TestBasicMembershipChange(t *testing.T) {
 	}
 	
 	// Wait for the dummy command to be replicated to all nodes
-	maxWait := 10 * time.Second
-	start := time.Now()
-	for time.Since(start) < maxWait {
-		allCaughtUp := true
-		for _, node := range append(nodes, newNode) {
-			if node.GetCommitIndex() < dummyIndex {
-				allCaughtUp = false
-				break
-			}
-		}
-		if allCaughtUp {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	WaitForCommitIndexWithConfig(t, append(nodes, newNode), dummyIndex, timing)
 	
 	if newNode.GetCommitIndex() < dummyIndex {
 		t.Logf("Warning: New node not fully caught up. Commit index: %d, expected: %d", 
@@ -213,7 +194,8 @@ func TestBasicMembershipChange(t *testing.T) {
 	}
 
 	// Wait for configuration change
-	time.Sleep(500 * time.Millisecond)
+	markerIndex, _, _ := leader.Submit("config-marker")
+	WaitForCommitIndexWithConfig(t, nodes, markerIndex, timing)
 
 	// Verify non-voting server added
 	config := leader.GetConfiguration()
@@ -242,7 +224,8 @@ func TestBasicMembershipChange(t *testing.T) {
 	}
 
 	// Wait for configuration change
-	time.Sleep(500 * time.Millisecond)
+	markerIndex, _, _ = leader.Submit("remove-marker")
+	WaitForCommitIndexWithConfig(t, nodes, markerIndex, timing)
 
 	// Verify server removed
 	config = leader.GetConfiguration()
@@ -259,7 +242,7 @@ func TestBasicMembershipChange(t *testing.T) {
 	t.Log("Test 4: Testing quorum with new configuration")
 
 	// Wait for all nodes to catch up after configuration changes
-	time.Sleep(2 * time.Second)
+	WaitForStableLeader(t, []Node{nodes[0], nodes[1], newNode}, timing)
 	
 	// Ensure all nodes have caught up to the same log length
 	maxRetries := 10
@@ -297,12 +280,12 @@ func TestBasicMembershipChange(t *testing.T) {
 			t.Fatalf("Nodes failed to converge to same log length after %d retries: %v", maxRetries, logLengths)
 		}
 		
-		time.Sleep(1 * time.Second)
+		time.Sleep(100 * time.Millisecond) // Small delay between retries
 	}
 	
 	// Find current leader (may have changed during config operations)
 	leader = nil
-	var leaderID int
+	leaderID = -1
 	for i, node := range []Node{nodes[0], nodes[1], newNode} {
 		if node.IsLeader() {
 			leader = node
@@ -317,7 +300,7 @@ func TestBasicMembershipChange(t *testing.T) {
 	
 	if leader == nil {
 		// Wait a bit more for leader election
-		time.Sleep(2 * time.Second)
+		WaitForLeaderWithConfig(t, []Node{nodes[0], nodes[1], newNode}, timing)
 		for i, node := range []Node{nodes[0], nodes[1], newNode} {
 			if node.IsLeader() {
 				leader = node
@@ -370,7 +353,7 @@ func TestBasicMembershipChange(t *testing.T) {
 	// Increased retries and wait time to allow cluster to heal
 	maxWaitRetries := 30 // Increased from 10 to 30
 	for retry := 0; retry < maxWaitRetries; retry++ {
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond) // Small delay between checks
 		
 		// Check if all nodes have the command
 		allHaveCommand := true

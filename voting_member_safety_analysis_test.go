@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // silentTestLogger is a no-op logger for cleaner test output
@@ -71,22 +73,13 @@ func TestVotingMemberSafetyAnalysis(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			leaderID = i
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	t.Logf("Initial Configuration:")
 	t.Logf("- Leader: Node %d", leaderID)
@@ -106,7 +99,7 @@ func TestVotingMemberSafetyAnalysis(t *testing.T) {
 	}
 
 	// Wait for replication
-	time.Sleep(1 * time.Second)
+	WaitForCommitIndexWithConfig(t, nodes, 5, timing)
 	commitIndex := leader.GetCommitIndex()
 	t.Logf("  - Commit index: %d", commitIndex)
 	t.Log("")
@@ -155,7 +148,8 @@ func TestVotingMemberSafetyAnalysis(t *testing.T) {
 	t.Logf("  - Added node %d as VOTING member", newNodeID)
 
 	// Wait for configuration change
-	time.Sleep(500 * time.Millisecond)
+	markerIndex, _, _ := leader.Submit("config-marker")
+	WaitForCommitIndexWithConfig(t, nodes, markerIndex, timing)
 
 	t.Log("")
 	t.Log("Step 3: Current State Analysis")
@@ -215,7 +209,13 @@ func TestVotingMemberSafetyAnalysis(t *testing.T) {
 	t.Log("  - They form 2/4 nodes (50%) - enough to disrupt but not elect")
 
 	// Wait to see election attempts
-	time.Sleep(1 * time.Second)
+	Eventually(t, func() bool {
+		// Check if term has increased in minority partition
+		term1, _ := nodes[followerID].GetState()
+		term2, _ := newNode.GetState()
+		initialTerm, _ := leader.GetState()
+		return term1 > initialTerm || term2 > initialTerm
+	}, 1*time.Second, "election attempts in minority partition")
 
 	// Check node states
 	for i := 0; i < 4; i++ {
@@ -308,20 +308,13 @@ func TestDangerOfImmediateVoting(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	for _, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	// Build significant log
 	t.Log("Building log with 50 entries...")
@@ -331,7 +324,7 @@ func TestDangerOfImmediateVoting(t *testing.T) {
 	}
 
 	// Wait for replication
-	time.Sleep(2 * time.Second)
+	WaitForCommitIndexWithConfig(t, nodes, 50, timing)
 
 	originalCommit := leader.GetCommitIndex()
 	t.Logf("Original commit index: %d", originalCommit)
@@ -387,7 +380,8 @@ func TestDangerOfImmediateVoting(t *testing.T) {
 	}
 
 	// Wait for configuration changes
-	time.Sleep(1 * time.Second)
+	configMarker, _, _ := leader.Submit("config-complete")
+	WaitForCommitIndexWithConfig(t, nodes, configMarker, timing)
 
 	// Analyze the situation
 	config := leader.GetConfiguration()
@@ -416,7 +410,9 @@ func TestDangerOfImmediateVoting(t *testing.T) {
 		t.Logf("Submitted command at index %d", index)
 		
 		// Wait and check if it gets committed
-		time.Sleep(2 * time.Second)
+		Eventually(t, func() bool {
+			return leader.GetCommitIndex() > originalCommit
+		}, 2*time.Second, "new command to be committed")
 		
 		newCommit := leader.GetCommitIndex()
 		if newCommit == originalCommit {

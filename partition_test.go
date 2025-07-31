@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestAsymmetricPartition tests asymmetric network partitions where A can send to B but B cannot send to A
@@ -60,15 +62,11 @@ func TestAsymmetricPartition(t *testing.T) {
 	}
 
 	// Wait for initial leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find initial leader
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leaderID = i
-			break
-		}
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
+		t.Fatal("No leader elected")
 	}
 
 	t.Logf("Initial leader is node %d", leaderID)
@@ -89,7 +87,15 @@ func TestAsymmetricPartition(t *testing.T) {
 	t.Logf("Submitted command at index %d, term %d", index, term)
 
 	// Wait to see if the system remains stable
-	time.Sleep(1 * time.Second)
+	Consistently(t, func() bool {
+		leaderCount := 0
+		for _, node := range nodes {
+			if node.IsLeader() {
+				leaderCount++
+			}
+		}
+		return leaderCount == 1
+	}, 1*time.Second, "system should remain stable with one leader")
 
 	// Check if we still have exactly one leader
 	leaderCount := 0
@@ -108,7 +114,7 @@ func TestAsymmetricPartition(t *testing.T) {
 	transports[followerID].UnblockOutgoingTo(leaderID)
 
 	// Wait for system to stabilize
-	time.Sleep(500 * time.Millisecond)
+	WaitForStableLeader(t, nodes, timing)
 
 	// Verify all nodes eventually have the same commit index
 	var commitIndices []int
@@ -183,16 +189,11 @@ func TestCompletePartition(t *testing.T) {
 	}
 
 	// Wait for initial leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find initial leader
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leaderID = i
-			t.Logf("Initial leader is node %d", i)
-			break
-		}
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID >= 0 {
+		t.Logf("Initial leader is node %d", leaderID)
 	}
 
 	// Create partition: [0,1,2] | [3,4]
@@ -214,7 +215,23 @@ func TestCompletePartition(t *testing.T) {
 	}
 
 	// Wait for elections to settle
-	time.Sleep(1 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		// Count leaders in each partition
+		majorityLeaderCount := 0
+		minorityLeaderCount := 0
+		for i := 0; i <= 2; i++ {
+			if nodes[i].IsLeader() {
+				majorityLeaderCount++
+			}
+		}
+		for i := 3; i <= 4; i++ {
+			if nodes[i].IsLeader() {
+				minorityLeaderCount++
+			}
+		}
+		return majorityLeaderCount == 1 && minorityLeaderCount == 0,
+			fmt.Sprintf("majority leaders: %d, minority leaders: %d", majorityLeaderCount, minorityLeaderCount)
+	}, timing.ElectionTimeout*2, "partition leadership stabilization")
 
 	// Check leadership in both partitions
 	var majorityLeader int
@@ -275,7 +292,15 @@ func TestCompletePartition(t *testing.T) {
 	t.Log("Partition healed")
 
 	// Wait for convergence
-	time.Sleep(1 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		leaderCount := 0
+		for _, node := range nodes {
+			if node.IsLeader() {
+				leaderCount++
+			}
+		}
+		return leaderCount == 1, fmt.Sprintf("%d leaders after healing", leaderCount)
+	}, timing.ElectionTimeout*2, "single leader after partition healing")
 
 	// Should have exactly one leader
 	finalLeaderCount := 0

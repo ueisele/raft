@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestElectionSafety verifies that at most one leader can be elected in a given term
@@ -62,39 +64,41 @@ func TestElectionSafety(t *testing.T) {
 	mu := sync.Mutex{}
 
 	// Monitor for 5 seconds, checking leadership
-	done := make(chan bool)
-	go func() {
-		for i := 0; i < 50; i++ {
-			time.Sleep(100 * time.Millisecond)
+	startTime := time.Now()
+	for time.Since(startTime) < 5*time.Second {
+		mu.Lock()
+		for id, node := range nodes {
+			term, isLeader := node.GetState()
+			if isLeader {
+				if leadersPerTerm[term] == nil {
+					leadersPerTerm[term] = []int{}
+				}
 
-			mu.Lock()
-			for id, node := range nodes {
-				term, isLeader := node.GetState()
-				if isLeader {
-					if leadersPerTerm[term] == nil {
-						leadersPerTerm[term] = []int{}
-					}
-
-					// Check if this node is already recorded as leader for this term
-					found := false
-					for _, leaderID := range leadersPerTerm[term] {
-						if leaderID == id {
-							found = true
-							break
-						}
-					}
-
-					if !found {
-						leadersPerTerm[term] = append(leadersPerTerm[term], id)
+				// Check if this node is already recorded as leader for this term
+				found := false
+				for _, leaderID := range leadersPerTerm[term] {
+					if leaderID == id {
+						found = true
+						break
 					}
 				}
+
+				if !found {
+					leadersPerTerm[term] = append(leadersPerTerm[term], id)
+				}
 			}
+		}
+		mu.Unlock()
+		
+		// Log progress periodically
+		if time.Since(startTime).Truncate(time.Second) == time.Since(startTime) {
+			mu.Lock()
+			t.Logf("Monitoring leaders: found %d terms so far", len(leadersPerTerm))
 			mu.Unlock()
 		}
-		done <- true
-	}()
-
-	<-done
+		
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	// Verify election safety: at most one leader per term
 	mu.Lock()
@@ -159,22 +163,13 @@ func TestLogMatchingProperty(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			leaderID = i
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	// Submit multiple commands
 	commands := []string{"cmd1", "cmd2", "cmd3", "cmd4", "cmd5"}
@@ -187,7 +182,7 @@ func TestLogMatchingProperty(t *testing.T) {
 	}
 
 	// Wait for replication
-	time.Sleep(1 * time.Second)
+	WaitForCommitIndexWithConfig(t, nodes, len(commands), timing)
 
 	// Verify all nodes have the same commit index
 	commitIndices := make(map[int]int)
@@ -257,22 +252,13 @@ func TestLeaderCompleteness(t *testing.T) {
 	}
 
 	// Wait for initial leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find initial leader
-	var leader Node
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			leaderID = i
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No initial leader elected")
 	}
+	leader := nodes[leaderID]
 
 	t.Logf("Initial leader is node %d", leaderID)
 
@@ -287,7 +273,7 @@ func TestLeaderCompleteness(t *testing.T) {
 	}
 
 	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
+	WaitForCommitIndexWithConfig(t, nodes, 3, timing)
 
 	// Record the commit index
 	initialCommitIndex := leader.GetCommitIndex()
@@ -304,7 +290,14 @@ func TestLeaderCompleteness(t *testing.T) {
 	t.Log("Leader partitioned, waiting for new election")
 
 	// Wait for new leader election
-	time.Sleep(1 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		for i, node := range nodes {
+			if i != leaderID && node.IsLeader() {
+				return true, fmt.Sprintf("new leader elected: node %d", i)
+			}
+		}
+		return false, "waiting for new leader"
+	}, timing.ElectionTimeout*2, "new leader election")
 
 	// Find new leader
 	var newLeader Node

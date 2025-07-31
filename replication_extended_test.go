@@ -684,7 +684,9 @@ func TestReplicationUnderLoad(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	WaitForLeaderWithConfig(t, nodes, timing)
 
 	// Metrics
 	totalSubmitted := int64(0)

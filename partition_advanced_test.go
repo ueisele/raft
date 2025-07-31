@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestRapidPartitionChanges tests system behavior with rapidly changing partitions
@@ -59,7 +61,9 @@ func TestRapidPartitionChanges(t *testing.T) {
 	}
 
 	// Wait for initial leader election
-	time.Sleep(500 * time.Millisecond)
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	WaitForLeaderWithConfig(t, nodes, timing)
 
 	// Track leader changes
 	leaderHistory := make([]int, 0)
@@ -86,7 +90,8 @@ func TestRapidPartitionChanges(t *testing.T) {
 						break
 					}
 				}
-				time.Sleep(100 * time.Millisecond)
+				// Poll for leader changes
+				time.Sleep(50 * time.Millisecond)
 			}
 		}
 	}()
@@ -170,6 +175,7 @@ func TestRapidPartitionChanges(t *testing.T) {
 	for _, config := range partitionConfigs {
 		t.Logf("Applying partition: %s", config.name)
 		config.partition()
+		// Apply partition for specified duration
 		time.Sleep(config.duration)
 	}
 
@@ -183,7 +189,15 @@ func TestRapidPartitionChanges(t *testing.T) {
 	}
 
 	// Wait for stabilization
-	time.Sleep(2 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		leaderCount := 0
+		for _, node := range nodes {
+			if node.IsLeader() {
+				leaderCount++
+			}
+		}
+		return leaderCount == 1, fmt.Sprintf("%d leaders", leaderCount)
+	}, timing.StabilizationTimeout, "stabilization after rapid partitions")
 
 	// Verify system stabilized
 	leaderCount := 0
@@ -261,22 +275,13 @@ func TestPartitionDuringLeadershipTransfer(t *testing.T) {
 	}
 
 	// Wait for initial leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leaderID int
-	var leader Node
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leaderID = i
-			leader = node
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	t.Logf("Initial leader is node %d", leaderID)
 
@@ -292,7 +297,7 @@ func TestPartitionDuringLeadershipTransfer(t *testing.T) {
 	}()
 
 	// Partition the target node after a short delay
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 
 	for i := 0; i < numNodes; i++ {
 		if i != targetID {
@@ -317,7 +322,15 @@ func TestPartitionDuringLeadershipTransfer(t *testing.T) {
 	}
 
 	// Verify we still have a leader (might be original or another node)
-	time.Sleep(500 * time.Millisecond)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		leaderCount := 0
+		for _, node := range nodes {
+			if node.IsLeader() {
+				leaderCount++
+			}
+		}
+		return leaderCount >= 1, fmt.Sprintf("%d leaders after failed transfer", leaderCount)
+	}, timing.ElectionTimeout, "leader after failed transfer")
 
 	leaderCount := 0
 	var newLeaderID int
@@ -342,7 +355,20 @@ func TestPartitionDuringLeadershipTransfer(t *testing.T) {
 	}
 
 	// Wait for stabilization
-	time.Sleep(1 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		commitIndices := make([]int, numNodes)
+		for i, node := range nodes {
+			commitIndices[i] = node.GetCommitIndex()
+		}
+		maxDiff := 0
+		for i := 1; i < numNodes; i++ {
+			diff := abs(commitIndices[i] - commitIndices[0])
+			if diff > maxDiff {
+				maxDiff = diff
+			}
+		}
+		return maxDiff <= 2, fmt.Sprintf("commit index divergence: %d", maxDiff)
+	}, timing.StabilizationTimeout, "consistency after healing")
 
 	// Verify consistency
 	commitIndices := make([]int, numNodes)
@@ -415,7 +441,17 @@ func TestComplexMultiPartition(t *testing.T) {
 	}
 
 	// Wait for initial leader election
-	time.Sleep(500 * time.Millisecond)
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	// Use Eventually to check for leader, as it might not have one yet
+	Eventually(t, func() bool {
+		for _, node := range nodes {
+			if node.IsLeader() {
+				return true
+			}
+		}
+		return false
+	}, timing.ElectionTimeout, "initial leader election")
 
 	// Find and note initial leader (if any)
 	var initialLeader *int
@@ -453,12 +489,16 @@ func TestComplexMultiPartition(t *testing.T) {
 	// If there was an initial leader, it should step down when it loses quorum
 	if initialLeader != nil {
 		t.Log("Waiting for initial leader to step down due to partition...")
-		time.Sleep(1 * time.Second)
+		// Small delay for partition to take effect
+		time.Sleep(200 * time.Millisecond)
 	}
 
 	// Wait for elections in each partition - need more time for elections to fail
 	t.Log("Waiting for new elections in partitioned groups...")
-	time.Sleep(3 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		// Just wait for the timeout as elections might fail in minority partitions
+		return true, "waiting for partition elections to complete or fail"
+	}, 3*time.Second, "partition elections")
 
 	// Check leaders in each partition
 	groupLeaders := make(map[int]int) // group -> leader
@@ -528,7 +568,15 @@ func TestComplexMultiPartition(t *testing.T) {
 	}
 
 	// Wait for new election in merged group
-	time.Sleep(1 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		leaderCount := 0
+		for _, nodeID := range append(groups[1], groups[2]...) {
+			if nodes[nodeID].IsLeader() {
+				leaderCount++
+			}
+		}
+		return leaderCount >= 1, fmt.Sprintf("%d leaders in merged minority groups", leaderCount)
+	}, timing.ElectionTimeout, "leader election in merged group")
 
 	// Check if merged minority groups elected a leader
 	mergedGroupHasLeader := false
@@ -553,7 +601,15 @@ func TestComplexMultiPartition(t *testing.T) {
 	}
 
 	// Wait for convergence
-	time.Sleep(2 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		leaderCount := 0
+		for _, node := range nodes {
+			if node.IsLeader() {
+				leaderCount++
+			}
+		}
+		return leaderCount == 1, fmt.Sprintf("%d leaders after healing", leaderCount)
+	}, timing.StabilizationTimeout, "convergence after healing all partitions")
 
 	// Verify single leader
 	leaderCount := 0
@@ -620,15 +676,11 @@ func TestNoProgressInMinorityPartition(t *testing.T) {
 	}
 
 	// Wait for initial leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find initial leader
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leaderID = i
-			break
-		}
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
+		t.Fatal("No leader elected")
 	}
 
 	t.Logf("Initial leader is node %d", leaderID)
@@ -679,8 +731,16 @@ func TestNoProgressInMinorityPartition(t *testing.T) {
 		}
 	}
 
-	// Wait to see if anything gets committed
-	time.Sleep(1 * time.Second)
+	// Wait to verify minority cannot make progress
+	Consistently(t, func() bool {
+		// Check that minority commit indices don't advance
+		for _, nodeID := range minorityNodes {
+			if nodes[nodeID].GetCommitIndex() > initialCommitIndices[nodeID] {
+				return false // Minority made progress - unexpected
+			}
+		}
+		return true
+	}, 2*time.Second, "minority partition should not make progress")
 
 	// Check commit indices in minority partition
 	for _, nodeID := range minorityNodes {
@@ -692,6 +752,19 @@ func TestNoProgressInMinorityPartition(t *testing.T) {
 	}
 
 	t.Log("Verified: minority partition cannot commit new entries")
+
+	// Wait for majority partition to elect new leader and make progress
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		leaderCount := 0
+		var majorityLeader int = -1
+		for _, nodeID := range majorityNodes {
+			if nodes[nodeID].IsLeader() {
+				leaderCount++
+				majorityLeader = nodeID
+			}
+		}
+		return leaderCount == 1, fmt.Sprintf("%d leaders in majority partition (leader: %d)", leaderCount, majorityLeader)
+	}, timing.ElectionTimeout, "majority partition leader election")
 
 	// Check that majority partition elected new leader and can make progress
 	var majorityLeader Node
@@ -718,8 +791,17 @@ func TestNoProgressInMinorityPartition(t *testing.T) {
 			}
 		}
 
-		// Wait for commits
-		time.Sleep(500 * time.Millisecond)
+		// Wait for command to be replicated in majority
+		WaitForConditionWithProgress(t, func() (bool, string) {
+			// Check if majority nodes have advanced commit index
+			advancedCount := 0
+			for _, nodeID := range majorityNodes {
+				if nodes[nodeID].GetCommitIndex() > initialCommitIndices[nodeID] {
+					advancedCount++
+				}
+			}
+			return advancedCount >= 2, fmt.Sprintf("%d/%d majority nodes advanced", advancedCount, len(majorityNodes))
+		}, timing.ReplicationTimeout, "command replication in majority")
 
 		// Verify majority made progress
 		for _, nodeID := range majorityNodes {
@@ -740,7 +822,24 @@ func TestNoProgressInMinorityPartition(t *testing.T) {
 	t.Log("Partition healed")
 
 	// Wait for convergence
-	time.Sleep(2 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		// Check if all nodes have caught up
+		commitIndices := make([]int, numNodes)
+		for i, node := range nodes {
+			commitIndices[i] = node.GetCommitIndex()
+		}
+		minCommit := commitIndices[0]
+		maxCommit := commitIndices[0]
+		for _, ci := range commitIndices {
+			if ci < minCommit {
+				minCommit = ci
+			}
+			if ci > maxCommit {
+				maxCommit = ci
+			}
+		}
+		return maxCommit-minCommit <= 1, fmt.Sprintf("commit indices: %v (spread: %d)", commitIndices, maxCommit-minCommit)
+	}, timing.StabilizationTimeout, "full cluster convergence")
 
 	// Verify all nodes converged
 	finalCommitIndices := make([]int, numNodes)

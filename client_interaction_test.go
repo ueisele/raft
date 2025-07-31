@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestClientRedirection tests that non-leaders redirect clients to the leader
@@ -56,8 +58,10 @@ func TestClientRedirection(t *testing.T) {
 		defer node.Stop()
 	}
 
-	// Wait for leader election - 5 nodes need more time to stabilize
-	time.Sleep(1 * time.Second)
+	// Wait for leader election
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 1 * time.Second
+	WaitForLeaderWithConfig(t, nodes, timing)
 
 	// Find leader and followers
 	var leaderID int
@@ -155,8 +159,10 @@ func TestConcurrentClientRequests(t *testing.T) {
 		defer node.Stop()
 	}
 
-	// Wait for leader election - 5 nodes need more time to stabilize
-	time.Sleep(2 * time.Second)
+	// Wait for leader election
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 1 * time.Second
+	WaitForLeaderWithConfig(t, nodes, timing)
 
 	// Find leader
 	var leader Node
@@ -235,7 +241,7 @@ func TestConcurrentClientRequests(t *testing.T) {
 	t.Logf("Successfully submitted %d concurrent commands", successCount)
 
 	// Wait for replication
-	time.Sleep(1 * time.Second)
+	WaitForCommitIndexWithConfig(t, nodes, expectedCommands, timing)
 
 	// Verify all nodes have the same commit index eventually
 	commitIndices := make([]int, numNodes)
@@ -302,7 +308,9 @@ func TestClientTimeouts(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(1 * time.Second)
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 1 * time.Second
+	WaitForLeaderWithConfig(t, nodes, timing)
 
 	// Find leader
 	var leaderID int = -1
@@ -328,7 +336,7 @@ func TestClientTimeouts(t *testing.T) {
 	t.Logf("Submitted command-1 at index %d", index1)
 	
 	// Wait for initial command to replicate
-	time.Sleep(500 * time.Millisecond)
+	WaitForCommitIndexWithConfig(t, nodes, index1, timing)
 	
 	// Verify initial command is committed before partitioning
 	initialCommit := leader.GetCommitIndex()
@@ -355,8 +363,8 @@ func TestClientTimeouts(t *testing.T) {
 	}
 	t.Logf("Submitted command-2-partitioned at index %d (won't be committed)", index2)
 
-	// Wait a bit
-	time.Sleep(200 * time.Millisecond)
+	// Wait a bit for leader to realize it's partitioned
+	time.Sleep(100 * time.Millisecond) // Short delay for partition detection
 
 	// Check commit indices - partitioned command shouldn't be committed
 	leaderCommit := leader.GetCommitIndex()
@@ -389,7 +397,7 @@ func TestClientTimeouts(t *testing.T) {
 	}
 
 	// Wait for replication and potential re-election
-	time.Sleep(1 * time.Second)
+	WaitForStableLeader(t, nodes, timing)
 
 	// Find current leader after healing (may have changed)
 	var currentLeader Node

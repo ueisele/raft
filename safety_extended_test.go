@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestLeaderAppendOnly verifies that a leader only appends to its log, never overwrites
@@ -57,22 +59,13 @@ func TestLeaderAppendOnly(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			leaderID = i
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	t.Logf("Leader is node %d", leaderID)
 
@@ -116,7 +109,8 @@ func TestLeaderAppendOnly(t *testing.T) {
 		}
 
 		t.Logf("Submitted %s at index %d, term %d", cmd, index, term)
-		time.Sleep(100 * time.Millisecond)
+		// Small delay between commands
+		time.Sleep(50 * time.Millisecond)
 
 		snapshot := captureLog()
 		logHistory = append(logHistory, snapshot)
@@ -198,7 +192,9 @@ func TestStateMachineSafety(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	WaitForLeaderWithConfig(t, nodes, timing)
 
 	// Submit many commands
 	commandCount := 20
@@ -221,7 +217,7 @@ func TestStateMachineSafety(t *testing.T) {
 		if !isLeader {
 			// Leader changed, retry
 			i--
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond) // Small delay before retry
 			continue
 		}
 
@@ -230,7 +226,15 @@ func TestStateMachineSafety(t *testing.T) {
 	}
 
 	// Wait for all commands to be applied
-	time.Sleep(2 * time.Second)
+	// Find the last command's index by looking at the leader's log
+	var lastIndex int
+	for _, node := range nodes {
+		if node.IsLeader() {
+			lastIndex = node.GetLogLength() - 1
+			break
+		}
+	}
+	WaitForCommitIndexWithConfig(t, nodes, lastIndex, timing)
 
 	// Verify all state machines have same state
 	// Note: Without commands field, we can't verify command order
@@ -321,15 +325,11 @@ func TestLeaderElectionRestriction(t *testing.T) {
 	}
 
 	// Wait for initial leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leaderID = i
-			break
-		}
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
+		t.Fatal("No leader elected")
 	}
 
 	t.Logf("Initial leader is node %d", leaderID)
@@ -345,7 +345,7 @@ func TestLeaderElectionRestriction(t *testing.T) {
 	}
 
 	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
+	WaitForCommitIndexWithConfig(t, nodes, 5, timing)
 
 	// Partition node 4 before more commands are submitted
 	for i := 0; i < numNodes; i++ {
@@ -367,7 +367,14 @@ func TestLeaderElectionRestriction(t *testing.T) {
 	}
 
 	// Wait for replication among non-partitioned nodes
-	time.Sleep(500 * time.Millisecond)
+	// Get the last command index from the leader
+	var lastCmdIndex int
+	if nodes[leaderID] != nil && nodes[leaderID].IsLeader() {
+		lastCmdIndex = nodes[leaderID].GetLogLength() - 1
+	}
+	// Wait for non-partitioned nodes to catch up
+	nonPartitioned := []Node{nodes[0], nodes[1], nodes[2], nodes[3]}
+	WaitForCommitIndexWithConfig(t, nonPartitioned, lastCmdIndex, timing)
 
 	// Record log lengths
 	logLengths := make([]int, numNodes)
@@ -399,7 +406,16 @@ func TestLeaderElectionRestriction(t *testing.T) {
 	t.Log("Created new partition with outdated node 4 in majority")
 
 	// Wait for new election
-	time.Sleep(1 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		// Check if a new leader emerged in the new majority
+		leaderCount := 0
+		for i, node := range nodes {
+			if i != leaderID && i != 0 && node.IsLeader() {
+				leaderCount++
+			}
+		}
+		return leaderCount >= 1, fmt.Sprintf("%d leaders in new majority", leaderCount)
+	}, timing.ElectionTimeout*2, "new leader election after partition")
 
 	// Check who became leader in majority partition
 	// Node 4 should NOT be able to become leader due to outdated log

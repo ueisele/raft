@@ -188,12 +188,20 @@ func (c *TestCluster) SubmitCommand(command interface{}) (int, int, bool) {
 
 // WaitForLeaderElection waits for a leader to be elected
 func (c *TestCluster) WaitForLeaderElection(t *testing.T, timeout time.Duration) int {
-	return WaitForLeader(t, c.Nodes, timeout)
+	config := &TimingConfig{
+		PollInterval:    10 * time.Millisecond,
+		ElectionTimeout: timeout,
+	}
+	return WaitForLeaderWithConfig(t, c.Nodes, config)
 }
 
 // WaitForReplication waits for a command to be replicated to all nodes
 func (c *TestCluster) WaitForReplication(t *testing.T, minIndex int, timeout time.Duration) {
-	WaitForCommitIndex(t, c.Nodes, minIndex, timeout)
+	config := &TimingConfig{
+		PollInterval:       10 * time.Millisecond,
+		ReplicationTimeout: timeout,
+	}
+	WaitForCommitIndexWithConfig(t, c.Nodes, minIndex, config)
 }
 
 // GetAppliedCount returns the total number of applied entries across all nodes

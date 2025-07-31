@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestDebugMultiNode tests multi-node with detailed logging
@@ -60,7 +62,14 @@ func TestDebugMultiNode(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(1 * time.Second)
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 1 * time.Second
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID >= 0 {
+		logger.Info("Leader elected: node %d", leaderID)
+	} else {
+		logger.Warn("No leader elected")
+	}
 
 	// Check final state
 	for i, node := range nodes {

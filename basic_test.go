@@ -41,25 +41,33 @@ func TestBasicNodeCreation(t *testing.T) {
 	}
 	defer node.Stop()
 
-	// Give it time to run multiple election cycles
-	for i := 0; i < 10; i++ {
-		time.Sleep(100 * time.Millisecond)
-		term, isLeader := node.GetState()
-		t.Logf("Attempt %d: term=%d, isLeader=%v", i+1, term, isLeader)
-		if isLeader {
-			t.Log("Node became leader!")
-			return
+	// Wait for the single node to become leader using proper synchronization
+	// Single node should become leader quickly (within a few election timeouts)
+	timeout := 2 * config.ElectionTimeoutMax
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	attempts := 0
+	for time.Now().Before(deadline) {
+		select {
+		case <-ticker.C:
+			attempts++
+			term, isLeader := node.GetState()
+			if isLeader {
+				t.Logf("Node became leader after %d attempts (term=%d)", attempts, term)
+				return
+			}
+			if attempts%10 == 0 {
+				t.Logf("Still waiting... attempt %d: term=%d, isLeader=%v", attempts, term, isLeader)
+			}
 		}
 	}
 
-	// Final check
+	// If we get here, node failed to become leader
 	term, isLeader := node.GetState()
-	t.Logf("Final state: term=%d, isLeader=%v", term, isLeader)
-
-	// Single node should become leader
-	if !isLeader {
-		t.Error("Single node should become leader")
-	}
+	t.Fatalf("Single node failed to become leader within %v. Final state: term=%d, isLeader=%v", 
+		timeout, term, isLeader)
 }
 
 // Simple test transport

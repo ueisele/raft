@@ -29,7 +29,8 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 	}
 
 	// Give the cluster time to stabilize
-	time.Sleep(500 * time.Millisecond)
+	timing := test.DefaultTimingConfig()
+	test.WaitForStableLeader(t, cluster.Nodes, timing)
 
 	// Find current leader (may have changed)
 	var leader raft.Node
@@ -54,7 +55,7 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 	err2Ch := make(chan error, 1)
 	go func() {
 		// Give the first request a small head start
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) // Small delay to ensure goroutine starts
 		err := leader.AddServer(4, "server-4:8004", true)
 		err2Ch <- err
 	}()
@@ -103,8 +104,18 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 
 	t.Logf("First error: %v, Second error: %v", err1, err2)
 
-	// Wait for config to stabilize
-	time.Sleep(1 * time.Second)
+	// Wait for config to stabilize (both operations have already completed)
+	// We just need to wait a bit for the system to stabilize
+	test.WaitForConditionWithProgress(t, func() (bool, string) {
+		// Check if cluster has stabilized by checking leader status
+		leaderCount := 0
+		for _, node := range cluster.Nodes {
+			if node.IsLeader() {
+				leaderCount++
+			}
+		}
+		return leaderCount >= 1, fmt.Sprintf("leader count: %d", leaderCount)
+	}, timing.StabilizationTimeout, "cluster stabilization")
 
 	// Find current leader again
 	leader = nil
@@ -149,7 +160,10 @@ func TestTwoNodeElectionDynamics(t *testing.T) {
 	cluster.DisconnectNode(follower)
 
 	// Leader should maintain leadership (has majority with itself)
-	time.Sleep(1 * time.Second)
+	timing := test.DefaultTimingConfig()
+	test.Eventually(t, func() bool {
+		return cluster.Nodes[oldLeader].IsLeader()
+	}, timing.ElectionTimeout, "leader should maintain leadership")
 	if !cluster.Nodes[oldLeader].IsLeader() {
 		t.Error("Leader should maintain leadership when follower disconnects")
 	}
@@ -158,7 +172,10 @@ func TestTwoNodeElectionDynamics(t *testing.T) {
 	cluster.DisconnectNode(oldLeader)
 
 	// Wait for election timeout - nodes might still think they're leader briefly
-	time.Sleep(2 * time.Second)
+	test.WaitForConditionWithProgress(t, func() (bool, string) {
+		// Just wait for timeout as nodes will eventually realize they can't reach quorum
+		return true, "waiting for nodes to realize isolation"
+	}, timing.ElectionTimeout*2, "nodes to realize isolation")
 	
 	// In a 2-node cluster with both disconnected, neither can form a majority
 	// But they might still report being leader until they realize they can't reach anyone
@@ -172,7 +189,9 @@ func TestTwoNodeElectionDynamics(t *testing.T) {
 	cluster.ReconnectNode(1)
 
 	// Should elect a leader again
-	newLeaderID := test.WaitForLeader(t, cluster.Nodes, 3*time.Second)
+	newTiming := test.DefaultTimingConfig()
+	newTiming.ElectionTimeout = 3 * time.Second
+	newLeaderID := test.WaitForLeaderWithConfig(t, cluster.Nodes, newTiming)
 	if newLeaderID < 0 {
 		t.Fatal("Should elect leader after reconnection")
 	}
@@ -216,7 +235,14 @@ func TestLeaderSnapshotDuringConfigChange(t *testing.T) {
 	}
 
 	// Wait for snapshot
-	time.Sleep(2 * time.Second)
+	test.WaitForConditionWithProgress(t, func() (bool, string) {
+		for i, persistence := range cluster.Persistences {
+			if persistence != nil && persistence.HasSnapshot() {
+				return true, fmt.Sprintf("node %d created snapshot", i)
+			}
+		}
+		return false, "waiting for snapshot creation"
+	}, 10*time.Second, "snapshot creation")
 
 	// Verify snapshot was created
 	snapshotCreated := false
@@ -263,7 +289,15 @@ func TestStaleConfigEntriesAfterPartition(t *testing.T) {
 	}
 
 	// Wait for new leader in majority
-	time.Sleep(3 * time.Second)
+	timing := test.DefaultTimingConfig()
+	test.WaitForConditionWithProgress(t, func() (bool, string) {
+		for _, id := range majorityGroup {
+			if cluster.Nodes[id].IsLeader() {
+				return true, fmt.Sprintf("node %d elected in majority", id)
+			}
+		}
+		return false, "waiting for leader in majority partition"
+	}, timing.ElectionTimeout*2, "leader election in majority")
 
 	// Find new leader in majority
 	var newLeader int = -1
@@ -291,7 +325,25 @@ func TestStaleConfigEntriesAfterPartition(t *testing.T) {
 	cluster.HealPartition(minorityGroup, majorityGroup)
 
 	// Wait for reconciliation
-	time.Sleep(2 * time.Second)
+	test.WaitForConditionWithProgress(t, func() (bool, string) {
+		// Check if all nodes have converged
+		commitIndices := make([]int, len(cluster.Nodes))
+		for i, node := range cluster.Nodes {
+			commitIndices[i] = node.GetCommitIndex()
+		}
+		// Check if they're close
+		minCommit := commitIndices[0]
+		maxCommit := commitIndices[0]
+		for _, ci := range commitIndices {
+			if ci < minCommit {
+				minCommit = ci
+			}
+			if ci > maxCommit {
+				maxCommit = ci
+			}
+		}
+		return maxCommit-minCommit <= 2, fmt.Sprintf("commit spread: %d", maxCommit-minCommit)
+	}, timing.StabilizationTimeout, "cluster reconciliation")
 
 	// Verify all nodes converged on majority's config
 	// (This would need access to configuration state to fully verify)
@@ -315,7 +367,9 @@ func TestRapidLeadershipChanges(t *testing.T) {
 	// Cause rapid leader changes by disconnecting leaders
 	for i := 0; i < 5; i++ {
 		// Wait for leader
-		leaderID := test.WaitForLeader(t, cluster.Nodes, 2*time.Second)
+		timing := test.DefaultTimingConfig()
+		timing.ElectionTimeout = 2 * time.Second
+		leaderID := test.WaitForLeaderWithConfig(t, cluster.Nodes, timing)
 		if leaderID < 0 {
 			t.Fatal("No leader elected")
 		}
@@ -327,8 +381,8 @@ func TestRapidLeadershipChanges(t *testing.T) {
 		// Disconnect current leader
 		cluster.DisconnectNode(leaderID)
 		
-		// Wait briefly
-		time.Sleep(500 * time.Millisecond)
+		// Wait briefly before next iteration
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	// Reconnect all nodes
@@ -337,10 +391,13 @@ func TestRapidLeadershipChanges(t *testing.T) {
 	}
 
 	// Wait for stability
-	time.Sleep(2 * time.Second)
+	stabilityTiming := test.DefaultTimingConfig()
+	test.WaitForStableLeader(t, cluster.Nodes, stabilityTiming)
 
 	// Verify final leader
-	finalLeader := test.WaitForLeader(t, cluster.Nodes, 2*time.Second)
+	finalTiming := test.DefaultTimingConfig()
+	finalTiming.ElectionTimeout = 2 * time.Second
+	finalLeader := test.WaitForLeaderWithConfig(t, cluster.Nodes, finalTiming)
 	if finalLeader < 0 {
 		t.Fatal("No final leader elected")
 	}
@@ -416,12 +473,13 @@ func TestAsymmetricPartitionVariants(t *testing.T) {
 					if !isLeader {
 						break
 					}
-					time.Sleep(100 * time.Millisecond)
+					time.Sleep(50 * time.Millisecond) // Small delay between commands
 				}
 			}
 
 			// Wait to see effects
-			time.Sleep(2 * time.Second)
+			timing := test.DefaultTimingConfig()
+			test.WaitForStableLeader(t, cluster.Nodes, timing)
 
 			// Check state
 			leaderCount := 0
@@ -440,10 +498,15 @@ func TestAsymmetricPartitionVariants(t *testing.T) {
 			}
 
 			// Wait for recovery
-			time.Sleep(2 * time.Second)
+			test.WaitForConditionWithProgress(t, func() (bool, string) {
+				// Give time for cluster to stabilize after healing  
+				return true, "waiting for cluster stabilization"
+			}, timing.StabilizationTimeout, "cluster recovery")
 
 			// Should have exactly one leader after recovery
-			finalLeader := test.WaitForLeader(t, cluster.Nodes, 2*time.Second)
+			finalTiming := test.DefaultTimingConfig()
+	finalTiming.ElectionTimeout = 2 * time.Second
+	finalLeader := test.WaitForLeaderWithConfig(t, cluster.Nodes, finalTiming)
 			if finalLeader < 0 {
 				t.Error("No leader after removing asymmetric partition")
 			}
@@ -478,7 +541,15 @@ func TestConfigChangeTimeoutRecovery(t *testing.T) {
 	cluster.DisconnectNode(leaderID)
 
 	// Wait for new leader
-	time.Sleep(2 * time.Second)
+	timing := test.DefaultTimingConfig()
+	test.WaitForConditionWithProgress(t, func() (bool, string) {
+		for i, node := range cluster.Nodes {
+			if i != leaderID && node.IsLeader() {
+				return true, fmt.Sprintf("node %d became new leader", i)
+			}
+		}
+		return false, "waiting for new leader election"
+	}, timing.ElectionTimeout*2, "new leader after partition")
 	
 	// Find new leader
 	var newLeader int = -1
@@ -503,7 +574,25 @@ func TestConfigChangeTimeoutRecovery(t *testing.T) {
 	cluster.ReconnectNode(leaderID)
 
 	// Wait for reconciliation
-	time.Sleep(2 * time.Second)
+	test.WaitForConditionWithProgress(t, func() (bool, string) {
+		// Check if all nodes have converged
+		commitIndices := make([]int, len(cluster.Nodes))
+		for i, node := range cluster.Nodes {
+			commitIndices[i] = node.GetCommitIndex()
+		}
+		// Check if they're close
+		minCommit := commitIndices[0]
+		maxCommit := commitIndices[0]
+		for _, ci := range commitIndices {
+			if ci < minCommit {
+				minCommit = ci
+			}
+			if ci > maxCommit {
+				maxCommit = ci
+			}
+		}
+		return maxCommit-minCommit <= 1, fmt.Sprintf("commit spread: %d", maxCommit-minCommit)
+	}, timing.StabilizationTimeout, "cluster reconciliation after reconnect")
 
 	// Verify consistency
 	cluster.VerifyConsistency(t)

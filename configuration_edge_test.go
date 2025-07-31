@@ -2,9 +2,12 @@ package raft
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestSimultaneousConfigChanges tests handling of concurrent configuration changes
@@ -56,20 +59,13 @@ func TestSimultaneousConfigChanges(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	for _, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	// Try to add multiple servers simultaneously
 	var wg sync.WaitGroup
@@ -157,22 +153,13 @@ func TestConfigChangesDuringPartition(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leaderID int
-	var leader Node
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leaderID = i
-			leader = node
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	t.Logf("Leader is node %d", leaderID)
 
@@ -205,20 +192,14 @@ func TestConfigChangesDuringPartition(t *testing.T) {
 	t.Log("Partition healed")
 
 	// Wait for stabilization
-	time.Sleep(1 * time.Second)
+	WaitForStableLeader(t, nodes, timing)
 
 	// Find new leader (might have changed)
-	var newLeader Node
-	for _, node := range nodes {
-		if node.IsLeader() {
-			newLeader = node
-			break
-		}
-	}
-
-	if newLeader == nil {
+	newLeaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if newLeaderID < 0 {
 		t.Fatal("No leader after healing partition")
 	}
+	newLeader := nodes[newLeaderID]
 
 	// Now configuration change should succeed with a different server
 	// (server 5 might still be pending from the previous attempt)
@@ -279,22 +260,13 @@ func TestRemoveCurrentLeader(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leaderID int
-	var leader Node
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leaderID = i
-			leader = node
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	t.Logf("Current leader is node %d", leaderID)
 
@@ -305,7 +277,9 @@ func TestRemoveCurrentLeader(t *testing.T) {
 	}
 
 	// Wait for configuration to be committed and propagated
-	time.Sleep(1 * time.Second)
+	// Submit a marker command to ensure config is committed
+	markerIndex, _, _ := leader.Submit("config-marker")
+	WaitForCommitIndexWithConfig(t, nodes, markerIndex, timing)
 	
 	// Check that configuration has been updated on all nodes
 	for i, node := range nodes {
@@ -320,7 +294,19 @@ func TestRemoveCurrentLeader(t *testing.T) {
 
 	// Wait for transition and new election
 	t.Log("Waiting for new leader election...")
-	time.Sleep(2 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		// Check if old leader stepped down
+		if nodes[leaderID].IsLeader() {
+			return false, "old leader still active"
+		}
+		// Check for new leader
+		for i, node := range nodes {
+			if i != leaderID && node.IsLeader() {
+				return true, fmt.Sprintf("node %d became new leader", i)
+			}
+		}
+		return false, "waiting for new leader"
+	}, timing.ElectionTimeout*2, "leadership transition")
 
 	// Check that removed leader is no longer leader
 	if nodes[leaderID].IsLeader() {
@@ -341,7 +327,14 @@ func TestRemoveCurrentLeader(t *testing.T) {
 
 	if !newLeaderFound {
 		// Let's give it more time and check again
-		time.Sleep(2 * time.Second)
+		WaitForConditionWithProgress(t, func() (bool, string) {
+			for i, node := range nodes {
+				if i != leaderID && node.IsLeader() {
+					return true, fmt.Sprintf("node %d elected as leader", i)
+				}
+			}
+			return false, "still waiting for new leader"
+		}, timing.ElectionTimeout*2, "new leader election after removal")
 		for i, node := range nodes {
 			if i != leaderID && node.IsLeader() {
 				newLeaderFound = true
@@ -425,20 +418,13 @@ func TestAddNonVotingServer(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	for _, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	// Add non-voting server
 	err := leader.AddServer(3, "server-3:8003", false)
@@ -447,7 +433,8 @@ func TestAddNonVotingServer(t *testing.T) {
 	}
 
 	// Wait for configuration change to be committed
-	time.Sleep(1 * time.Second)
+	markerIndex, _, _ := leader.Submit("config-commit-marker")
+	WaitForCommitIndexWithConfig(t, nodes, markerIndex, timing)
 
 	// Get configuration
 	config := leader.GetConfiguration()
@@ -476,7 +463,7 @@ func TestAddNonVotingServer(t *testing.T) {
 	}
 
 	// Wait a bit more for configuration to stabilize across all nodes
-	time.Sleep(1 * time.Second)
+	WaitForStableLeader(t, nodes, timing)
 
 	// Re-check who is the leader in case it changed
 	var currentLeader Node
@@ -505,18 +492,12 @@ func TestAddNonVotingServer(t *testing.T) {
 	t.Logf("Submitted command at index %d", index)
 
 	// Wait for replication with retries
-	committed := false
-	for i := 0; i < 10; i++ {
-		time.Sleep(500 * time.Millisecond)
+	WaitForConditionWithProgress(t, func() (bool, string) {
 		commitIndex := leader.GetCommitIndex()
-		t.Logf("Attempt %d: commit index = %d, waiting for index %d", i+1, commitIndex, index)
-		if commitIndex >= index {
-			committed = true
-			break
-		}
-	}
+		return commitIndex >= index, fmt.Sprintf("commit index = %d, waiting for %d", commitIndex, index)
+	}, timing.ReplicationTimeout, "command replication")
 
-	if !committed {
+	if leader.GetCommitIndex() < index {
 		t.Errorf("Command not committed with non-voting server. Index: %d, Final Commit: %d",
 			index, leader.GetCommitIndex())
 	}

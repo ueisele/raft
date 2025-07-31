@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestNewVotingServerSafety demonstrates the safety issue with immediately 
@@ -59,20 +61,13 @@ func TestNewVotingServerSafety(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	for _, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	// Submit some commands to build up the log
 	for i := 0; i < 10; i++ {
@@ -84,7 +79,7 @@ func TestNewVotingServerSafety(t *testing.T) {
 	}
 
 	// Wait for replication
-	time.Sleep(1 * time.Second)
+	WaitForCommitIndexWithConfig(t, nodes, 10, timing)
 
 	// Verify all nodes have the commands
 	for i, node := range nodes {
@@ -137,7 +132,8 @@ func TestNewVotingServerSafety(t *testing.T) {
 	}
 
 	// Wait for configuration change to propagate
-	time.Sleep(1 * time.Second)
+	markerIndex, _, _ := leader.Submit("config-marker")
+	WaitForCommitIndexWithConfig(t, nodes, markerIndex, timing)
 
 	// Check new node's state
 	newNodeCommitIndex := newNode.GetCommitIndex()
@@ -149,7 +145,17 @@ func TestNewVotingServerSafety(t *testing.T) {
 	t.Log("Stopped current leader to trigger election")
 
 	// Wait for new election
-	time.Sleep(1 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		for i, node := range []Node{nodes[0], nodes[1], nodes[2], newNode} {
+			if i == currentLeaderID {
+				continue
+			}
+			if node.IsLeader() {
+				return true, fmt.Sprintf("node %d is new leader", i)
+			}
+		}
+		return false, "waiting for new leader"
+	}, timing.ElectionTimeout*2, "new leader election")
 
 	// Check who is the new leader
 	var newLeader Node
@@ -254,20 +260,13 @@ func TestSaferApproach(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	for _, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	// Submit some commands
 	for i := 0; i < 10; i++ {
@@ -275,7 +274,7 @@ func TestSaferApproach(t *testing.T) {
 	}
 
 	// Wait for replication
-	time.Sleep(1 * time.Second)
+	WaitForCommitIndexWithConfig(t, nodes, 10, timing)
 
 	leaderCommitIndex := leader.GetCommitIndex()
 	t.Logf("Leader commit index: %d", leaderCommitIndex)
@@ -324,18 +323,11 @@ func TestSaferApproach(t *testing.T) {
 	t.Log("Added new server as non-voting member")
 
 	// Wait for the new server to catch up
-	for i := 0; i < 20; i++ {
-		time.Sleep(500 * time.Millisecond)
+	WaitForConditionWithProgress(t, func() (bool, string) {
 		newNodeCommitIndex := newNode.GetCommitIndex()
-		t.Logf("New node commit index: %d (leader: %d)", newNodeCommitIndex, leaderCommitIndex)
-		
-		if newNodeCommitIndex >= leaderCommitIndex {
-			t.Log("New node has caught up!")
-			// In a real implementation, you would now promote to voting member
-			// This could be done automatically or through another configuration change
-			break
-		}
-	}
+		return newNodeCommitIndex >= leaderCommitIndex, 
+			fmt.Sprintf("new node commit: %d, leader commit: %d", newNodeCommitIndex, leaderCommitIndex)
+	}, timing.ReplicationTimeout*2, "new node to catch up")
 
 	// Verify the new node cannot affect elections while non-voting
 	config := leader.GetConfiguration()

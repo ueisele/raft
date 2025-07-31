@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestClusterHealing verifies that a cluster eventually converges after disruptions
@@ -57,22 +59,13 @@ func TestClusterHealing(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			leaderID = i
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	t.Logf("Initial leader is node %d", leaderID)
 
@@ -83,25 +76,26 @@ func TestClusterHealing(t *testing.T) {
 	}
 	t.Logf("Submitted command-1 at index %d, term %d", index1, term1)
 
-	// Wait a bit for replication
-	time.Sleep(200 * time.Millisecond)
+	// Wait for replication
+	WaitForCommitIndexWithConfig(t, nodes, index1, timing)
 
 	// Force leader to step down by stopping it
 	t.Logf("Stopping leader node %d", leaderID)
 	nodes[leaderID].Stop()
 
 	// Wait for new leader election
-	time.Sleep(1 * time.Second)
-
-	// Find new leader
-	var newLeader Node
-	var newLeaderID int
+	remainingNodes := []Node{}
 	for i, node := range nodes {
-		if i != leaderID && node.IsLeader() {
-			newLeader = node
-			newLeaderID = i
-			break
+		if i != leaderID {
+			remainingNodes = append(remainingNodes, node)
 		}
+	}
+	newLeaderID := WaitForLeaderWithConfig(t, remainingNodes, timing)
+
+	// Find new leader by ID
+	var newLeader Node
+	if newLeaderID >= 0 && newLeaderID < len(nodes) {
+		newLeader = nodes[newLeaderID]
 	}
 
 	if newLeader == nil {
@@ -123,7 +117,7 @@ func TestClusterHealing(t *testing.T) {
 	// Check convergence
 	maxRetries := 20
 	for retry := 0; retry < maxRetries; retry++ {
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond) // Small delay between checks
 		
 		// Get state of remaining nodes
 		states := make(map[int]string)
@@ -224,22 +218,13 @@ func TestClusterHealingWithUncommittedEntry(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			leaderID = i
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	t.Logf("Initial leader is node %d", leaderID)
 
@@ -256,8 +241,8 @@ func TestClusterHealingWithUncommittedEntry(t *testing.T) {
 	}
 	t.Logf("Submitted command at index %d, term %d (only replicated to one follower)", index, term)
 
-	// Wait a bit
-	time.Sleep(200 * time.Millisecond)
+	// Wait a bit for partial replication
+	time.Sleep(50 * time.Millisecond) // Short delay to allow partial replication
 
 	// Now partition the leader from everyone
 	for i := 0; i < 3; i++ {
@@ -269,7 +254,14 @@ func TestClusterHealingWithUncommittedEntry(t *testing.T) {
 	t.Logf("Fully isolated leader %d", leaderID)
 
 	// Wait for new leader election among remaining nodes
-	time.Sleep(1 * time.Second)
+	Eventually(t, func() bool {
+		for i, node := range nodes {
+			if i != leaderID && node.IsLeader() {
+				return true
+			}
+		}
+		return false
+	}, 1*time.Second, "new leader election among remaining nodes")
 
 	// Heal all partitions
 	t.Log("Healing all partitions...")
@@ -288,7 +280,7 @@ func TestClusterHealingWithUncommittedEntry(t *testing.T) {
 	
 	maxRetries := 30
 	for retry := 0; retry < maxRetries; retry++ {
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond) // Small delay between checks
 		
 		// Get state of all nodes
 		states := make(map[int]string)

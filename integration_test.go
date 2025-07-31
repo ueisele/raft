@@ -2,6 +2,7 @@ package raft_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -83,7 +84,10 @@ func TestLogReplication(t *testing.T) {
 	}
 
 	// Verify commands were applied to state machines
-	time.Sleep(500 * time.Millisecond) // Give time for apply
+	// Wait for the last command to be committed on all nodes
+	timing := test.DefaultTimingConfig()
+	lastCmdIndex := len(commands)
+	test.WaitForCommitIndexWithConfig(t, cluster.Nodes, lastCmdIndex, timing)
 
 	for i, sm := range cluster.StateMachines {
 		appliedCount := sm.GetAppliedCount()
@@ -121,9 +125,9 @@ func TestLeaderFailover(t *testing.T) {
 	cluster.DisconnectNode(oldLeaderID)
 
 	// Wait for new leader election
-	time.Sleep(500 * time.Millisecond) // Give time for timeout
-
-	newLeaderID := test.WaitForLeader(t, cluster.Nodes, 3*time.Second)
+	timing := test.DefaultTimingConfig()
+	timing.ElectionTimeout = 3 * time.Second
+	newLeaderID := test.WaitForLeaderWithConfig(t, cluster.Nodes, timing)
 	if newLeaderID == oldLeaderID {
 		t.Error("Same leader after disconnection")
 	}
@@ -143,19 +147,28 @@ func TestLeaderFailover(t *testing.T) {
 	}
 
 	// Verify replication continues
-	time.Sleep(500 * time.Millisecond)
-
-	activeNodes := 0
+	// Wait for the new command to be replicated
+	activeNodes := []raft.Node{}
 	for i, node := range cluster.Nodes {
 		if i != oldLeaderID {
-			activeNodes++
+			activeNodes = append(activeNodes, node)
+		}
+	}
+	// Get the last submitted command index
+	lastIndex := cluster.Nodes[newLeaderID].GetLogLength() - 1
+	test.WaitForCommitIndexWithConfig(t, activeNodes, lastIndex, timing)
+
+	activeNodeCount := 0
+	for i, node := range cluster.Nodes {
+		if i != oldLeaderID {
+			activeNodeCount++
 			if node.GetCommitIndex() < 3 {
 				t.Errorf("Node %d should have replicated at least 3 entries", i)
 			}
 		}
 	}
 
-	if activeNodes < 4 {
+	if activeNodeCount < 4 {
 		t.Error("Should have at least 4 active nodes")
 	}
 }
@@ -196,11 +209,14 @@ func TestNetworkPartition(t *testing.T) {
 		_, _, isLeader := cluster.Nodes[leaderID].Submit("minority_cmd")
 		if isLeader {
 			// Leader might still think it's leader, but shouldn't be able to commit
-			time.Sleep(500 * time.Millisecond)
-
-			// Check that commit index hasn't advanced much
 			initialCommit := cluster.Nodes[leaderID].GetCommitIndex()
-			time.Sleep(500 * time.Millisecond)
+			
+			// Use test.Consistently to verify commit index doesn't advance
+			test.Consistently(t, func() bool {
+				currentCommit := cluster.Nodes[leaderID].GetCommitIndex()
+				return currentCommit <= initialCommit+1
+			}, 1*time.Second, "minority leader should not commit")
+			
 			finalCommit := cluster.Nodes[leaderID].GetCommitIndex()
 
 			if finalCommit > initialCommit+1 {
@@ -210,7 +226,8 @@ func TestNetworkPartition(t *testing.T) {
 	}
 
 	// Wait for new leader in majority
-	time.Sleep(2 * time.Second)
+	timing := test.DefaultTimingConfig()
+	timing.ElectionTimeout = 2 * time.Second
 
 	// Find leader in majority group
 	var majorityLeader int = -1
@@ -237,7 +254,11 @@ func TestNetworkPartition(t *testing.T) {
 	}
 
 	// Wait for replication in majority
-	time.Sleep(500 * time.Millisecond)
+	majorityNodes := []raft.Node{}
+	for _, id := range majorityGroup {
+		majorityNodes = append(majorityNodes, cluster.Nodes[id])
+	}
+	test.WaitForCommitIndexWithConfig(t, majorityNodes, index, timing)
 
 	// Verify majority nodes replicated
 	replicatedCount := 0
@@ -256,9 +277,9 @@ func TestNetworkPartition(t *testing.T) {
 	cluster.HealPartition(minorityGroup, majorityGroup)
 
 	// Wait for reconciliation
-	time.Sleep(1 * time.Second)
+	test.WaitForStableLeader(t, cluster.Nodes, timing)
 
-	// Eventually all nodes should converge
+	// test.Eventually all nodes should converge
 	cluster.VerifyConsistency(t)
 }
 
@@ -318,8 +339,14 @@ func TestPersistence(t *testing.T) {
 		t.Fatalf("Failed to start new node: %v", err)
 	}
 
-	// Give time to recover and rejoin cluster
-	time.Sleep(1 * time.Second)
+	// Wait for node to recover and rejoin cluster
+	timing := test.DefaultTimingConfig()
+	test.WaitForConditionWithProgress(t, func() (bool, string) {
+		term := newNode.GetCurrentTerm()
+		logLen := newNode.GetLogLength()
+		return term >= oldTerm && logLen >= oldLogLength, 
+			fmt.Sprintf("term=%d (need >=%d), log=%d (need >=%d)", term, oldTerm, logLen, oldLogLength)
+	}, timing.ElectionTimeout, "node recovery")
 
 	// Verify state was recovered
 	if newNode.GetCurrentTerm() < oldTerm {
@@ -343,8 +370,8 @@ func TestPersistence(t *testing.T) {
 	cmdIndex, cmdTerm, _ := cluster.SubmitCommand("after_restart")
 	t.Logf("Submitted command at index %d, term %d", cmdIndex, cmdTerm)
 	
-	// Give more time for replication
-	time.Sleep(2 * time.Second)
+	// Wait for replication to complete
+	test.WaitForCommitIndexWithConfig(t, cluster.Nodes, cmdIndex, timing)
 
 	afterSubmit := newNode.GetLogLength()
 	newCommitIndex := newNode.GetCommitIndex()

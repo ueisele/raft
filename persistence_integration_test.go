@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // Global storage for persistence data in tests
@@ -156,9 +158,10 @@ func TestPersistenceWithCrash(t *testing.T) {
 	}
 
 	// Wait for node to become leader
-	time.Sleep(300 * time.Millisecond)
-
-	if !node.IsLeader() {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 300 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, []Node{node}, timing)
+	if leaderID < 0 {
 		t.Fatal("Node should be leader")
 	}
 
@@ -201,8 +204,13 @@ func TestPersistenceWithCrash(t *testing.T) {
 	}
 	defer node2.Stop()
 
-	// Give it time to recover
-	time.Sleep(300 * time.Millisecond)
+	// Wait for recovery
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		term, _ := node2.GetState()
+		logLen := node2.GetLogLength()
+		return term >= currentTerm && logLen >= lastIndex,
+			fmt.Sprintf("term=%d (need >=%d), log=%d (need >=%d)", term, currentTerm, logLen, lastIndex)
+	}, timing.ElectionTimeout, "node recovery")
 
 	// Check that term was preserved (should be at least as high)
 	newTerm, _ := node2.GetState()
@@ -288,15 +296,11 @@ func TestPersistenceWithMultipleNodes(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leaderID = i
-			break
-		}
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
+		t.Fatal("No leader elected")
 	}
 
 	t.Logf("Initial leader is node %d", leaderID)
@@ -313,7 +317,7 @@ func TestPersistenceWithMultipleNodes(t *testing.T) {
 	}
 
 	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
+	WaitForCommitIndexWithConfig(t, nodes, 5, timing)
 
 	// Record commit indices
 	commitIndices := make([]int, numNodes)
@@ -375,7 +379,10 @@ func TestPersistenceWithMultipleNodes(t *testing.T) {
 	}
 
 	// Wait for election and stabilization
-	time.Sleep(1 * time.Second)
+	newLeaderID := WaitForLeaderWithConfig(t, newNodes, timing)
+	if newLeaderID < 0 {
+		t.Fatal("No leader after restart")
+	}
 
 	// Check that nodes recovered their state
 	for i, node := range newNodes {
@@ -390,13 +397,8 @@ func TestPersistenceWithMultipleNodes(t *testing.T) {
 
 	// Find new leader and submit more commands
 	var newLeader Node
-	var newLeaderID int
-	for i, node := range newNodes {
-		if node.IsLeader() {
-			newLeader = node
-			newLeaderID = i
-			break
-		}
+	if newLeaderID >= 0 && newLeaderID < len(newNodes) {
+		newLeader = newNodes[newLeaderID]
 	}
 
 	if newLeader == nil {
@@ -406,6 +408,7 @@ func TestPersistenceWithMultipleNodes(t *testing.T) {
 	t.Logf("New leader after restart is node %d", newLeaderID)
 
 	// Submit more commands to verify system is working
+	var lastIndex int
 	for i := 0; i < 3; i++ {
 		cmd := fmt.Sprintf("post-restart-command-%d", i)
 		index, _, isLeader := newLeader.Submit(cmd)
@@ -413,10 +416,11 @@ func TestPersistenceWithMultipleNodes(t *testing.T) {
 			t.Fatal("Lost leadership after restart")
 		}
 		t.Logf("Submitted %s at index %d", cmd, index)
+		lastIndex = index
 	}
 
 	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
+	WaitForCommitIndexWithConfig(t, newNodes, lastIndex, timing)
 
 	// Verify all nodes have same commit index
 	var finalCommitIndices []int
@@ -439,6 +443,6 @@ func TestPersistenceWithMultipleNodes(t *testing.T) {
 		node.Stop()
 	}
 	
-	// Wait for goroutines to finish
-	time.Sleep(100 * time.Millisecond)
+	// Small delay for cleanup
+	time.Sleep(50 * time.Millisecond)
 }

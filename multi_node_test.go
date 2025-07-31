@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestMultiNodeElection tests leader election with 3 nodes
@@ -61,38 +63,14 @@ func TestMultiNodeElection(t *testing.T) {
 	}
 
 	// Wait for leader election
-	var leader Node
-	var leaderID int
-	leaderFound := false
-
-	for attempt := 0; attempt < 20 && !leaderFound; attempt++ {
-		time.Sleep(100 * time.Millisecond)
-
-		leaderCount := 0
-		var terms []int
-		for i, node := range nodes {
-			term, isLeader := node.GetState()
-			terms = append(terms, term)
-			if isLeader {
-				leaderCount++
-				leader = node
-				leaderID = i
-			}
-		}
-
-		t.Logf("Attempt %d: terms=%v, leaders=%d", attempt+1, terms, leaderCount)
-
-		if leaderCount == 1 {
-			leaderFound = true
-			t.Logf("Leader elected: node %d", leaderID)
-		} else if leaderCount > 1 {
-			t.Fatalf("Multiple leaders detected: %d", leaderCount)
-		}
-	}
-
-	if !leaderFound {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 2 * time.Second
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected within timeout")
 	}
+	leader := nodes[leaderID]
+	t.Logf("Leader elected: node %d", leaderID)
 
 	// Test command submission
 	index, term, isLeader := leader.Submit("test command")
@@ -103,13 +81,15 @@ func TestMultiNodeElection(t *testing.T) {
 	t.Logf("Command submitted at index %d, term %d", index, term)
 
 	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
+	WaitForCommitIndexWithConfig(t, nodes, index, timing)
 
-	// Check all nodes have same commit index
+	// Verify all nodes have same commit index
 	for i, node := range nodes {
 		commitIndex := node.GetCommitIndex()
 		if commitIndex != index {
 			t.Errorf("Node %d has commit index %d, expected %d", i, commitIndex, index)
+		} else {
+			t.Logf("Node %d has correct commit index %d", i, commitIndex)
 		}
 	}
 }

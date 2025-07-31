@@ -656,7 +656,8 @@ func TestPersistenceWithPartialClusterFailure(t *testing.T) {
 				finalCommitIndices, minCommit, expectedMinCommit)
 		}
 		
-		time.Sleep(500 * time.Millisecond)
+		// Poll for convergence
+		time.Sleep(200 * time.Millisecond)
 	}
 	
 	// Final state logging

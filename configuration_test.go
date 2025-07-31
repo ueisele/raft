@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestBasicConfigurationChange tests adding and removing servers
@@ -58,23 +60,13 @@ func TestBasicConfigurationChange(t *testing.T) {
 	}
 
 	// Wait for leader election
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 2 * time.Second
 	var leader Node
-	for attempt := 0; attempt < 20; attempt++ {
-		time.Sleep(100 * time.Millisecond)
-
-		for _, node := range nodes {
-			if node.IsLeader() {
-				leader = node
-				break
-			}
-		}
-
-		if leader != nil {
-			break
-		}
-	}
-
-	if leader == nil {
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID >= 0 {
+		leader = nodes[leaderID]
+	} else {
 		t.Fatal("No leader elected")
 	}
 
@@ -96,7 +88,10 @@ func TestBasicConfigurationChange(t *testing.T) {
 	}
 
 	// Wait for configuration change to propagate
-	time.Sleep(2 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		config := leader.GetConfiguration()
+		return len(config.Servers) == 4, fmt.Sprintf("waiting for config to have 4 servers, currently has %d", len(config.Servers))
+	}, 2*time.Second, "configuration propagation after add")
 
 	// Check configuration after add
 	configAfterAdd := leader.GetConfiguration()
@@ -109,21 +104,18 @@ func TestBasicConfigurationChange(t *testing.T) {
 	}
 
 	// Wait for the new server to catch up by checking its log length
-	maxRetries := 20
-	for i := 0; i < maxRetries; i++ {
+	WaitForConditionWithProgress(t, func() (bool, string) {
 		node3LogLength := nodes[3].GetLogLength()
 		leaderLogLength := leader.GetLogLength()
-		t.Logf("Attempt %d: Node 3 log length: %d, Leader log length: %d", i+1, node3LogLength, leaderLogLength)
 		
-		if node3LogLength >= leaderLogLength {
-			t.Log("Node 3 has caught up with the leader")
-			break
+		if node3LogLength < leaderLogLength {
+			// Submit a dummy command to trigger replication
+			leader.Submit(fmt.Sprintf("catch-up"))
 		}
 		
-		// Submit a dummy command to trigger replication
-		leader.Submit(fmt.Sprintf("catch-up-%d", i))
-		time.Sleep(500 * time.Millisecond)
-	}
+		return node3LogLength >= leaderLogLength, fmt.Sprintf("node 3 log length: %d, leader log length: %d", node3LogLength, leaderLogLength)
+	}, 10*time.Second, "node 3 catch up")
+	t.Log("Node 3 has caught up with the leader")
 
 	// Verify server 3 was added
 	found := false
@@ -143,26 +135,26 @@ func TestBasicConfigurationChange(t *testing.T) {
 	// Ensure all nodes are at the same commit index before removing
 	t.Log("Ensuring all nodes are synchronized before removal")
 	leaderCommitIndex := leader.GetCommitIndex()
-	for retry := 0; retry < 10; retry++ {
+	WaitForConditionWithProgress(t, func() (bool, string) {
 		allSynced := true
+		statuses := []string{}
 		for i, node := range nodes[:4] { // Check all 4 nodes
 			nodeCommitIndex := node.GetCommitIndex()
+			statuses = append(statuses, fmt.Sprintf("node %d: %d", i, nodeCommitIndex))
 			if nodeCommitIndex < leaderCommitIndex {
 				allSynced = false
-				t.Logf("Node %d commit index: %d (leader: %d)", i, nodeCommitIndex, leaderCommitIndex)
 			}
 		}
 		
-		if allSynced {
-			t.Log("All nodes synchronized")
-			break
+		if !allSynced {
+			// Submit a command to trigger replication
+			leader.Submit(fmt.Sprintf("sync"))
+			leaderCommitIndex = leader.GetCommitIndex()
 		}
 		
-		// Submit a command to trigger replication
-		leader.Submit(fmt.Sprintf("sync-%d", retry))
-		time.Sleep(500 * time.Millisecond)
-		leaderCommitIndex = leader.GetCommitIndex()
-	}
+		return allSynced, fmt.Sprintf("commit indices: %v (leader: %d)", statuses, leaderCommitIndex)
+	}, 5*time.Second, "all nodes synchronization")
+	t.Log("All nodes synchronized")
 
 	// Test 2: Remove server 2
 	t.Log("Test 2: Removing server 2 from configuration")
@@ -171,20 +163,18 @@ func TestBasicConfigurationChange(t *testing.T) {
 		t.Errorf("Failed to remove server: %v", err)
 	}
 
-	// Wait longer and submit commands to help propagate the change
-	for i := 0; i < 10; i++ {
-		time.Sleep(500 * time.Millisecond)
-		
-		// Check if the configuration change has been applied
+	// Wait for configuration change to be applied
+	WaitForConditionWithProgress(t, func() (bool, string) {
 		config := leader.GetConfiguration()
-		if len(config.Servers) == 3 {
-			t.Log("Configuration change applied successfully")
-			break
+		
+		if len(config.Servers) != 3 {
+			// Submit a dummy command to trigger replication
+			leader.Submit(fmt.Sprintf("remove-helper"))
 		}
 		
-		// Submit a dummy command to trigger replication
-		leader.Submit(fmt.Sprintf("remove-helper-%d", i))
-	}
+		return len(config.Servers) == 3, fmt.Sprintf("waiting for config to have 3 servers after removal, currently has %d", len(config.Servers))
+	}, 5*time.Second, "configuration propagation after remove")
+	t.Log("Configuration change applied successfully")
 
 	// Check final configuration
 	finalConfig := leader.GetConfiguration()

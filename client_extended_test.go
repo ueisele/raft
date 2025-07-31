@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestLinearizableReads tests that reads return the most recent committed value
@@ -73,22 +75,13 @@ func TestLinearizableReads(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	var leaderID int
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			leaderID = i
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	t.Logf("Leader is node %d", leaderID)
 
@@ -126,6 +119,7 @@ func TestLinearizableReads(t *testing.T) {
 					}
 				}
 
+				// Writer interval
 				time.Sleep(10 * time.Millisecond)
 			}
 		}
@@ -156,7 +150,8 @@ func TestLinearizableReads(t *testing.T) {
 					}
 
 					// Wait for command to be applied
-					time.Sleep(50 * time.Millisecond)
+					// Small delay to allow command processing
+					time.Sleep(20 * time.Millisecond)
 
 					// Read value from leader's state machine
 					stateMachines[leaderID].mu.Lock()
@@ -177,6 +172,7 @@ func TestLinearizableReads(t *testing.T) {
 						lastSeen = value
 					}
 
+					// Reader interval
 					time.Sleep(5 * time.Millisecond)
 				}
 			}
@@ -257,21 +253,14 @@ func TestIdempotentOperations(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find leader
-	var leader Node
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leader = node
-			t.Logf("Leader is node %d", i)
-			break
-		}
-	}
-
-	if leader == nil {
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	leaderID := WaitForLeaderWithConfig(t, nodes, timing)
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
+	t.Logf("Leader is node %d", leaderID)
 
 	// Test idempotent increment operation
 	clientID := "client-1"
@@ -296,11 +285,16 @@ func TestIdempotentOperations(t *testing.T) {
 		t.Logf("Submission %d: index %d", i+1, index)
 
 		// Small delay between retries
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	// Wait for all commands to be applied
-	time.Sleep(1 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		// Check if the last command is committed
+		lastIndex := indices[len(indices)-1]
+		return leader.GetCommitIndex() >= lastIndex, 
+			fmt.Sprintf("commit index: %d, last command index: %d", leader.GetCommitIndex(), lastIndex)
+	}, timing.ReplicationTimeout, "idempotent commands to be committed")
 
 	// Verify that counter was only incremented once
 	for i, sm := range stateMachines {
@@ -325,56 +319,58 @@ func TestIdempotentOperations(t *testing.T) {
 
 	// Force a few more heartbeats to ensure replication
 	for i := 0; i < 5; i++ {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		// Submit a dummy command to trigger replication
 		dummyCmd := fmt.Sprintf("dummy-%d", i)
 		leader.Submit(dummyCmd)
 	}
 
 	// Wait for application
-	time.Sleep(1 * time.Second)
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		commitIndex := leader.GetCommitIndex()
+		return commitIndex >= index2, fmt.Sprintf("commit index: %d, need: %d", commitIndex, index2)
+	}, timing.ReplicationTimeout, "second unique request to commit")
 
 	// Check commit index progress
 	commitIndex := leader.GetCommitIndex()
 	t.Logf("Leader commit index: %d", commitIndex)
 
-	// Wait longer if commit index hasn't advanced to the new request
+	// Verify commit index advanced to the new request
 	if commitIndex < index2 {
-		t.Logf("Commit index %d < index %d, waiting more...", commitIndex, index2)
-		time.Sleep(2 * time.Second)
-		commitIndex = leader.GetCommitIndex()
-		t.Logf("Leader commit index after wait: %d", commitIndex)
+		t.Errorf("Commit index %d < index %d after waiting", commitIndex, index2)
 	}
 
-	// Verify counter incremented to 2 with retries
-	maxRetries := 5
-	allNodesCorrect := false
-	
-	for retry := 0; retry < maxRetries && !allNodesCorrect; retry++ {
-		if retry > 0 {
-			t.Logf("Retry %d: waiting for all nodes to converge...", retry)
-			time.Sleep(1 * time.Second)
-		}
-		
-		allNodesCorrect = true
+	// Verify counter incremented to 2 on all nodes
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		allNodesCorrect := true
+		incorrectNodes := []int{}
 		for i, sm := range stateMachines {
 			sm.mu.Lock()
 			value := sm.data["counter"]
-			processedCount := len(sm.processed)
-			var processedKeys []string
-			for k := range sm.processed {
-				processedKeys = append(processedKeys, k)
-			}
 			sm.mu.Unlock()
 
-			t.Logf("Node %d: counter=%s, processed requests=%d, keys=%v", i, value, processedCount, processedKeys)
 			if value != "2" {
 				allNodesCorrect = false
-				if retry == maxRetries-1 {
-					t.Errorf("Node %d: Expected counter=2 after new request, got %s", i, value)
-				}
+				incorrectNodes = append(incorrectNodes, i)
 			}
 		}
+		if !allNodesCorrect {
+			return false, fmt.Sprintf("nodes %v have incorrect counter values", incorrectNodes)
+		}
+		return true, "all nodes have counter=2"
+	}, timing.StabilizationTimeout, "all nodes to have counter=2")
+	
+	// Log final state
+	for i, sm := range stateMachines {
+		sm.mu.Lock()
+		value := sm.data["counter"]
+		processedCount := len(sm.processed)
+		var processedKeys []string
+		for k := range sm.processed {
+			processedKeys = append(processedKeys, k)
+		}
+		sm.mu.Unlock()
+		t.Logf("Node %d: counter=%s, processed requests=%d, keys=%v", i, value, processedCount, processedKeys)
 	}
 
 	t.Log("Idempotent operations verified")
@@ -441,7 +437,9 @@ func TestClientRetries(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	WaitForLeaderWithConfig(t, nodes, timing)
 
 	// Client retry simulator
 	type clientRequest struct {

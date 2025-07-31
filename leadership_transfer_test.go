@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // TestLeadershipTransfer tests orderly leadership transfer
@@ -56,22 +58,22 @@ func TestLeadershipTransfer(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	WaitForLeaderWithConfig(t, nodes, timing)
 
 	// Find initial leader
-	var leaderID int
-	var leader Node
+	var leaderID int = -1
 	for i, node := range nodes {
 		if node.IsLeader() {
 			leaderID = i
-			leader = node
 			break
 		}
 	}
-
-	if leader == nil {
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	t.Logf("Initial leader is node %d", leaderID)
 
@@ -85,7 +87,7 @@ func TestLeadershipTransfer(t *testing.T) {
 	}
 
 	// Wait for replication
-	time.Sleep(200 * time.Millisecond)
+	WaitForCommitIndexWithConfig(t, nodes, 5, timing)
 
 	// Record commit indices before transfer
 	commitIndicesBefore := make([]int, 3)
@@ -104,31 +106,41 @@ func TestLeadershipTransfer(t *testing.T) {
 		t.Logf("Warning: Leadership transfer returned error: %v (this is acceptable)", err)
 	}
 
-	// Wait for transfer to complete with timeout
-	transferTimeout := time.After(2 * time.Second)
-	transferComplete := false
-	var newLeaderID int
-	var newLeaderFound bool
+	// Wait for transfer to complete
+	var newLeaderID int = -1
+	newLeaderFound := false
 	
-	for !transferComplete {
+	// Try to wait for leadership transfer
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	
+	for {
 		select {
-		case <-transferTimeout:
-			transferComplete = true
-		case <-time.After(100 * time.Millisecond):
-			// Check for new leader
+		case <-ctx.Done():
+			// Timeout - check if we at least have any leader
 			for i, node := range nodes {
 				if node.IsLeader() {
 					newLeaderID = i
 					newLeaderFound = true
-					if newLeaderID != leaderID {
-						transferComplete = true
-					}
 					break
+				}
+			}
+			goto done
+		case <-ticker.C:
+			// Check for leadership change
+			for i, node := range nodes {
+				if node.IsLeader() && i != leaderID {
+					newLeaderID = i
+					newLeaderFound = true
+					goto done
 				}
 			}
 		}
 	}
-
+	
+done:
 	if !newLeaderFound {
 		t.Fatal("No leader after transfer timeout")
 	}
@@ -151,7 +163,11 @@ func TestLeadershipTransfer(t *testing.T) {
 	}
 
 	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
+	lastCmdIndex := newLeaderID // Placeholder, we need the actual index
+	if newLeader := nodes[newLeaderID]; newLeader != nil {
+		lastCmdIndex = newLeader.GetLogLength()
+	}
+	WaitForCommitIndexWithConfig(t, nodes, lastCmdIndex, timing)
 
 	// Verify all nodes progressed
 	allProgressed := false
@@ -221,22 +237,22 @@ func TestLeadershipTransferTimeout(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	WaitForLeaderWithConfig(t, nodes, timing)
 
 	// Find leader
-	var leaderID int
-	var leader Node
+	var leaderID int = -1
 	for i, node := range nodes {
 		if node.IsLeader() {
 			leaderID = i
-			leader = node
 			break
 		}
 	}
-
-	if leader == nil {
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	t.Logf("Leader is node %d", leaderID)
 
@@ -257,8 +273,11 @@ func TestLeadershipTransferTimeout(t *testing.T) {
 		t.Log("Leadership transfer initiated to partitioned node")
 	}
 
-	// Wait for timeout
-	time.Sleep(2 * time.Second)
+	// Wait for transfer timeout
+	Eventually(t, func() bool {
+		// Check if leadership transfer has failed/timed out
+		return !nodes[targetID].IsLeader()
+	}, 2*time.Second, "transfer timeout")
 
 	// Leader should still be leader or a new leader elected (not the target)
 	if nodes[targetID].IsLeader() {
@@ -330,22 +349,22 @@ func TestConcurrentLeadershipTransfers(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(500 * time.Millisecond)
+	timing := DefaultTimingConfig()
+	timing.ElectionTimeout = 500 * time.Millisecond
+	WaitForLeaderWithConfig(t, nodes, timing)
 
 	// Find leader
-	var leaderID int
-	var leader Node
+	var leaderID int = -1
 	for i, node := range nodes {
 		if node.IsLeader() {
 			leaderID = i
-			leader = node
 			break
 		}
 	}
-
-	if leader == nil {
+	if leaderID < 0 {
 		t.Fatal("No leader elected")
 	}
+	leader := nodes[leaderID]
 
 	t.Logf("Leader is node %d", leaderID)
 
@@ -382,7 +401,7 @@ func TestConcurrentLeadershipTransfers(t *testing.T) {
 	t.Logf("Concurrent transfer attempts: %d successful", successCount)
 
 	// Wait for system to stabilize
-	time.Sleep(1 * time.Second)
+	WaitForStableLeader(t, nodes, timing)
 
 	// Verify we have exactly one leader
 	leaderCount := 0

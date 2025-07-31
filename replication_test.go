@@ -3,6 +3,8 @@ package raft
 import (
 	"testing"
 	"time"
+
+	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
 // replicationTestTransport wraps MockTransport for replication-specific test behavior
@@ -87,7 +89,9 @@ func TestReplicationManagerHeartbeat(t *testing.T) {
 	rm.SendHeartbeats()
 
 	// Wait for async operations to complete
-	time.Sleep(50 * time.Millisecond)
+	Eventually(t, func() bool {
+		return len(transport.GetAppendEntriesCalls()) >= 2
+	}, 100*time.Millisecond, "heartbeats should be sent to all peers")
 
 	// Verify heartbeats were sent to all peers
 	if len(transport.GetAppendEntriesCalls()) != 2 {
@@ -162,7 +166,9 @@ func TestReplicationManagerReplicate(t *testing.T) {
 	rm.Replicate()
 
 	// Wait for async operations to complete
-	time.Sleep(200 * time.Millisecond)
+	Eventually(t, func() bool {
+		return len(transport.GetAppendEntriesCalls()) > 0
+	}, 500*time.Millisecond, "replication calls should be made")
 
 	// Verify we got at least one replication call
 	if len(transport.GetAppendEntriesCalls()) == 0 {
