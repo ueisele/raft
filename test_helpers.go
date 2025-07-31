@@ -465,3 +465,320 @@ func (m *MockMetrics) RecordSnapshot(size int, duration time.Duration) {
 	defer m.mu.Unlock()
 	m.snapshots = append(m.snapshots, snapshotRecord{size: size, duration: duration})
 }
+
+// ========== Multi-node test helpers (from multi_node_test.go) ==========
+
+// Multi-node transport that allows nodes to communicate
+type multiNodeTransport struct {
+	id       int
+	registry *nodeRegistry
+	handler  RPCHandler
+}
+
+type nodeRegistry struct {
+	mu    sync.RWMutex
+	nodes map[int]RPCHandler
+}
+
+func (t *multiNodeTransport) SendRequestVote(serverID int, args *RequestVoteArgs) (*RequestVoteReply, error) {
+	t.registry.mu.RLock()
+	handler, exists := t.registry.nodes[serverID]
+	t.registry.mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("node %d not found", serverID)
+	}
+
+	reply := &RequestVoteReply{}
+	err := handler.RequestVote(args, reply)
+	return reply, err
+}
+
+func (t *multiNodeTransport) SendAppendEntries(serverID int, args *AppendEntriesArgs) (*AppendEntriesReply, error) {
+	t.registry.mu.RLock()
+	handler, exists := t.registry.nodes[serverID]
+	t.registry.mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("node %d not found", serverID)
+	}
+
+	reply := &AppendEntriesReply{}
+	err := handler.AppendEntries(args, reply)
+	return reply, err
+}
+
+func (t *multiNodeTransport) SendInstallSnapshot(serverID int, args *InstallSnapshotArgs) (*InstallSnapshotReply, error) {
+	t.registry.mu.RLock()
+	handler, exists := t.registry.nodes[serverID]
+	t.registry.mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("node %d not found", serverID)
+	}
+
+	reply := &InstallSnapshotReply{}
+	err := handler.InstallSnapshot(args, reply)
+	return reply, err
+}
+
+func (t *multiNodeTransport) SetRPCHandler(handler RPCHandler) {
+	t.handler = handler
+}
+
+func (t *multiNodeTransport) Start() error {
+	return nil
+}
+
+func (t *multiNodeTransport) Stop() error {
+	return nil
+}
+
+func (t *multiNodeTransport) GetAddress() string {
+	return fmt.Sprintf("node-%d", t.id)
+}
+
+// ========== Debug test helpers (from debug_multi_test.go) ==========
+
+type testLogger struct {
+	t      *testing.T
+	mu     sync.RWMutex
+	closed bool
+}
+
+func newTestLogger(t *testing.T) *testLogger {
+	logger := &testLogger{t: t}
+	// Register cleanup to mark logger as closed when test ends
+	t.Cleanup(func() {
+		logger.mu.Lock()
+		logger.closed = true
+		logger.mu.Unlock()
+	})
+	return logger
+}
+
+func (l *testLogger) log(level, format string, args ...interface{}) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	
+	// Don't log if test has completed
+	if l.closed {
+		return
+	}
+	
+	// Use a defer to catch any panic from t.Logf
+	defer func() {
+		if r := recover(); r != nil {
+			// Silently ignore logging after test completion
+		}
+	}()
+	
+	l.t.Logf(level+" "+format, args...)
+}
+
+func (l *testLogger) Debug(format string, args ...interface{}) {
+	l.log("[DEBUG]", format, args...)
+}
+
+func (l *testLogger) Info(format string, args ...interface{}) {
+	l.log("[INFO]", format, args...)
+}
+
+func (l *testLogger) Warn(format string, args ...interface{}) {
+	l.log("[WARN]", format, args...)
+}
+
+func (l *testLogger) Error(format string, args ...interface{}) {
+	l.log("[ERROR]", format, args...)
+}
+
+type debugNodeRegistry struct {
+	mu     sync.RWMutex
+	nodes  map[int]RPCHandler
+	logger Logger
+}
+
+type debugTransport struct {
+	id       int
+	registry *debugNodeRegistry
+	handler  RPCHandler
+	logger   Logger
+}
+
+func (t *debugTransport) SendRequestVote(serverID int, args *RequestVoteArgs) (*RequestVoteReply, error) {
+	t.logger.Debug("Node %d sending RequestVote to node %d: term=%d", t.id, serverID, args.Term)
+
+	t.registry.mu.RLock()
+	handler, exists := t.registry.nodes[serverID]
+	t.registry.mu.RUnlock()
+
+	if !exists {
+		t.logger.Debug("Node %d not found", serverID)
+		return nil, fmt.Errorf("node %d not found", serverID)
+	}
+
+	reply := &RequestVoteReply{}
+	err := handler.RequestVote(args, reply)
+
+	t.logger.Debug("Node %d received RequestVote reply from node %d: granted=%v, term=%d",
+		t.id, serverID, reply.VoteGranted, reply.Term)
+
+	return reply, err
+}
+
+func (t *debugTransport) SendAppendEntries(serverID int, args *AppendEntriesArgs) (*AppendEntriesReply, error) {
+	t.registry.mu.RLock()
+	handler, exists := t.registry.nodes[serverID]
+	t.registry.mu.RUnlock()
+
+	if !exists {
+		if t.logger != nil {
+			t.logger.Debug("SendAppendEntries: node %d not found in registry", serverID)
+		}
+		return nil, fmt.Errorf("node %d not found", serverID)
+	}
+
+	reply := &AppendEntriesReply{}
+	err := handler.AppendEntries(args, reply)
+	return reply, err
+}
+
+func (t *debugTransport) SendInstallSnapshot(serverID int, args *InstallSnapshotArgs) (*InstallSnapshotReply, error) {
+	t.registry.mu.RLock()
+	handler, exists := t.registry.nodes[serverID]
+	t.registry.mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("node %d not found", serverID)
+	}
+
+	reply := &InstallSnapshotReply{}
+	err := handler.InstallSnapshot(args, reply)
+	return reply, err
+}
+
+func (t *debugTransport) SetRPCHandler(handler RPCHandler) {
+	t.handler = handler
+}
+
+func (t *debugTransport) Start() error {
+	return nil
+}
+
+func (t *debugTransport) Stop() error {
+	return nil
+}
+
+func (t *debugTransport) GetAddress() string {
+	return fmt.Sprintf("node-%d", t.id)
+}
+
+// ========== Partitionable transport helpers (from vote_denial_test.go) ==========
+
+// partitionableTransport is a transport that can simulate network partitions
+type partitionableTransport struct {
+	id       int
+	registry *partitionRegistry
+	handler  RPCHandler
+	mu       sync.Mutex
+	blocked  map[int]bool
+}
+
+type partitionRegistry struct {
+	mu    sync.RWMutex
+	nodes map[int]RPCHandler
+}
+
+func (t *partitionableTransport) Block(serverID int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.blocked[serverID] = true
+}
+
+func (t *partitionableTransport) Unblock(serverID int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.blocked, serverID)
+}
+
+func (t *partitionableTransport) SendRequestVote(serverID int, args *RequestVoteArgs) (*RequestVoteReply, error) {
+	t.mu.Lock()
+	blocked := t.blocked[serverID]
+	t.mu.Unlock()
+
+	if blocked {
+		return nil, fmt.Errorf("network partition: cannot reach server %d", serverID)
+	}
+
+	t.registry.mu.RLock()
+	handler, exists := t.registry.nodes[serverID]
+	t.registry.mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("server %d not found", serverID)
+	}
+
+	reply := &RequestVoteReply{}
+	err := handler.RequestVote(args, reply)
+	return reply, err
+}
+
+func (t *partitionableTransport) SendAppendEntries(serverID int, args *AppendEntriesArgs) (*AppendEntriesReply, error) {
+	t.mu.Lock()
+	blocked := t.blocked[serverID]
+	t.mu.Unlock()
+
+	if blocked {
+		return nil, fmt.Errorf("network partition: cannot reach server %d", serverID)
+	}
+
+	t.registry.mu.RLock()
+	handler, exists := t.registry.nodes[serverID]
+	t.registry.mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("server %d not found", serverID)
+	}
+
+	reply := &AppendEntriesReply{}
+	err := handler.AppendEntries(args, reply)
+	return reply, err
+}
+
+func (t *partitionableTransport) SendInstallSnapshot(serverID int, args *InstallSnapshotArgs) (*InstallSnapshotReply, error) {
+	t.mu.Lock()
+	blocked := t.blocked[serverID]
+	t.mu.Unlock()
+
+	if blocked {
+		return nil, fmt.Errorf("network partition: cannot reach server %d", serverID)
+	}
+
+	t.registry.mu.RLock()
+	handler, exists := t.registry.nodes[serverID]
+	t.registry.mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("server %d not found", serverID)
+	}
+
+	reply := &InstallSnapshotReply{}
+	err := handler.InstallSnapshot(args, reply)
+	return reply, err
+}
+
+func (t *partitionableTransport) SetRPCHandler(handler RPCHandler) {
+	t.handler = handler
+}
+
+func (t *partitionableTransport) Start() error {
+	return nil
+}
+
+func (t *partitionableTransport) Stop() error {
+	return nil
+}
+
+func (t *partitionableTransport) GetAddress() string {
+	return fmt.Sprintf("partition-transport-%d", t.id)
+}
