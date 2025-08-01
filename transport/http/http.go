@@ -41,6 +41,11 @@ func (t *HTTPTransport) SetRPCHandler(handler raft.RPCHandler) {
 	t.handler = handler
 }
 
+// SetAddressResolver sets a custom address resolver for testing
+func (t *HTTPTransport) SetAddressResolver(resolver func(int) string) {
+	t.addressResolver = resolver
+}
+
 // Start starts the HTTP server
 func (t *HTTPTransport) Start() error {
 	if t.handler == nil {

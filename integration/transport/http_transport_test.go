@@ -1,8 +1,11 @@
 package transport
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
@@ -39,13 +42,14 @@ func TestHTTPTransportBasicCluster(t *testing.T) {
 	// Create a 3-node cluster using HTTP transport
 	nodes := make([]raft.Node, 3)
 	transports := make([]*httpTransport.HTTPTransport, 3)
+	basePort := 19000
 
-	// Use default ports that HTTPTransport expects (8000 + serverID)
+	// Use test ports to avoid conflicts
 	for i := 0; i < 3; i++ {
 		// Create HTTP transport
 		transportConfig := &transport.Config{
 			ServerID:   i,
-			Address:    fmt.Sprintf("localhost:%d", 8000+i),
+			Address:    fmt.Sprintf("localhost:%d", basePort+i),
 			RPCTimeout: 1000, // 1 second
 		}
 		httpTrans := httpTransport.NewHTTPTransport(transportConfig)
@@ -75,9 +79,18 @@ func TestHTTPTransportBasicCluster(t *testing.T) {
 			t.Fatalf("Failed to create node %d: %v", i, err)
 		}
 		nodes[i] = node
+	}
 
-		// Start transport
-		if err := httpTrans.Start(); err != nil {
+	// Set address resolvers for all transports before starting
+	for _, trans := range transports {
+		trans.SetAddressResolver(func(serverID int) string {
+			return fmt.Sprintf("localhost:%d", basePort+serverID)
+		})
+	}
+
+	// Start all transports
+	for i, trans := range transports {
+		if err := trans.Start(); err != nil {
 			t.Fatalf("Failed to start transport %d: %v", i, err)
 		}
 	}
@@ -146,12 +159,13 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 	// Create a 3-node cluster
 	nodes := make([]raft.Node, 3)
 	transports := make([]*httpTransport.HTTPTransport, 3)
+	basePort := 19100
 
 	for i := 0; i < 3; i++ {
 		// Create HTTP transport with short timeout for faster failure detection
 		transportConfig := &transport.Config{
 			ServerID:   i,
-			Address:    fmt.Sprintf("localhost:%d", 8000+i),
+			Address:    fmt.Sprintf("localhost:%d", basePort+i),
 			RPCTimeout: 100, // 100ms for faster tests
 		}
 		httpTrans := httpTransport.NewHTTPTransport(transportConfig)
@@ -181,9 +195,18 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 			t.Fatalf("Failed to create node %d: %v", i, err)
 		}
 		nodes[i] = node
+	}
 
-		// Start transport
-		if err := httpTrans.Start(); err != nil {
+	// Set address resolvers for all transports before starting
+	for _, trans := range transports {
+		trans.SetAddressResolver(func(serverID int) string {
+			return fmt.Sprintf("localhost:%d", basePort+serverID)
+		})
+	}
+
+	// Start all transports
+	for i, trans := range transports {
+		if err := trans.Start(); err != nil {
 			t.Fatalf("Failed to start transport %d: %v", i, err)
 		}
 	}
@@ -273,12 +296,13 @@ func TestHTTPTransportHighLoad(t *testing.T) {
 	// Create a 3-node cluster
 	nodes := make([]raft.Node, 3)
 	transports := make([]*httpTransport.HTTPTransport, 3)
+	basePort := 19200
 
 	for i := 0; i < 3; i++ {
 		// Create HTTP transport
 		transportConfig := &transport.Config{
 			ServerID:   i,
-			Address:    fmt.Sprintf("localhost:%d", 8000+i),
+			Address:    fmt.Sprintf("localhost:%d", basePort+i),
 			RPCTimeout: 1000,
 		}
 		httpTrans := httpTransport.NewHTTPTransport(transportConfig)
@@ -308,9 +332,18 @@ func TestHTTPTransportHighLoad(t *testing.T) {
 			t.Fatalf("Failed to create node %d: %v", i, err)
 		}
 		nodes[i] = node
+	}
 
-		// Start transport
-		if err := httpTrans.Start(); err != nil {
+	// Set address resolvers for all transports before starting
+	for _, trans := range transports {
+		trans.SetAddressResolver(func(serverID int) string {
+			return fmt.Sprintf("localhost:%d", basePort+serverID)
+		})
+	}
+
+	// Start all transports
+	for i, trans := range transports {
+		if err := trans.Start(); err != nil {
 			t.Fatalf("Failed to start transport %d: %v", i, err)
 		}
 	}
@@ -378,4 +411,351 @@ func TestHTTPTransportHighLoad(t *testing.T) {
 	// Calculate throughput
 	throughput := float64(numCommands) / submitDuration.Seconds()
 	t.Logf("Throughput: %.2f commands/second", throughput)
+}
+
+// MockRPCHandler implements raft.RPCHandler for testing
+type MockRPCHandler struct {
+	requestVoteFunc     func(*raft.RequestVoteArgs, *raft.RequestVoteReply) error
+	appendEntriesFunc   func(*raft.AppendEntriesArgs, *raft.AppendEntriesReply) error
+	installSnapshotFunc func(*raft.InstallSnapshotArgs, *raft.InstallSnapshotReply) error
+}
+
+func (m *MockRPCHandler) RequestVote(args *raft.RequestVoteArgs, reply *raft.RequestVoteReply) error {
+	if m.requestVoteFunc != nil {
+		return m.requestVoteFunc(args, reply)
+	}
+	return nil
+}
+
+func (m *MockRPCHandler) AppendEntries(args *raft.AppendEntriesArgs, reply *raft.AppendEntriesReply) error {
+	if m.appendEntriesFunc != nil {
+		return m.appendEntriesFunc(args, reply)
+	}
+	return nil
+}
+
+func (m *MockRPCHandler) InstallSnapshot(args *raft.InstallSnapshotArgs, reply *raft.InstallSnapshotReply) error {
+	if m.installSnapshotFunc != nil {
+		return m.installSnapshotFunc(args, reply)
+	}
+	return nil
+}
+
+// TestHTTPTransport_StartStop tests starting and stopping real HTTP servers
+func TestHTTPTransport_StartStop(t *testing.T) {
+	config := &transport.Config{
+		ServerID:   1,
+		Address:    "localhost:18001",
+		RPCTimeout: 500,
+	}
+
+	transport := httpTransport.NewHTTPTransport(config)
+	handler := &MockRPCHandler{}
+
+	// Test starting without handler
+	err := transport.Start()
+	if err == nil {
+		t.Error("expected error when starting without handler")
+	}
+
+	// Set handler and start
+	transport.SetRPCHandler(handler)
+	err = transport.Start()
+	if err != nil {
+		t.Fatalf("failed to start transport: %v", err)
+	}
+
+	// Give server time to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Test that server is listening
+	resp, err := http.Get("http://" + transport.GetAddress() + "/raft/requestvote")
+	if err != nil {
+		t.Fatalf("failed to connect to server: %v", err)
+	}
+	resp.Body.Close()
+
+	// Stop transport
+	err = transport.Stop()
+	if err != nil {
+		t.Fatalf("failed to stop transport: %v", err)
+	}
+
+	// Test stopping already stopped transport
+	err = transport.Stop()
+	if err != nil {
+		t.Errorf("unexpected error stopping already stopped transport: %v", err)
+	}
+}
+
+// TestHTTPTransport_HandleRequestVote tests handling RequestVote RPCs with real server
+func TestHTTPTransport_HandleRequestVote(t *testing.T) {
+	config := &transport.Config{
+		ServerID:   1,
+		Address:    "localhost:18002",
+		RPCTimeout: 500,
+	}
+
+	transport := httpTransport.NewHTTPTransport(config)
+	
+	handler := &MockRPCHandler{
+		requestVoteFunc: func(args *raft.RequestVoteArgs, reply *raft.RequestVoteReply) error {
+			if args.Term != 5 || args.CandidateID != 2 {
+				t.Errorf("unexpected args: %+v", args)
+			}
+			reply.Term = 5
+			reply.VoteGranted = true
+			return nil
+		},
+	}
+
+	transport.SetRPCHandler(handler)
+	if err := transport.Start(); err != nil {
+		t.Fatalf("failed to start transport: %v", err)
+	}
+	defer transport.Stop()
+
+	// Give server time to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Send request
+	args := raft.RequestVoteArgs{
+		Term:        5,
+		CandidateID: 2,
+	}
+	
+	body, _ := json.Marshal(args)
+	resp, err := http.Post("http://"+transport.GetAddress()+"/raft/requestvote", "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		t.Fatalf("failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var reply raft.RequestVoteReply
+	if err := json.NewDecoder(resp.Body).Decode(&reply); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if reply.Term != 5 || !reply.VoteGranted {
+		t.Errorf("unexpected reply: %+v", reply)
+	}
+}
+
+// TestHTTPTransport_HandleAppendEntries tests handling AppendEntries RPCs with real server
+func TestHTTPTransport_HandleAppendEntries(t *testing.T) {
+	config := &transport.Config{
+		ServerID:   1,
+		Address:    "localhost:18003",
+		RPCTimeout: 500,
+	}
+
+	transport := httpTransport.NewHTTPTransport(config)
+	
+	handler := &MockRPCHandler{
+		appendEntriesFunc: func(args *raft.AppendEntriesArgs, reply *raft.AppendEntriesReply) error {
+			if args.Term != 5 || args.LeaderID != 2 {
+				t.Errorf("unexpected args: %+v", args)
+			}
+			reply.Term = 5
+			reply.Success = true
+			return nil
+		},
+	}
+
+	transport.SetRPCHandler(handler)
+	if err := transport.Start(); err != nil {
+		t.Fatalf("failed to start transport: %v", err)
+	}
+	defer transport.Stop()
+
+	// Give server time to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Send request
+	args := raft.AppendEntriesArgs{
+		Term:     5,
+		LeaderID: 2,
+	}
+	
+	body, _ := json.Marshal(args)
+	resp, err := http.Post("http://"+transport.GetAddress()+"/raft/appendentries", "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		t.Fatalf("failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var reply raft.AppendEntriesReply
+	if err := json.NewDecoder(resp.Body).Decode(&reply); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if reply.Term != 5 || !reply.Success {
+		t.Errorf("unexpected reply: %+v", reply)
+	}
+}
+
+// TestHTTPTransport_HandleInstallSnapshot tests handling InstallSnapshot RPCs with real server
+func TestHTTPTransport_HandleInstallSnapshot(t *testing.T) {
+	config := &transport.Config{
+		ServerID:   1,
+		Address:    "localhost:18004",
+		RPCTimeout: 500,
+	}
+
+	transport := httpTransport.NewHTTPTransport(config)
+	
+	handler := &MockRPCHandler{
+		installSnapshotFunc: func(args *raft.InstallSnapshotArgs, reply *raft.InstallSnapshotReply) error {
+			if args.Term != 5 || args.LeaderID != 2 {
+				t.Errorf("unexpected args: %+v", args)
+			}
+			reply.Term = 5
+			return nil
+		},
+	}
+
+	transport.SetRPCHandler(handler)
+	if err := transport.Start(); err != nil {
+		t.Fatalf("failed to start transport: %v", err)
+	}
+	defer transport.Stop()
+
+	// Give server time to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Send request
+	args := raft.InstallSnapshotArgs{
+		Term:     5,
+		LeaderID: 2,
+		Data:     []byte("test"),
+	}
+	
+	body, _ := json.Marshal(args)
+	resp, err := http.Post("http://"+transport.GetAddress()+"/raft/installsnapshot", "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		t.Fatalf("failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	var reply raft.InstallSnapshotReply
+	if err := json.NewDecoder(resp.Body).Decode(&reply); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if reply.Term != 5 {
+		t.Errorf("unexpected reply: %+v", reply)
+	}
+}
+
+// TestHTTPTransport_HandleInvalidMethod tests handling invalid HTTP methods
+func TestHTTPTransport_HandleInvalidMethod(t *testing.T) {
+	config := &transport.Config{
+		ServerID:   1,
+		Address:    "localhost:18005",
+		RPCTimeout: 500,
+	}
+
+	transport := httpTransport.NewHTTPTransport(config)
+	transport.SetRPCHandler(&MockRPCHandler{})
+	
+	if err := transport.Start(); err != nil {
+		t.Fatalf("failed to start transport: %v", err)
+	}
+	defer transport.Stop()
+
+	// Give server time to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Test GET request (should fail)
+	resp, err := http.Get("http://" + transport.GetAddress() + "/raft/requestvote")
+	if err != nil {
+		t.Fatalf("failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("expected status 405, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPTransport_HandleInvalidJSON tests handling invalid JSON requests
+func TestHTTPTransport_HandleInvalidJSON(t *testing.T) {
+	config := &transport.Config{
+		ServerID:   1,
+		Address:    "localhost:18006",
+		RPCTimeout: 500,
+	}
+
+	transport := httpTransport.NewHTTPTransport(config)
+	transport.SetRPCHandler(&MockRPCHandler{})
+	
+	if err := transport.Start(); err != nil {
+		t.Fatalf("failed to start transport: %v", err)
+	}
+	defer transport.Stop()
+
+	// Give server time to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Send invalid JSON
+	resp, err := http.Post("http://"+transport.GetAddress()+"/raft/requestvote", "application/json", bytes.NewBufferString("invalid json"))
+	if err != nil {
+		t.Fatalf("failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPTransport_HandleRPCError tests handling RPC handler errors
+func TestHTTPTransport_HandleRPCError(t *testing.T) {
+	config := &transport.Config{
+		ServerID:   1,
+		Address:    "localhost:18007",
+		RPCTimeout: 500,
+	}
+
+	transport := httpTransport.NewHTTPTransport(config)
+	
+	handler := &MockRPCHandler{
+		requestVoteFunc: func(args *raft.RequestVoteArgs, reply *raft.RequestVoteReply) error {
+			return fmt.Errorf("handler error")
+		},
+	}
+
+	transport.SetRPCHandler(handler)
+	if err := transport.Start(); err != nil {
+		t.Fatalf("failed to start transport: %v", err)
+	}
+	defer transport.Stop()
+
+	// Give server time to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Send request
+	args := raft.RequestVoteArgs{Term: 5}
+	body, _ := json.Marshal(args)
+	resp, err := http.Post("http://"+transport.GetAddress()+"/raft/requestvote", "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		t.Fatalf("failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected status 500, got %d", resp.StatusCode)
+	}
 }
