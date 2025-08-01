@@ -71,7 +71,7 @@ func TestBasicMembershipChange(t *testing.T) {
 	if err := newNode.Start(ctx); err != nil {
 		t.Fatalf("Failed to start new node: %v", err)
 	}
-	defer newNode.Stop()
+	defer newNode.Stop() //nolint:errcheck // test cleanup
 
 	// Add server to configuration
 	err = leader.AddServer(3, "server-3", true)
@@ -245,12 +245,12 @@ func TestConcurrentMembershipChanges(t *testing.T) {
 	if err := node3.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node 3: %v", err)
 	}
-	defer node3.Stop()
+	defer node3.Stop() //nolint:errcheck // test cleanup
 
 	if err := node4.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node 4: %v", err)
 	}
-	defer node4.Stop()
+	defer node4.Stop() //nolint:errcheck // test cleanup
 
 	// Try to add two servers concurrently
 	errChan := make(chan error, 2)

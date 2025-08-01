@@ -41,14 +41,14 @@ func TestBasicNodeCreation(t *testing.T) {
 	if err := node.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node: %v", err)
 	}
-	defer node.Stop()
+	defer node.Stop() //nolint:errcheck // test cleanup
 
 	// Wait for the single node to become leader using proper synchronization
 	// Single node should become leader quickly (within a few election timeouts)
 	timeout := 2 * config.ElectionTimeoutMax
 	deadline := time.Now().Add(timeout)
 	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
+	defer ticker.Stop() //nolint:errcheck // background ticker cleanup
 
 	attempts := 0
 	for time.Now().Before(deadline) {

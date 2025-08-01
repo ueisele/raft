@@ -43,7 +43,7 @@ func TestLeaderCommitIndexPreservation(t *testing.T) {
 	t.Logf("Initial leader %d has commit index %d", initialLeader, commitIndexBefore)
 
 	// Force leader change by stopping current leader
-	cluster.Nodes[initialLeader].Stop()
+	cluster.Nodes[initialLeader].Stop() //nolint:errcheck // intentional stop for test
 	t.Logf("Stopped leader %d", initialLeader)
 
 	// Wait for new leader
@@ -140,7 +140,7 @@ func TestLeaderHeartbeatStability(t *testing.T) {
 
 	go func() {
 		ticker := time.NewTicker(heartbeatInterval / 2)
-		defer ticker.Stop()
+		defer ticker.Stop() //nolint:errcheck // background ticker cleanup
 
 		for {
 			select {
@@ -209,7 +209,7 @@ func TestLeaderRecoveryAfterBriefPartition(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
-		cluster.WaitForCommitIndex(idx, time.Second)
+		cluster.WaitForCommitIndex(idx, time.Second) //nolint:errcheck // non-critical in load test
 	}
 
 	// Brief partition of leader (less than election timeout)
@@ -325,7 +325,7 @@ func TestMultipleLeaderTransitions(t *testing.T) {
 		}
 
 		// Stop current leader
-		cluster.Nodes[currentLeader].Stop()
+		cluster.Nodes[currentLeader].Stop() //nolint:errcheck // intentional stop for test
 		stoppedNodes[currentLeader] = true
 		t.Logf("Stopped leader %d", currentLeader)
 

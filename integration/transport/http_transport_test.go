@@ -527,7 +527,7 @@ func TestHTTPTransport_HandleRequestVote(t *testing.T) {
 	if err := transport.Start(); err != nil {
 		t.Fatalf("failed to start transport: %v", err)
 	}
-	defer transport.Stop()
+	defer transport.Stop() //nolint:errcheck // test cleanup
 
 	// Give server time to start
 	time.Sleep(100 * time.Millisecond)
@@ -594,7 +594,7 @@ func TestHTTPTransport_HandleAppendEntries(t *testing.T) {
 	if err := transport.Start(); err != nil {
 		t.Fatalf("failed to start transport: %v", err)
 	}
-	defer transport.Stop()
+	defer transport.Stop() //nolint:errcheck // test cleanup
 
 	// Give server time to start
 	time.Sleep(100 * time.Millisecond)
@@ -660,7 +660,7 @@ func TestHTTPTransport_HandleInstallSnapshot(t *testing.T) {
 	if err := transport.Start(); err != nil {
 		t.Fatalf("failed to start transport: %v", err)
 	}
-	defer transport.Stop()
+	defer transport.Stop() //nolint:errcheck // test cleanup
 
 	// Give server time to start
 	time.Sleep(100 * time.Millisecond)
@@ -717,7 +717,7 @@ func TestHTTPTransport_HandleInvalidMethod(t *testing.T) {
 	if err := transport.Start(); err != nil {
 		t.Fatalf("failed to start transport: %v", err)
 	}
-	defer transport.Stop()
+	defer transport.Stop() //nolint:errcheck // test cleanup
 
 	// Give server time to start
 	time.Sleep(100 * time.Millisecond)
@@ -758,7 +758,7 @@ func TestHTTPTransport_HandleInvalidJSON(t *testing.T) {
 	if err := transport.Start(); err != nil {
 		t.Fatalf("failed to start transport: %v", err)
 	}
-	defer transport.Stop()
+	defer transport.Stop() //nolint:errcheck // test cleanup
 
 	// Give server time to start
 	time.Sleep(100 * time.Millisecond)
@@ -805,7 +805,7 @@ func TestHTTPTransport_HandleRPCError(t *testing.T) {
 	if err := transport.Start(); err != nil {
 		t.Fatalf("failed to start transport: %v", err)
 	}
-	defer transport.Stop()
+	defer transport.Stop() //nolint:errcheck // test cleanup
 
 	// Give server time to start
 	time.Sleep(100 * time.Millisecond)

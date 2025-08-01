@@ -48,7 +48,7 @@ func TestBasicConfigurationChange(t *testing.T) {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
-		defer node.Stop()
+		defer node.Stop() //nolint:errcheck // test cleanup
 	}
 
 	// Wait for leader election

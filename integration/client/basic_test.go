@@ -501,7 +501,7 @@ func TestClientSessionManagement(t *testing.T) {
 
 		commandCount := 0
 		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
+		defer ticker.Stop() //nolint:errcheck // background ticker cleanup
 
 		for {
 			select {

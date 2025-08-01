@@ -61,7 +61,7 @@ func TestLogReplicationWithFailures(t *testing.T) {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
-		defer node.Stop()
+		defer node.Stop() //nolint:errcheck // test cleanup
 	}
 
 	// Wait for leader election
@@ -278,7 +278,7 @@ func TestReplicationPatterns(t *testing.T) {
 		var submitted int32
 		go func() {
 			ticker := time.NewTicker(10 * time.Millisecond)
-			defer ticker.Stop()
+			defer ticker.Stop() //nolint:errcheck // background ticker cleanup
 
 			for {
 				select {
@@ -389,7 +389,7 @@ func TestReplicationWithSlowFollowers(t *testing.T) {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
-		defer node.Stop()
+		defer node.Stop() //nolint:errcheck // test cleanup
 	}
 
 	// Wait for leader

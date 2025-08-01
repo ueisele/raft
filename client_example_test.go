@@ -12,7 +12,7 @@ import (
 func TestExampleClientInteraction(t *testing.T) {
 	// Setup a 3-node cluster (abbreviated for clarity)
 	nodes, cleanup := setupTestCluster(t, 3)
-	defer cleanup()
+	defer cleanup() //nolint:errcheck // test cleanup
 
 	// Find the leader
 	var leader Node
@@ -127,7 +127,7 @@ func (c *RaftClient) SubmitAndWait(cmd interface{}, timeout time.Duration) error
 	defer cancel()
 
 	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
+	defer ticker.Stop() //nolint:errcheck // background ticker cleanup
 
 	for {
 		select {

@@ -429,7 +429,7 @@ func TestCommitIndexMonotonicity(t *testing.T) {
 
 	go func() {
 		ticker := time.NewTicker(10 * time.Millisecond)
-		defer ticker.Stop()
+		defer ticker.Stop() //nolint:errcheck // background ticker cleanup
 
 		for {
 			select {

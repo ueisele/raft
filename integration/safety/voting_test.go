@@ -513,7 +513,7 @@ func testVoteDenialPreventsUnnecessaryElections(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(30 * time.Millisecond)
-		defer ticker.Stop()
+		defer ticker.Stop() //nolint:errcheck // background ticker cleanup
 		cmdIndex := 0
 		for {
 			select {

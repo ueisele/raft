@@ -20,7 +20,7 @@ func TestSnapshotDuringPartition(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	defer cluster.Stop()
+	defer cluster.Stop() //nolint:errcheck // test cleanup
 
 	// Wait for leader election
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -85,7 +85,7 @@ func TestSnapshotDuringLeadershipChange(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	defer cluster.Stop()
+	defer cluster.Stop() //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	initialLeader, err := cluster.WaitForLeader(2 * time.Second)
@@ -178,7 +178,7 @@ func TestSnapshotOfSnapshotIndex(t *testing.T) {
 	if err := node.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node: %v", err)
 	}
-	defer node.Stop()
+	defer node.Stop() //nolint:errcheck // test cleanup
 
 	// Wait for node to become leader
 	helpers.WaitForLeader(t, []raft.Node{node}, 2*time.Second)
@@ -218,7 +218,7 @@ func TestConcurrentSnapshotAndReplication(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	defer cluster.Stop()
+	defer cluster.Stop() //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -256,7 +256,7 @@ func TestConcurrentSnapshotAndReplication(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
+		defer ticker.Stop() //nolint:errcheck // background ticker cleanup
 
 		for {
 			select {
@@ -303,7 +303,7 @@ func TestSnapshotInstallationRaceConditions(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	defer cluster.Stop()
+	defer cluster.Stop() //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -350,7 +350,7 @@ func TestSnapshotInstallationRaceConditions(t *testing.T) {
 
 	// Submit more commands while node 3 is catching up
 	for i := 50; i < 60; i++ {
-		cluster.SubmitCommand(fmt.Sprintf("race-cmd-%d", i))
+		cluster.SubmitCommand(fmt.Sprintf("race-cmd-%d", i)) //nolint:errcheck // background load generation
 	}
 
 	// Heal node 4
@@ -422,7 +422,7 @@ func TestPersistenceWithRapidSnapshots(t *testing.T) {
 	if err := node.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node: %v", err)
 	}
-	defer node.Stop()
+	defer node.Stop() //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	helpers.WaitForLeader(t, []raft.Node{node}, 2*time.Second)
@@ -482,7 +482,7 @@ func TestSnapshotTransmissionFailure(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	defer cluster.Stop()
+	defer cluster.Stop() //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)

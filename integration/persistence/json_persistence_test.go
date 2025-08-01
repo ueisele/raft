@@ -226,7 +226,7 @@ func TestSaveStateWriteError(t *testing.T) {
 	if err := os.Chmod(tempDir, 0555); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(tempDir, 0755) // Restore permissions for cleanup
+	defer os.Chmod(tempDir, 0755) //nolint:errcheck // restore permissions for cleanup
 
 	state := &raft.PersistentState{
 		CurrentTerm: 1,

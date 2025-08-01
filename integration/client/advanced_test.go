@@ -18,7 +18,7 @@ func TestLinearizableReads(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	defer cluster.Stop()
+	defer cluster.Stop() //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -68,7 +68,7 @@ func TestIdempotentOperations(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	defer cluster.Stop()
+	defer cluster.Stop() //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -111,7 +111,7 @@ func TestClientTimeouts(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	defer cluster.Stop()
+	defer cluster.Stop() //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -195,7 +195,7 @@ func TestClientRedirection(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	defer cluster.Stop()
+	defer cluster.Stop() //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -236,7 +236,7 @@ func TestClientRetries(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	defer cluster.Stop()
+	defer cluster.Stop() //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	initialLeaderID, err := cluster.WaitForLeader(2 * time.Second)

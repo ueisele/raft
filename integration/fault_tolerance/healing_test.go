@@ -97,7 +97,7 @@ func TestClusterHealing(t *testing.T) {
 	if err := oldNode.Start(ctx); err != nil {
 		t.Fatalf("Failed to restart old leader: %v", err)
 	}
-	defer oldNode.Stop()
+	defer oldNode.Stop() //nolint:errcheck // test cleanup
 
 	t.Logf("Restarted old leader %d", initialLeader)
 
@@ -456,7 +456,7 @@ func TestHealingUnderLoad(t *testing.T) {
 	for client := 0; client < 3; client++ {
 		go func(clientID int) {
 			ticker := time.NewTicker(20 * time.Millisecond)
-			defer ticker.Stop()
+			defer ticker.Stop() //nolint:errcheck // background ticker cleanup
 
 			cmdIndex := 0
 			for {
@@ -490,8 +490,8 @@ func TestHealingUnderLoad(t *testing.T) {
 
 	// Create partition while under load
 	t.Log("Creating partition under load")
-	cluster.PartitionNode(0)
-	cluster.PartitionNode(1)
+	cluster.PartitionNode(0) //nolint:errcheck // test partition setup
+	cluster.PartitionNode(1) //nolint:errcheck // test partition setup
 
 	// Continue load during partition
 	time.Sleep(1 * time.Second)

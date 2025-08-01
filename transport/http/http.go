@@ -78,10 +78,21 @@ func (t *HTTPTransport) Start() error {
 
 // Stop stops the HTTP server
 func (t *HTTPTransport) Stop() error {
+	var errs []error
+
+	// Stop accepting new connections
 	if t.httpServer != nil {
-		return t.httpServer.Close()
+		if err := t.httpServer.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close http server: %w", err))
+		}
 	}
-	return nil
+
+	// Close idle connections on the client
+	if t.httpClient != nil {
+		t.httpClient.CloseIdleConnections()
+	}
+
+	return errors.Join(errs...)
 }
 
 // GetAddress returns the address this transport is listening on
@@ -169,7 +180,7 @@ func (t *HTTPTransport) sendRPC(ctx context.Context, url string, args interface{
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // read-only operation
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("RPC failed with status %d", resp.StatusCode)
@@ -203,7 +214,7 @@ func (t *HTTPTransport) handleRequestVote(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(reply)
+	json.NewEncoder(w).Encode(reply) //nolint:errcheck // best effort response encoding
 }
 
 func (t *HTTPTransport) handleAppendEntries(w http.ResponseWriter, r *http.Request) {
@@ -225,7 +236,7 @@ func (t *HTTPTransport) handleAppendEntries(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(reply)
+	json.NewEncoder(w).Encode(reply) //nolint:errcheck // best effort response encoding
 }
 
 func (t *HTTPTransport) handleInstallSnapshot(w http.ResponseWriter, r *http.Request) {
@@ -247,7 +258,7 @@ func (t *HTTPTransport) handleInstallSnapshot(w http.ResponseWriter, r *http.Req
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(reply)
+	json.NewEncoder(w).Encode(reply) //nolint:errcheck // best effort response encoding
 }
 
 // getServerAddress returns the address for a given server ID

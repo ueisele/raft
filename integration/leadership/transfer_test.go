@@ -51,7 +51,7 @@ func TestLeadershipTransfer(t *testing.T) {
 	// and the target node starting an election with a higher term
 
 	// Stop the current leader
-	cluster.Nodes[initialLeader].Stop()
+	cluster.Nodes[initialLeader].Stop() //nolint:errcheck // intentional stop for test
 	t.Log("Stopped current leader to trigger new election")
 
 	// Wait for new leader election
@@ -119,7 +119,7 @@ func TestGracefulLeadershipHandoff(t *testing.T) {
 	// Start client goroutine
 	go func() {
 		ticker := time.NewTicker(50 * time.Millisecond)
-		defer ticker.Stop()
+		defer ticker.Stop() //nolint:errcheck // background ticker cleanup
 
 		for {
 			select {
@@ -159,7 +159,7 @@ func TestGracefulLeadershipHandoff(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// Stop current leader
-	cluster.Nodes[currentLeader].Stop()
+	cluster.Nodes[currentLeader].Stop() //nolint:errcheck // intentional stop for test
 	t.Logf("Gracefully stopped leader %d", currentLeader)
 
 	// Continue submitting commands during transition
@@ -225,7 +225,7 @@ func TestLeadershipTransferToSpecificNode(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
-		cluster.WaitForCommitIndex(idx, time.Second)
+		cluster.WaitForCommitIndex(idx, time.Second) //nolint:errcheck // best-effort wait in test
 	}
 
 	// Choose the most up-to-date follower as target
@@ -253,7 +253,7 @@ func TestLeadershipTransferToSpecificNode(t *testing.T) {
 	// 4. Target immediately starts election with pre-vote
 
 	// For this test, we simulate by stopping current leader
-	cluster.Nodes[currentLeader].Stop()
+	cluster.Nodes[currentLeader].Stop() //nolint:errcheck // intentional stop for test
 
 	// Wait for election
 	time.Sleep(500 * time.Millisecond)
@@ -345,7 +345,7 @@ func TestLeadershipTransferDuringLoad(t *testing.T) {
 	transferTime := time.Now()
 	t.Logf("Initiating leadership transfer at %v", transferTime)
 
-	cluster.Nodes[initialLeader].Stop()
+	cluster.Nodes[initialLeader].Stop() //nolint:errcheck // intentional stop for test
 
 	// Continue load during transfer
 	time.Sleep(1 * time.Second)
@@ -425,7 +425,7 @@ func TestPreventedLeadershipTransfer(t *testing.T) {
 
 	// Submit many commands
 	for i := 0; i < 20; i++ {
-		cluster.SubmitCommand(fmt.Sprintf("cmd-%d", i))
+		cluster.SubmitCommand(fmt.Sprintf("cmd-%d", i)) //nolint:errcheck // background load in test
 	}
 
 	// Don't wait for full replication
@@ -463,7 +463,7 @@ func TestPreventedLeadershipTransfer(t *testing.T) {
 	// Stop all followers
 	for i, node := range cluster.Nodes {
 		if i != leaderID {
-			node.Stop()
+			node.Stop() //nolint:errcheck // test cleanup
 		}
 	}
 

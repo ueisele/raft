@@ -28,7 +28,7 @@ func TestElectionSafety(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(50 * time.Millisecond)
-		defer ticker.Stop()
+		defer ticker.Stop() //nolint:errcheck // background ticker cleanup
 		for {
 			select {
 			case <-done:

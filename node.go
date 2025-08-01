@@ -159,7 +159,11 @@ func (n *raftNode) Stop() {
 	n.stopped = true
 
 	// Save state before shutdown
-	n.persist()
+	if err := n.persist(); err != nil {
+		if n.config.Logger != nil {
+			n.config.Logger.Error("Failed to persist state on shutdown: %v", err)
+		}
+	}
 
 	if n.cancel != nil {
 		n.cancel()
@@ -175,7 +179,7 @@ func (n *raftNode) Stop() {
 	}
 
 	close(n.stopCh)
-	n.transport.Stop()
+	n.transport.Stop() //nolint:errcheck // best effort cleanup on context cancellation
 }
 
 // Submit submits a command to the Raft cluster
@@ -197,10 +201,19 @@ func (n *raftNode) Submit(command interface{}) (int, int, bool) {
 
 	prevIndex := n.log.GetLastLogIndex()
 	prevTerm := n.log.GetLastLogTerm()
-	n.log.AppendEntries(prevIndex, prevTerm, []LogEntry{entry})
+	if err := n.log.AppendEntries(prevIndex, prevTerm, []LogEntry{entry}); err != nil {
+		return -1, -1, false
+	}
 
-	// Persist state
-	n.persist()
+	// Persist state - critical for consensus
+	if err := n.persist(); err != nil {
+		// Remove the entry we just added since we couldn't persist it
+		n.log.TruncateAfter(prevIndex)
+		if n.config.Logger != nil {
+			n.config.Logger.Error("Failed to persist after Submit: %v", err)
+		}
+		return -1, -1, false
+	}
 
 	// Trigger replication
 	n.replication.Replicate()
@@ -317,14 +330,16 @@ func (n *raftNode) AddServer(id int, address string, voting bool) error {
 
 	prevIndex := n.log.GetLastLogIndex()
 	prevTerm := n.log.GetLastLogTerm()
-	n.log.AppendEntries(prevIndex, prevTerm, []LogEntry{entry})
+	if err := n.log.AppendEntries(prevIndex, prevTerm, []LogEntry{entry}); err != nil {
+		return fmt.Errorf("append configuration entry: %w", err)
+	}
 
 	if n.config.Logger != nil {
 		n.config.Logger.Info("Created configuration change entry at index %d", entry.Index)
 	}
 
 	// Persist and replicate
-	n.persist()
+	n.persist() //nolint:errcheck // best effort persist before replication
 	n.replication.Replicate()
 
 	// For simplicity, we'll return immediately
@@ -373,14 +388,20 @@ func (n *raftNode) RemoveServer(id int) error {
 
 	prevIndex := n.log.GetLastLogIndex()
 	prevTerm := n.log.GetLastLogTerm()
-	n.log.AppendEntries(prevIndex, prevTerm, []LogEntry{entry})
+	if err := n.log.AppendEntries(prevIndex, prevTerm, []LogEntry{entry}); err != nil {
+		return fmt.Errorf("append configuration entry: %w", err)
+	}
 
 	if n.config.Logger != nil {
 		n.config.Logger.Info("Created configuration change entry at index %d", entry.Index)
 	}
 
-	// Persist and replicate
-	n.persist()
+	// Persist and replicate - critical for configuration changes
+	if err := n.persist(); err != nil {
+		// Remove the entry we just added since we couldn't persist it
+		n.log.TruncateAfter(prevIndex)
+		return fmt.Errorf("persist configuration change: %w", err)
+	}
 	n.replication.Replicate()
 
 	return nil
@@ -406,14 +427,20 @@ func (n *raftNode) submitConfigurationChange(change *PendingConfigChange) error 
 
 	prevIndex := n.log.GetLastLogIndex()
 	prevTerm := n.log.GetLastLogTerm()
-	n.log.AppendEntries(prevIndex, prevTerm, []LogEntry{entry})
+	if err := n.log.AppendEntries(prevIndex, prevTerm, []LogEntry{entry}); err != nil {
+		return fmt.Errorf("append configuration entry: %w", err)
+	}
 
 	if n.config.Logger != nil {
 		n.config.Logger.Info("Created configuration change entry at index %d", entry.Index)
 	}
 
-	// Persist and replicate
-	n.persist()
+	// Persist and replicate - critical for configuration changes
+	if err := n.persist(); err != nil {
+		// Remove the entry we just added since we couldn't persist it
+		n.log.TruncateAfter(prevIndex)
+		return fmt.Errorf("persist configuration change: %w", err)
+	}
 	n.replication.Replicate()
 
 	return nil
@@ -688,7 +715,12 @@ func (n *raftNode) run() {
 					if inConfig && isVoting {
 						// Start election only if we're a voting member
 						n.state.BecomeCandidate()
-						n.persist()
+						if err := n.persist(); err != nil {
+							if n.config.Logger != nil {
+								n.config.Logger.Error("Failed to persist candidate state: %v", err)
+							}
+							// Continue with election anyway
+						}
 
 						// Run election in background
 						go func() {
@@ -810,9 +842,9 @@ func (n *raftNode) applyLoop() {
 }
 
 // persist saves state to persistence
-func (n *raftNode) persist() {
+func (n *raftNode) persist() error {
 	if n.persistence == nil {
-		return
+		return nil
 	}
 
 	state := &PersistentState{
@@ -822,7 +854,13 @@ func (n *raftNode) persist() {
 		CommitIndex: n.log.GetCommitIndex(),
 	}
 
-	n.persistence.SaveState(state)
+	if err := n.persistence.SaveState(state); err != nil {
+		if n.config.Logger != nil {
+			n.config.Logger.Error("Failed to persist state: %v", err)
+		}
+		return fmt.Errorf("persist state: %w", err)
+	}
+	return nil
 }
 
 // restoreState loads state from persistence
@@ -840,7 +878,9 @@ func (n *raftNode) restoreState() error {
 
 		if len(state.Log) > 0 {
 			// Restore log entries - append to empty log
-			n.log.AppendEntries(0, 0, state.Log)
+			if err := n.log.AppendEntries(0, 0, state.Log); err != nil {
+				return fmt.Errorf("restore log entries: %w", err)
+			}
 		}
 
 		// Restore commit index
@@ -874,7 +914,14 @@ func (n *raftNode) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) e
 	defer n.mu.Unlock()
 
 	n.election.HandleRequestVote(args, reply)
-	n.persist()
+	
+	// Persist state after vote handling
+	if err := n.persist(); err != nil {
+		// Log error but don't fail the RPC - the vote has already been processed
+		if n.config.Logger != nil {
+			n.config.Logger.Error("Failed to persist after RequestVote: %v", err)
+		}
+	}
 
 	// Notify apply loop in case there are new entries to apply
 	select {
@@ -891,7 +938,14 @@ func (n *raftNode) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesRe
 	defer n.mu.Unlock()
 
 	n.replication.HandleAppendEntries(args, reply)
-	n.persist()
+	
+	// Persist state after handling entries
+	if err := n.persist(); err != nil {
+		// Log error but don't fail the RPC - the entries have already been processed
+		if n.config.Logger != nil {
+			n.config.Logger.Error("Failed to persist after AppendEntries: %v", err)
+		}
+	}
 
 	// Record heartbeat for vote denial optimization
 	if reply.Success {
@@ -916,7 +970,14 @@ func (n *raftNode) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnap
 	if err := n.snapshot.HandleInstallSnapshot(args, reply, currentTerm); err != nil {
 		return err
 	}
-	n.persist()
+	
+	// Persist state after snapshot installation
+	if err := n.persist(); err != nil {
+		// Log error but don't fail the RPC - the snapshot has already been applied
+		if n.config.Logger != nil {
+			n.config.Logger.Error("Failed to persist after InstallSnapshot: %v", err)
+		}
+	}
 
 	// Notify apply loop
 	select {

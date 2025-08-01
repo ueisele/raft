@@ -124,7 +124,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer os.RemoveAll(tempDir) //nolint:errcheck // test cleanup
 
 	// Clear persistence store
 	persistenceStore.mu.Lock()
@@ -171,7 +171,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
-		defer node.Stop()
+		defer node.Stop() //nolint:errcheck // test cleanup
 	}
 
 	// Wait for leader election
@@ -197,7 +197,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 
 	// Stop all nodes
 	for _, node := range nodes {
-		node.Stop()
+		node.Stop() //nolint:errcheck // test cleanup
 	}
 	t.Log("Stopped all nodes")
 
@@ -237,7 +237,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to restart node %d: %v", i, err)
 		}
-		defer node.Stop()
+		defer node.Stop() //nolint:errcheck // test cleanup
 	}
 
 	t.Log("Restarted all nodes")
@@ -291,7 +291,7 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer os.RemoveAll(tempDir) //nolint:errcheck // test cleanup
 
 	// Clear persistence store
 	persistenceStore.mu.Lock()
@@ -314,7 +314,7 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 
 	// Submit command but crash leader immediately
 	cluster.nodes[leaderID].Submit("uncommitted-cmd")
-	cluster.nodes[leaderID].Stop()
+	cluster.nodes[leaderID].Stop() //nolint:errcheck // intentional crash for test
 	t.Logf("Crashed leader %d after accepting command", leaderID)
 
 	// Wait for new leader
@@ -351,7 +351,7 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	for i := 0; i < 5; i++ {
 		if i != leaderID && i%2 == 0 {
-			cluster2.nodes[i].Stop()
+			cluster2.nodes[i].Stop() //nolint:errcheck // intentional crash for test
 			t.Logf("Crashed follower %d", i)
 		}
 	}
@@ -386,7 +386,7 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 	// Rolling restart each node
 	for i := 0; i < 5; i++ {
 		t.Logf("Rolling restart of node %d", i)
-		cluster3.nodes[i].Stop()
+		cluster3.nodes[i].Stop() //nolint:errcheck // test cleanup
 		time.Sleep(200 * time.Millisecond)
 		restartNode(t, ctx, cluster3, i)
 		time.Sleep(500 * time.Millisecond)
@@ -412,7 +412,7 @@ func TestPersistenceWithSnapshots(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer os.RemoveAll(tempDir) //nolint:errcheck // test cleanup
 
 	// Clear persistence store
 	persistenceStore.mu.Lock()
@@ -538,7 +538,7 @@ func startCluster(t *testing.T, ctx context.Context, cluster *persistentCluster)
 
 func stopCluster(cluster *persistentCluster) {
 	for _, node := range cluster.nodes {
-		node.Stop()
+		node.Stop() //nolint:errcheck // test cleanup
 	}
 }
 

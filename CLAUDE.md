@@ -58,33 +58,132 @@ raft/
 
 ## Error Handling
 
+### Core Principles for Library Code
+
+As a Raft library, we must never silently ignore errors that could affect correctness or data integrity. Users of this library depend on accurate error reporting to build reliable distributed systems.
+
+### Error Categories
+
+1. **Critical Errors** (MUST handle):
+   - Persistence/state saving failures
+   - Network transport errors during consensus operations
+   - Snapshot creation/restoration failures
+   - Log compaction errors
+   - Any Close() errors on write operations
+
+2. **Non-Critical Errors** (MAY log):
+   - Read-only resource cleanup
+   - Metrics collection failures
+   - Debug/monitoring operations
+
 ### Error Patterns
 
+#### Named Return Values for Defer Error Handling
+
 ```go
-// Always return error as last value
-func (t *HTTPTransport) Start() error {
-    if t.handler == nil {
-        return fmt.Errorf("RPC handler not set")
+// For operations that modify state or persist data
+func (p *Persistence) SaveState(state *PersistentState) (err error) {
+    file, err := os.Create(p.statePath)
+    if err != nil {
+        return fmt.Errorf("create state file: %w", err)
     }
-    // ...
+    defer func() {
+        if cerr := file.Close(); cerr != nil && err == nil {
+            err = fmt.Errorf("close state file: %w", cerr)
+        }
+    }()
+    
+    // Write operations...
+    
+    // Ensure durability before returning success
+    return file.Sync()
 }
+```
 
-// Use error wrapping with context
-if err != nil {
-    return fmt.Errorf("failed to get address for server %d: %w", serverID, err)
-}
+#### Multi-Error Handling (Go 1.20+)
 
-// Custom error types in sub-packages
-type TransportError struct {
-    ServerID int
-    Err      error
+```go
+func (t *Transport) Stop() error {
+    var errs []error
+    
+    // Critical cleanup
+    if t.listener != nil {
+        if err := t.listener.Close(); err != nil {
+            errs = append(errs, fmt.Errorf("close listener: %w", err))
+        }
+    }
+    
+    // Wait for pending operations
+    t.wg.Wait()
+    
+    return errors.Join(errs...)
 }
+```
+
+#### Read-Only Operations
+
+```go
+// Acceptable for read-only operations
+func (n *Node) LoadDebugInfo() (*DebugInfo, error) {
+    file, err := os.Open(n.debugPath)
+    if err != nil {
+        return nil, fmt.Errorf("open debug file: %w", err)
+    }
+    defer file.Close() // Read-only, Close() error not critical
+    
+    var info DebugInfo
+    if err := json.NewDecoder(file).Decode(&info); err != nil {
+        return nil, fmt.Errorf("decode debug info: %w", err)
+    }
+    return &info, nil
+}
+```
+
+### Migration Plan for Defer Error Handling
+
+#### Phase 1: Critical Path (Immediate)
+Fix all defer statements in:
+- `persistence/` - All write operations must handle Close() errors
+- `transport/` - Network resources must be properly closed
+- `snapshot_manager.go` - Snapshot operations affect correctness
+- `node.go` - Core state management
+
+#### Phase 2: Production Code (Short-term)
+Update remaining production code:
+- Log management functions
+- Configuration persistence
+- State machine interfaces
+
+#### Phase 3: Test Code (Long-term)
+For test files, use linter directives:
+```go
+defer os.RemoveAll(tempDir) //nolint:errcheck // test cleanup
+defer transport.Stop() //nolint:errcheck // test cleanup
 ```
 
 ### Error Message Format
 - Lowercase, no trailing punctuation
-- Include context (IDs, values)
-- Be consistent across similar operations
+- Include operation context: `fmt.Errorf("save state: %w", err)`
+- Be specific about what failed: `fmt.Errorf("close state file: %w", err)`
+- Chain errors for context: `fmt.Errorf("persist term %d: %w", term, err)`
+
+### Interface Documentation
+
+```go
+// Persistence defines the interface for persisting Raft state.
+// 
+// Implementations MUST ensure durability of all write operations.
+// Any error returned from SaveState or SaveSnapshot indicates that
+// the operation failed and the state was NOT persisted.
+//
+// Close() errors on write operations MUST be handled and returned.
+type Persistence interface {
+    SaveState(state *PersistentState) error
+    LoadState() (*PersistentState, error)
+    SaveSnapshot(snapshot *Snapshot) error
+    LoadSnapshot() (*Snapshot, error)
+}
+```
 
 ## Testing Conventions
 

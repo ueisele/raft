@@ -32,7 +32,7 @@ func NewJSONPersistence(config *persistence.Config) (*JSONPersistence, error) {
 }
 
 // SaveState saves the persistent state
-func (p *JSONPersistence) SaveState(state *raft.PersistentState) error {
+func (p *JSONPersistence) SaveState(state *raft.PersistentState) (err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -45,13 +45,34 @@ func (p *JSONPersistence) SaveState(state *raft.PersistentState) error {
 	filename := p.getStateFilename()
 	tempFilename := filename + ".tmp"
 
-	if err := os.WriteFile(tempFilename, data, 0644); err != nil {
-		return &persistence.PersistenceError{Op: "save", Err: err}
+	// Create and write to temporary file
+	file, err := os.Create(tempFilename)
+	if err != nil {
+		return &persistence.PersistenceError{Op: "save", Err: fmt.Errorf("create temp file: %w", err)}
 	}
+	defer func() {
+		if cerr := file.Close(); cerr != nil && err == nil {
+			err = &persistence.PersistenceError{Op: "save", Err: fmt.Errorf("close temp file: %w", cerr)}
+		}
+	}()
+
+	// Write data
+	if _, err = file.Write(data); err != nil {
+		return &persistence.PersistenceError{Op: "save", Err: fmt.Errorf("write data: %w", err)}
+	}
+
+	// Ensure data is persisted to disk
+	if err = file.Sync(); err != nil {
+		return &persistence.PersistenceError{Op: "save", Err: fmt.Errorf("sync file: %w", err)}
+	}
+
+	// Close is handled by defer
 
 	// Atomic rename
 	if err := os.Rename(tempFilename, filename); err != nil {
-		return &persistence.PersistenceError{Op: "save", Err: err}
+		// Clean up temp file if rename fails
+		os.Remove(tempFilename) //nolint:errcheck // cleanup temp file on error
+		return &persistence.PersistenceError{Op: "save", Err: fmt.Errorf("rename file: %w", err)}
 	}
 
 	return nil
@@ -87,7 +108,7 @@ func (p *JSONPersistence) LoadState() (*raft.PersistentState, error) {
 }
 
 // SaveSnapshot saves a snapshot
-func (p *JSONPersistence) SaveSnapshot(snapshot *raft.Snapshot) error {
+func (p *JSONPersistence) SaveSnapshot(snapshot *raft.Snapshot) (err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -111,13 +132,34 @@ func (p *JSONPersistence) SaveSnapshot(snapshot *raft.Snapshot) error {
 	filename := p.getSnapshotFilename()
 	tempFilename := filename + ".tmp"
 
-	if err := os.WriteFile(tempFilename, data, 0644); err != nil {
-		return &persistence.PersistenceError{Op: "save", Err: err}
+	// Create and write to temporary file
+	file, err := os.Create(tempFilename)
+	if err != nil {
+		return &persistence.PersistenceError{Op: "save", Err: fmt.Errorf("create temp snapshot file: %w", err)}
 	}
+	defer func() {
+		if cerr := file.Close(); cerr != nil && err == nil {
+			err = &persistence.PersistenceError{Op: "save", Err: fmt.Errorf("close temp snapshot file: %w", cerr)}
+		}
+	}()
+
+	// Write data
+	if _, err = file.Write(data); err != nil {
+		return &persistence.PersistenceError{Op: "save", Err: fmt.Errorf("write snapshot data: %w", err)}
+	}
+
+	// Ensure data is persisted to disk
+	if err = file.Sync(); err != nil {
+		return &persistence.PersistenceError{Op: "save", Err: fmt.Errorf("sync snapshot file: %w", err)}
+	}
+
+	// Close is handled by defer
 
 	// Atomic rename
 	if err := os.Rename(tempFilename, filename); err != nil {
-		return &persistence.PersistenceError{Op: "save", Err: err}
+		// Clean up temp file if rename fails
+		os.Remove(tempFilename) //nolint:errcheck // cleanup temp file on error
+		return &persistence.PersistenceError{Op: "save", Err: fmt.Errorf("rename snapshot file: %w", err)}
 	}
 
 	return nil
