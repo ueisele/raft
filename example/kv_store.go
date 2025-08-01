@@ -114,13 +114,24 @@ func main() {
 		data: make(map[string]string),
 	}
 
-	// Create HTTP transport
+	// Create peer discovery
+	peers := map[int]string{
+		0: "localhost:8000",
+		1: "localhost:8001",
+		2: "localhost:8002",
+	}
+	discovery := transport.NewStaticPeerDiscovery(peers)
+
+	// Create HTTP transport with discovery
 	transportConfig := &transport.Config{
 		ServerID:   serverID,
 		Address:    fmt.Sprintf("localhost:%d", 8000+serverID),
 		RPCTimeout: 1000, // 1 second
 	}
-	httpTransport := httpTransport.NewHTTPTransport(transportConfig)
+	httpTransport, err := httpTransport.NewHTTPTransport(transportConfig, discovery)
+	if err != nil {
+		log.Fatalf("Failed to create transport: %v", err)
+	}
 
 	// Create persistence
 	persistenceConfig := &persistence.Config{

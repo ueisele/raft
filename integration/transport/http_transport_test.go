@@ -44,15 +44,25 @@ func TestHTTPTransportBasicCluster(t *testing.T) {
 	transports := make([]*httpTransport.HTTPTransport, 3)
 	basePort := 19000
 
+	// Create peer discovery with all node addresses first
+	peers := make(map[int]string)
+	for i := 0; i < 3; i++ {
+		peers[i] = fmt.Sprintf("localhost:%d", basePort+i)
+	}
+	discovery := transport.NewStaticPeerDiscovery(peers)
+
 	// Use test ports to avoid conflicts
 	for i := 0; i < 3; i++ {
-		// Create HTTP transport
+		// Create HTTP transport with discovery
 		transportConfig := &transport.Config{
 			ServerID:   i,
 			Address:    fmt.Sprintf("localhost:%d", basePort+i),
 			RPCTimeout: 1000, // 1 second
 		}
-		httpTrans := httpTransport.NewHTTPTransport(transportConfig)
+		httpTrans, err := httpTransport.NewHTTPTransport(transportConfig, discovery)
+		if err != nil {
+			t.Fatalf("Failed to create transport %d: %v", i, err)
+		}
 		transports[i] = httpTrans
 
 		// Create persistence
@@ -79,18 +89,6 @@ func TestHTTPTransportBasicCluster(t *testing.T) {
 			t.Fatalf("Failed to create node %d: %v", i, err)
 		}
 		nodes[i] = node
-	}
-
-	// Create peer discovery with all node addresses
-	peers := make(map[int]string)
-	for i := 0; i < 3; i++ {
-		peers[i] = fmt.Sprintf("localhost:%d", basePort+i)
-	}
-	discovery := transport.NewStaticPeerDiscovery(peers)
-	
-	// Set discovery for all transports before starting
-	for _, trans := range transports {
-		trans.SetDiscovery(discovery)
 	}
 
 	// Start all transports
@@ -166,6 +164,13 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 	transports := make([]*httpTransport.HTTPTransport, 3)
 	basePort := 19100
 
+	// Create peer discovery first
+	peers := make(map[int]string)
+	for i := 0; i < 3; i++ {
+		peers[i] = fmt.Sprintf("localhost:%d", basePort+i)
+	}
+	discovery := transport.NewStaticPeerDiscovery(peers)
+
 	for i := 0; i < 3; i++ {
 		// Create HTTP transport with short timeout for faster failure detection
 		transportConfig := &transport.Config{
@@ -173,7 +178,10 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 			Address:    fmt.Sprintf("localhost:%d", basePort+i),
 			RPCTimeout: 100, // 100ms for faster tests
 		}
-		httpTrans := httpTransport.NewHTTPTransport(transportConfig)
+		httpTrans, err := httpTransport.NewHTTPTransport(transportConfig, discovery)
+		if err != nil {
+			t.Fatalf("Failed to create transport %d: %v", i, err)
+		}
 		transports[i] = httpTrans
 
 		// Create persistence
@@ -200,18 +208,6 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 			t.Fatalf("Failed to create node %d: %v", i, err)
 		}
 		nodes[i] = node
-	}
-
-	// Create peer discovery with all node addresses
-	peers := make(map[int]string)
-	for i := 0; i < 3; i++ {
-		peers[i] = fmt.Sprintf("localhost:%d", basePort+i)
-	}
-	discovery := transport.NewStaticPeerDiscovery(peers)
-	
-	// Set discovery for all transports before starting
-	for _, trans := range transports {
-		trans.SetDiscovery(discovery)
 	}
 
 	// Start all transports
@@ -308,6 +304,13 @@ func TestHTTPTransportHighLoad(t *testing.T) {
 	transports := make([]*httpTransport.HTTPTransport, 3)
 	basePort := 19200
 
+	// Create peer discovery first
+	peers := make(map[int]string)
+	for i := 0; i < 3; i++ {
+		peers[i] = fmt.Sprintf("localhost:%d", basePort+i)
+	}
+	discovery := transport.NewStaticPeerDiscovery(peers)
+
 	for i := 0; i < 3; i++ {
 		// Create HTTP transport
 		transportConfig := &transport.Config{
@@ -315,7 +318,10 @@ func TestHTTPTransportHighLoad(t *testing.T) {
 			Address:    fmt.Sprintf("localhost:%d", basePort+i),
 			RPCTimeout: 1000,
 		}
-		httpTrans := httpTransport.NewHTTPTransport(transportConfig)
+		httpTrans, err := httpTransport.NewHTTPTransport(transportConfig, discovery)
+		if err != nil {
+			t.Fatalf("Failed to create transport %d: %v", i, err)
+		}
 		transports[i] = httpTrans
 
 		// Create persistence
@@ -342,18 +348,6 @@ func TestHTTPTransportHighLoad(t *testing.T) {
 			t.Fatalf("Failed to create node %d: %v", i, err)
 		}
 		nodes[i] = node
-	}
-
-	// Create peer discovery with all node addresses
-	peers := make(map[int]string)
-	for i := 0; i < 3; i++ {
-		peers[i] = fmt.Sprintf("localhost:%d", basePort+i)
-	}
-	discovery := transport.NewStaticPeerDiscovery(peers)
-	
-	// Set discovery for all transports before starting
-	for _, trans := range transports {
-		trans.SetDiscovery(discovery)
 	}
 
 	// Start all transports
@@ -464,11 +458,15 @@ func TestHTTPTransport_StartStop(t *testing.T) {
 		RPCTimeout: 500,
 	}
 
-	transport := httpTransport.NewHTTPTransport(config)
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: "localhost:8001"})
+	transport, err := httpTransport.NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
 	handler := &MockRPCHandler{}
 
 	// Test starting without handler
-	err := transport.Start()
+	err = transport.Start()
 	if err == nil {
 		t.Error("expected error when starting without handler")
 	}
@@ -511,7 +509,11 @@ func TestHTTPTransport_HandleRequestVote(t *testing.T) {
 		RPCTimeout: 500,
 	}
 
-	transport := httpTransport.NewHTTPTransport(config)
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: "localhost:8001"})
+	transport, err := httpTransport.NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
 	
 	handler := &MockRPCHandler{
 		requestVoteFunc: func(args *raft.RequestVoteArgs, reply *raft.RequestVoteReply) error {
@@ -568,7 +570,11 @@ func TestHTTPTransport_HandleAppendEntries(t *testing.T) {
 		RPCTimeout: 500,
 	}
 
-	transport := httpTransport.NewHTTPTransport(config)
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: "localhost:8001"})
+	transport, err := httpTransport.NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
 	
 	handler := &MockRPCHandler{
 		appendEntriesFunc: func(args *raft.AppendEntriesArgs, reply *raft.AppendEntriesReply) error {
@@ -625,7 +631,11 @@ func TestHTTPTransport_HandleInstallSnapshot(t *testing.T) {
 		RPCTimeout: 500,
 	}
 
-	transport := httpTransport.NewHTTPTransport(config)
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: "localhost:8001"})
+	transport, err := httpTransport.NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
 	
 	handler := &MockRPCHandler{
 		installSnapshotFunc: func(args *raft.InstallSnapshotArgs, reply *raft.InstallSnapshotReply) error {
@@ -682,7 +692,11 @@ func TestHTTPTransport_HandleInvalidMethod(t *testing.T) {
 		RPCTimeout: 500,
 	}
 
-	transport := httpTransport.NewHTTPTransport(config)
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: "localhost:8001"})
+	transport, err := httpTransport.NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
 	transport.SetRPCHandler(&MockRPCHandler{})
 	
 	if err := transport.Start(); err != nil {
@@ -713,7 +727,11 @@ func TestHTTPTransport_HandleInvalidJSON(t *testing.T) {
 		RPCTimeout: 500,
 	}
 
-	transport := httpTransport.NewHTTPTransport(config)
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: "localhost:8001"})
+	transport, err := httpTransport.NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
 	transport.SetRPCHandler(&MockRPCHandler{})
 	
 	if err := transport.Start(); err != nil {
@@ -744,7 +762,11 @@ func TestHTTPTransport_HandleRPCError(t *testing.T) {
 		RPCTimeout: 500,
 	}
 
-	transport := httpTransport.NewHTTPTransport(config)
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: "localhost:8001"})
+	transport, err := httpTransport.NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
 	
 	handler := &MockRPCHandler{
 		requestVoteFunc: func(args *raft.RequestVoteArgs, reply *raft.RequestVoteReply) error {

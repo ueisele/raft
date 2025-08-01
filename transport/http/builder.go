@@ -50,43 +50,32 @@ func (b *Builder) Build() (*HTTPTransport, error) {
 		return nil, fmt.Errorf("peer discovery mechanism is required")
 	}
 
-	httpClient := b.httpClient
-	if httpClient == nil {
-		httpClient = &http.Client{
-			Timeout: b.rpcTimeout,
-		}
+	config := &transport.Config{
+		ServerID:   b.serverID,
+		Address:    b.address,
+		RPCTimeout: int(b.rpcTimeout / time.Millisecond),
 	}
 
-	transport := &HTTPTransport{
-		serverID:   b.serverID,
-		address:    b.address,
-		httpClient: httpClient,
-		discovery:  b.discovery,
+	// Use custom HTTP client if provided
+	trans, err := NewHTTPTransport(config, b.discovery)
+	if err != nil {
+		return nil, err
 	}
 
-	return transport, nil
+	if b.httpClient != nil {
+		trans.httpClient = b.httpClient
+	}
+
+	return trans, nil
 }
 
-// NewHTTPTransportWithDiscovery creates a new HTTP transport with discovery
-// This is the recommended way to create a transport for production use
+// NewHTTPTransportWithDiscovery is now an alias for NewHTTPTransport
+// Deprecated: Use NewHTTPTransport directly
 func NewHTTPTransportWithDiscovery(
 	config *transport.Config,
 	discovery transport.PeerDiscovery,
 ) (*HTTPTransport, error) {
-	if discovery == nil {
-		return nil, fmt.Errorf("discovery mechanism is required")
-	}
-
-	transport := &HTTPTransport{
-		serverID: config.ServerID,
-		address:  config.Address,
-		httpClient: &http.Client{
-			Timeout: time.Duration(config.RPCTimeout) * time.Millisecond,
-		},
-		discovery: discovery,
-	}
-
-	return transport, nil
+	return NewHTTPTransport(config, discovery)
 }
 
 // NewHTTPTransportWithStaticPeers creates a transport with static peer configuration
@@ -96,5 +85,5 @@ func NewHTTPTransportWithStaticPeers(
 	peers map[int]string,
 ) (*HTTPTransport, error) {
 	discovery := transport.NewStaticPeerDiscovery(peers)
-	return NewHTTPTransportWithDiscovery(config, discovery)
+	return NewHTTPTransport(config, discovery)
 }

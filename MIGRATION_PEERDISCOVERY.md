@@ -22,7 +22,7 @@ transport := http.NewHTTPTransport(config, discovery)
 
 ## Migration Phases
 
-### Phase 1: Add New Constructor (v0.9.0)
+### Phase 1: Add New Constructor and Validation (v0.9.0)
 **Timeline: Current Release**
 **Breaking Changes: None**
 
@@ -66,37 +66,7 @@ func (t *HTTPTransport) Start() error {
 }
 ```
 
-### Phase 2: Add Migration Warnings (v0.10.0)
-**Timeline: Next Minor Release**
-**Breaking Changes: None (Warnings Only)**
-
-1. Add deprecation warnings:
-```go
-func NewHTTPTransport(config *transport.Config) *HTTPTransport {
-    // Log warning at runtime
-    log.Printf("WARNING: NewHTTPTransport without discovery is deprecated. " +
-        "Use NewHTTPTransportWithDiscovery instead. " +
-        "This will be a required parameter in v1.0.0")
-    
-    return &HTTPTransport{
-        // ... existing implementation
-    }
-}
-```
-
-2. Add compile-time deprecation notice:
-```go
-// Deprecated: NewHTTPTransport will require discovery parameter in v1.0.0.
-// Use NewHTTPTransportWithDiscovery for new code.
-//
-// Migration guide:
-//   Old: transport := NewHTTPTransport(config)
-//        transport.SetDiscovery(discovery)
-//   New: transport, err := NewHTTPTransportWithDiscovery(config, discovery)
-func NewHTTPTransport(config *transport.Config) *HTTPTransport
-```
-
-### Phase 3: Make Discovery Required (v1.0.0)
+### Phase 2: Make Discovery Required (v1.0.0)
 **Timeline: Major Version Release**
 **Breaking Changes: Yes**
 
@@ -274,10 +244,38 @@ func (b *HTTPTransportBuilder) Build() (*HTTPTransport, error) {
 }
 ```
 
-## Timeline Summary
+## Implementation Status
 
-- **v0.9.0** (Current): Introduce new constructors, maintain compatibility
-- **v0.10.0** (3 months): Add deprecation warnings
-- **v1.0.0** (6 months): Make breaking change with major version
+### ✅ Phase 1 (Completed)
+- Added validation in `Start()` requiring discovery
+- Added deprecation documentation
+- Created migration tools and examples
+- Maintained backward compatibility
 
-This phased approach gives users ample time to migrate while maintaining backward compatibility until the major version release.
+### ✅ Phase 2 (Completed - Combined with v1.0.0)
+- Made discovery a required constructor parameter
+- Removed `SetDiscovery()` method
+- Removed the old constructor without discovery
+- All tests and examples updated
+
+## Breaking Changes in v1.0.0
+
+The following changes have been implemented:
+
+1. **Constructor now requires discovery**:
+   ```go
+   // Old (no longer supported)
+   transport := http.NewHTTPTransport(config)
+   transport.SetDiscovery(discovery)
+   
+   // New (required)
+   transport, err := http.NewHTTPTransport(config, discovery)
+   ```
+
+2. **SetDiscovery method removed**: Discovery is now immutable after construction
+
+3. **NewHTTPTransportWithDiscovery deprecated**: Use `NewHTTPTransport` directly
+
+4. **Error handling required**: Constructor now returns an error
+
+This ensures all transports have proper peer discovery configured from creation, improving reliability and preventing runtime failures.

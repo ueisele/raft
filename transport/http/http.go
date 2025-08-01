@@ -23,25 +23,20 @@ type HTTPTransport struct {
 	discovery  transport.PeerDiscovery
 }
 
-// NewHTTPTransport creates a new HTTP transport
-// 
-// Deprecated: This constructor will require a discovery parameter in v1.0.0.
-// For new code, use NewHTTPTransportWithDiscovery() or NewHTTPTransportWithStaticPeers().
-// 
-// Current usage (will be deprecated):
-//   transport := NewHTTPTransport(config)
-//   transport.SetDiscovery(discovery)
-//
-// Recommended usage:
-//   transport, err := NewHTTPTransportWithDiscovery(config, discovery)
-func NewHTTPTransport(config *transport.Config) *HTTPTransport {
+// NewHTTPTransport creates a new HTTP transport with required peer discovery
+func NewHTTPTransport(config *transport.Config, discovery transport.PeerDiscovery) (*HTTPTransport, error) {
+	if discovery == nil {
+		return nil, fmt.Errorf("discovery cannot be nil")
+	}
+	
 	return &HTTPTransport{
 		serverID: config.ServerID,
 		address:  config.Address,
 		httpClient: &http.Client{
 			Timeout: time.Duration(config.RPCTimeout) * time.Millisecond,
 		},
-	}
+		discovery: discovery,
+	}, nil
 }
 
 // SetRPCHandler sets the RPC handler for incoming requests
@@ -49,19 +44,11 @@ func (t *HTTPTransport) SetRPCHandler(handler raft.RPCHandler) {
 	t.handler = handler
 }
 
-// SetDiscovery sets the peer discovery mechanism
-func (t *HTTPTransport) SetDiscovery(discovery transport.PeerDiscovery) {
-	t.discovery = discovery
-}
 
 // Start starts the HTTP server
 func (t *HTTPTransport) Start() error {
 	if t.handler == nil {
 		return fmt.Errorf("RPC handler not set")
-	}
-	
-	if t.discovery == nil {
-		return fmt.Errorf("peer discovery not set - use SetDiscovery() or NewHTTPTransportWithDiscovery()")
 	}
 
 	// Set up HTTP routes

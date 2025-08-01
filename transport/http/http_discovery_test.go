@@ -113,23 +113,17 @@ func TestHTTPTransport_WithBuilder(t *testing.T) {
 	}
 }
 
-func TestHTTPTransport_DiscoveryError(t *testing.T) {
-	// Create transport with no discovery mechanism
+func TestHTTPTransport_NilDiscoveryError(t *testing.T) {
+	// Create transport with nil discovery should fail
 	config := &transport.Config{
 		ServerID:   0,
 		Address:    "localhost:8000",
 		RPCTimeout: 100,
 	}
 	
-	httpTransport := NewHTTPTransport(config)
-	// No discovery set, no address resolver
-	
-	// Try to send RPC - should fail
-	args := &raft.RequestVoteArgs{Term: 1}
-	_, err := httpTransport.SendRequestVote(1, args)
-	
+	_, err := NewHTTPTransport(config, nil)
 	if err == nil {
-		t.Error("expected error when no discovery mechanism is configured")
+		t.Error("expected error when creating transport with nil discovery")
 	}
 }
 
@@ -153,7 +147,7 @@ func TestHTTPTransport_DynamicDiscoveryUpdate(t *testing.T) {
 		RPCTimeout: 500,
 	}
 	
-	httpTransport, err := NewHTTPTransportWithDiscovery(config, discovery)
+	httpTransport, err := NewHTTPTransport(config, discovery)
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
 	}
@@ -241,8 +235,10 @@ func TestHTTPTransport_CustomDiscovery(t *testing.T) {
 		RPCTimeout: 500,
 	}
 	
-	httpTransport := NewHTTPTransport(config)
-	httpTransport.SetDiscovery(discovery)
+	httpTransport, err := NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
 
 	// Send RPC
 	args := &raft.InstallSnapshotArgs{
@@ -251,7 +247,7 @@ func TestHTTPTransport_CustomDiscovery(t *testing.T) {
 		Data:     []byte("test"),
 	}
 	
-	_, err := httpTransport.SendInstallSnapshot(1, args)
+	_, err = httpTransport.SendInstallSnapshot(1, args)
 	if err != nil {
 		t.Errorf("failed to send install snapshot: %v", err)
 	}

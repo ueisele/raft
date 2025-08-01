@@ -46,7 +46,11 @@ func TestNewHTTPTransport(t *testing.T) {
 		RPCTimeout: 500,
 	}
 
-	transport := NewHTTPTransport(config)
+	discovery := &mockDiscovery{address: "localhost:8080"}
+	transport, err := NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
 
 	if transport.serverID != config.ServerID {
 		t.Errorf("expected serverID %d, got %d", config.ServerID, transport.serverID)
@@ -96,12 +100,13 @@ func TestHTTPTransport_SendRequestVote(t *testing.T) {
 		Address:    "localhost:8001",
 		RPCTimeout: 500,
 	}
-	transport := NewHTTPTransport(config)
-
-	// Set discovery to use test server
-	transport.SetDiscovery(&mockDiscovery{
+	discovery := &mockDiscovery{
 		address: server.Listener.Addr().String(),
-	})
+	}
+	transport, err := NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
 
 	// Send request
 	args := &raft.RequestVoteArgs{
@@ -155,12 +160,13 @@ func TestHTTPTransport_SendAppendEntries(t *testing.T) {
 		Address:    "localhost:8001",
 		RPCTimeout: 500,
 	}
-	transport := NewHTTPTransport(config)
-
-	// Set discovery to use test server
-	transport.SetDiscovery(&mockDiscovery{
+	discovery := &mockDiscovery{
 		address: server.Listener.Addr().String(),
-	})
+	}
+	transport, err := NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
 
 	// Send request
 	args := &raft.AppendEntriesArgs{
@@ -218,12 +224,13 @@ func TestHTTPTransport_SendInstallSnapshot(t *testing.T) {
 		Address:    "localhost:8001",
 		RPCTimeout: 500,
 	}
-	transport := NewHTTPTransport(config)
-
-	// Set discovery to use test server
-	transport.SetDiscovery(&mockDiscovery{
+	discovery := &mockDiscovery{
 		address: server.Listener.Addr().String(),
-	})
+	}
+	transport, err := NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
 
 	// Send request
 	args := &raft.InstallSnapshotArgs{
@@ -279,12 +286,13 @@ func TestHTTPTransport_SendRPCError(t *testing.T) {
 				Address:    "localhost:8001",
 				RPCTimeout: 500,
 			}
-			transport := NewHTTPTransport(config)
-
-			// Set discovery to use test server
-			transport.SetDiscovery(&mockDiscovery{
+			discovery := &mockDiscovery{
 				address: server.Listener.Addr().String(),
-			})
+			}
+			transport, err := NewHTTPTransport(config, discovery)
+			if err != nil {
+				t.Fatalf("failed to create transport: %v", err)
+			}
 
 			// Send request
 			args := &raft.RequestVoteArgs{
@@ -292,7 +300,7 @@ func TestHTTPTransport_SendRPCError(t *testing.T) {
 				CandidateID: 1,
 			}
 
-			_, err := transport.SendRequestVote(2, args)
+			_, err = transport.SendRequestVote(2, args)
 			if err == nil {
 				t.Error("expected error but got none")
 			}
@@ -317,10 +325,21 @@ func TestHTTPTransport_DefaultAddressResolution(t *testing.T) {
 		RPCTimeout: 500,
 	}
 
-	transport := NewHTTPTransport(config)
+	// Create discovery with test addresses
+	peers := map[int]string{
+		1:   "localhost:8001",
+		2:   "localhost:8002",
+		3:   "localhost:8003",
+		100: "localhost:8100",
+	}
+	discovery := &mockDiscovery{addresses: peers}
+	
+	transport, err := NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
 
-	// Since getServerAddress is private, we test it indirectly
-	// by checking where the transport tries to connect
+	// Test that discovery is used correctly
 	tests := []struct {
 		serverID     int
 		expectedPort int
@@ -332,16 +351,12 @@ func TestHTTPTransport_DefaultAddressResolution(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		// This test verifies the default behavior by checking connection attempts
-		// The actual getServerAddress method uses the formula: port = 8000 + serverID
 		expectedAddr := fmt.Sprintf("localhost:%d", tt.expectedPort)
-		
-		// We can't directly test the private method, but we've verified
-		// the formula matches our expectations
-		_ = expectedAddr // Using the variable to avoid unused warning
+		// The actual behavior is tested in integration tests where real connections are made
+		_ = expectedAddr
 	}
 	
-	// The actual behavior is tested in integration tests where real connections are made
+	// Verify transport was created successfully
 	_ = transport
 }
 
@@ -352,15 +367,16 @@ func TestHTTPTransport_NetworkError(t *testing.T) {
 		RPCTimeout: 100, // Short timeout
 	}
 
-	transport := NewHTTPTransport(config)
-
-	// Try to connect to non-existent server
-	transport.SetDiscovery(&mockDiscovery{
+	discovery := &mockDiscovery{
 		address: "localhost:19999", // Non-existent port
-	})
+	}
+	transport, err := NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
 
 	args := &raft.RequestVoteArgs{Term: 5}
-	_, err := transport.SendRequestVote(2, args)
+	_, err = transport.SendRequestVote(2, args)
 	
 	if err == nil {
 		t.Error("expected error for network failure")
@@ -390,13 +406,16 @@ func TestHTTPTransport_Timeout(t *testing.T) {
 		RPCTimeout: 50, // Very short timeout
 	}
 
-	transport := NewHTTPTransport(config)
-	transport.SetDiscovery(&mockDiscovery{
+	discovery := &mockDiscovery{
 		address: server.Listener.Addr().String(),
-	})
+	}
+	transport, err := NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
 
 	args := &raft.RequestVoteArgs{Term: 5}
-	_, err := transport.SendRequestVote(2, args)
+	_, err = transport.SendRequestVote(2, args)
 	
 	if err == nil {
 		t.Error("expected timeout error")

@@ -40,23 +40,9 @@ func main() {
 }
 
 func oldExample(config *transport.Config, peers map[int]string) {
-	fmt.Println("=== Old Way (Deprecated) ===")
-	
-	// Create transport without discovery
-	transport := http.NewHTTPTransport(config)
-	
-	// Discovery must be set before Start() - easy to forget!
-	discovery := transport.NewStaticPeerDiscovery(peers)
-	transport.SetDiscovery(discovery)
-	
-	// This would fail if SetDiscovery was forgotten
-	if err := transport.Start(); err != nil {
-		log.Printf("Failed to start: %v", err)
-		return
-	}
-	
-	transport.Stop()
-	fmt.Println("Old way completed (but please migrate!)\n")
+	fmt.Println("=== Old Way (No longer supported in v1.0.0) ===")
+	fmt.Println("The old constructor that didn't require discovery is removed.")
+	fmt.Println("You must now provide discovery when creating the transport.\n")
 }
 
 func newExampleWithDiscovery(config *transport.Config, peers map[int]string) {
@@ -128,17 +114,7 @@ func newExampleWithBuilder(config *transport.Config, peers map[int]string) {
 
 // Example: Migrating test code
 func migrateTestCode() {
-	// Old test pattern
-	/*
-	transport := http.NewHTTPTransport(config)
-	transport.SetDiscovery(&mockDiscovery{
-		addresses: map[int]string{
-			1: "test-server:8001",
-		},
-	})
-	*/
-
-	// New test pattern
+	// In v1.0.0, you must provide discovery at construction:
 	config := &transport.Config{ServerID: 0, Address: "localhost:8000"}
 	discovery := &mockDiscovery{
 		addresses: map[int]string{
