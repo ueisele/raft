@@ -81,11 +81,16 @@ func TestHTTPTransportBasicCluster(t *testing.T) {
 		nodes[i] = node
 	}
 
-	// Set address resolvers for all transports before starting
+	// Create peer discovery with all node addresses
+	peers := make(map[int]string)
+	for i := 0; i < 3; i++ {
+		peers[i] = fmt.Sprintf("localhost:%d", basePort+i)
+	}
+	discovery := transport.NewStaticPeerDiscovery(peers)
+	
+	// Set discovery for all transports before starting
 	for _, trans := range transports {
-		trans.SetAddressResolver(func(serverID int) string {
-			return fmt.Sprintf("localhost:%d", basePort+serverID)
-		})
+		trans.SetDiscovery(discovery)
 	}
 
 	// Start all transports
@@ -197,11 +202,16 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 		nodes[i] = node
 	}
 
-	// Set address resolvers for all transports before starting
+	// Create peer discovery with all node addresses
+	peers := make(map[int]string)
+	for i := 0; i < 3; i++ {
+		peers[i] = fmt.Sprintf("localhost:%d", basePort+i)
+	}
+	discovery := transport.NewStaticPeerDiscovery(peers)
+	
+	// Set discovery for all transports before starting
 	for _, trans := range transports {
-		trans.SetAddressResolver(func(serverID int) string {
-			return fmt.Sprintf("localhost:%d", basePort+serverID)
-		})
+		trans.SetDiscovery(discovery)
 	}
 
 	// Start all transports
@@ -334,11 +344,16 @@ func TestHTTPTransportHighLoad(t *testing.T) {
 		nodes[i] = node
 	}
 
-	// Set address resolvers for all transports before starting
+	// Create peer discovery with all node addresses
+	peers := make(map[int]string)
+	for i := 0; i < 3; i++ {
+		peers[i] = fmt.Sprintf("localhost:%d", basePort+i)
+	}
+	discovery := transport.NewStaticPeerDiscovery(peers)
+	
+	// Set discovery for all transports before starting
 	for _, trans := range transports {
-		trans.SetAddressResolver(func(serverID int) string {
-			return fmt.Sprintf("localhost:%d", basePort+serverID)
-		})
+		trans.SetDiscovery(discovery)
 	}
 
 	// Start all transports

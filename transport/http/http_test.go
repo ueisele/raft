@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,6 +13,31 @@ import (
 	"github.com/ueisele/raft"
 	transportPkg "github.com/ueisele/raft/transport"
 )
+
+// mockDiscovery is a simple discovery implementation for tests
+type mockDiscovery struct {
+	address   string
+	addresses map[int]string
+}
+
+func (m *mockDiscovery) GetPeerAddress(ctx context.Context, serverID int) (string, error) {
+	if m.addresses != nil {
+		addr, ok := m.addresses[serverID]
+		if !ok {
+			return "", fmt.Errorf("server %d not found", serverID)
+		}
+		return addr, nil
+	}
+	return m.address, nil
+}
+
+func (m *mockDiscovery) RefreshPeers(ctx context.Context) error {
+	return nil
+}
+
+func (m *mockDiscovery) Close() error {
+	return nil
+}
 
 func TestNewHTTPTransport(t *testing.T) {
 	config := &transportPkg.Config{
@@ -72,10 +98,10 @@ func TestHTTPTransport_SendRequestVote(t *testing.T) {
 	}
 	transport := NewHTTPTransport(config)
 
-	// Override getServerAddress to use test server
-	transport.addressResolver = func(serverID int) string {
-		return server.Listener.Addr().String()
-	}
+	// Set discovery to use test server
+	transport.SetDiscovery(&mockDiscovery{
+		address: server.Listener.Addr().String(),
+	})
 
 	// Send request
 	args := &raft.RequestVoteArgs{
@@ -131,10 +157,10 @@ func TestHTTPTransport_SendAppendEntries(t *testing.T) {
 	}
 	transport := NewHTTPTransport(config)
 
-	// Override getServerAddress to use test server
-	transport.addressResolver = func(serverID int) string {
-		return server.Listener.Addr().String()
-	}
+	// Set discovery to use test server
+	transport.SetDiscovery(&mockDiscovery{
+		address: server.Listener.Addr().String(),
+	})
 
 	// Send request
 	args := &raft.AppendEntriesArgs{
@@ -194,10 +220,10 @@ func TestHTTPTransport_SendInstallSnapshot(t *testing.T) {
 	}
 	transport := NewHTTPTransport(config)
 
-	// Override getServerAddress to use test server
-	transport.addressResolver = func(serverID int) string {
-		return server.Listener.Addr().String()
-	}
+	// Set discovery to use test server
+	transport.SetDiscovery(&mockDiscovery{
+		address: server.Listener.Addr().String(),
+	})
 
 	// Send request
 	args := &raft.InstallSnapshotArgs{
@@ -255,10 +281,10 @@ func TestHTTPTransport_SendRPCError(t *testing.T) {
 			}
 			transport := NewHTTPTransport(config)
 
-			// Override getServerAddress to use test server
-			transport.addressResolver = func(serverID int) string {
-				return server.Listener.Addr().String()
-			}
+			// Set discovery to use test server
+			transport.SetDiscovery(&mockDiscovery{
+				address: server.Listener.Addr().String(),
+			})
 
 			// Send request
 			args := &raft.RequestVoteArgs{
@@ -329,9 +355,9 @@ func TestHTTPTransport_NetworkError(t *testing.T) {
 	transport := NewHTTPTransport(config)
 
 	// Try to connect to non-existent server
-	transport.addressResolver = func(serverID int) string {
-		return "localhost:19999" // Non-existent port
-	}
+	transport.SetDiscovery(&mockDiscovery{
+		address: "localhost:19999", // Non-existent port
+	})
 
 	args := &raft.RequestVoteArgs{Term: 5}
 	_, err := transport.SendRequestVote(2, args)
@@ -365,9 +391,9 @@ func TestHTTPTransport_Timeout(t *testing.T) {
 	}
 
 	transport := NewHTTPTransport(config)
-	transport.addressResolver = func(serverID int) string {
-		return server.Listener.Addr().String()
-	}
+	transport.SetDiscovery(&mockDiscovery{
+		address: server.Listener.Addr().String(),
+	})
 
 	args := &raft.RequestVoteArgs{Term: 5}
 	_, err := transport.SendRequestVote(2, args)

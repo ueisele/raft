@@ -2,10 +2,10 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	raft "github.com/ueisele/raft"
@@ -20,9 +20,7 @@ type HTTPTransport struct {
 	httpServer *http.Server
 	handler    raft.RPCHandler
 	mux        *http.ServeMux
-	
-	// addressResolver can be set for testing to override getServerAddress
-	addressResolver func(serverID int) string
+	discovery  transport.PeerDiscovery
 }
 
 // NewHTTPTransport creates a new HTTP transport
@@ -41,9 +39,9 @@ func (t *HTTPTransport) SetRPCHandler(handler raft.RPCHandler) {
 	t.handler = handler
 }
 
-// SetAddressResolver sets a custom address resolver for testing
-func (t *HTTPTransport) SetAddressResolver(resolver func(int) string) {
-	t.addressResolver = resolver
+// SetDiscovery sets the peer discovery mechanism
+func (t *HTTPTransport) SetDiscovery(discovery transport.PeerDiscovery) {
+	t.discovery = discovery
 }
 
 // Start starts the HTTP server
@@ -216,14 +214,20 @@ func (t *HTTPTransport) handleInstallSnapshot(w http.ResponseWriter, r *http.Req
 }
 
 // getServerAddress returns the address for a given server ID
-// In a real implementation, this would use a configuration or discovery service
 func (t *HTTPTransport) getServerAddress(serverID int) string {
-	// Use custom resolver if set (for testing)
-	if t.addressResolver != nil {
-		return t.addressResolver(serverID)
+	if t.discovery == nil {
+		// No discovery mechanism configured - this should not happen in production
+		return ""
 	}
 	
-	// For now, use a simple port mapping
-	port := 8000 + serverID
-	return "localhost:" + strconv.Itoa(port)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	
+	addr, err := t.discovery.GetPeerAddress(ctx, serverID)
+	if err != nil {
+		// In production, this should be properly logged
+		// For now, return empty string which will cause connection to fail
+		return ""
+	}
+	return addr
 }
