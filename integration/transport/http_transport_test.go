@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,6 +17,16 @@ import (
 	"github.com/ueisele/raft/transport"
 	httpTransport "github.com/ueisele/raft/transport/http"
 )
+
+// getFreePort returns a free port by letting the OS allocate one
+func getFreePort() (int, error) {
+	listener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		return 0, err
+	}
+	defer listener.Close()
+	return listener.Addr().(*net.TCPAddr).Port, nil
+}
 
 // testStateMachine is a simple state machine for testing
 type testStateMachine struct {
@@ -44,12 +55,15 @@ func TestHTTPTransportBasicCluster(t *testing.T) {
 	// Create a 3-node cluster using HTTP transport
 	nodes := make([]raft.Node, 3)
 	transports := make([]*httpTransport.HTTPTransport, 3)
-	basePort := 19000
 
 	// Create peer discovery with all node addresses first
 	peers := make(map[int]string)
 	for i := 0; i < 3; i++ {
-		peers[i] = fmt.Sprintf("localhost:%d", basePort+i)
+		port, err := getFreePort()
+		if err != nil {
+			t.Fatalf("Failed to get free port: %v", err)
+		}
+		peers[i] = fmt.Sprintf("localhost:%d", port)
 	}
 	discovery := transport.NewStaticPeerDiscovery(peers)
 
@@ -58,7 +72,7 @@ func TestHTTPTransportBasicCluster(t *testing.T) {
 		// Create HTTP transport with discovery
 		transportConfig := &transport.Config{
 			ServerID:   i,
-			Address:    fmt.Sprintf("localhost:%d", basePort+i),
+			Address:    peers[i],
 			RPCTimeout: 1000, // 1 second
 		}
 		httpTrans, err := httpTransport.NewHTTPTransport(transportConfig, discovery)
@@ -164,12 +178,15 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 	// Create a 3-node cluster
 	nodes := make([]raft.Node, 3)
 	transports := make([]*httpTransport.HTTPTransport, 3)
-	basePort := 19100
 
 	// Create peer discovery first
 	peers := make(map[int]string)
 	for i := 0; i < 3; i++ {
-		peers[i] = fmt.Sprintf("localhost:%d", basePort+i)
+		port, err := getFreePort()
+		if err != nil {
+			t.Fatalf("Failed to get free port: %v", err)
+		}
+		peers[i] = fmt.Sprintf("localhost:%d", port)
 	}
 	discovery := transport.NewStaticPeerDiscovery(peers)
 
@@ -177,7 +194,7 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 		// Create HTTP transport with short timeout for faster failure detection
 		transportConfig := &transport.Config{
 			ServerID:   i,
-			Address:    fmt.Sprintf("localhost:%d", basePort+i),
+			Address:    peers[i],
 			RPCTimeout: 100, // 100ms for faster tests
 		}
 		httpTrans, err := httpTransport.NewHTTPTransport(transportConfig, discovery)
@@ -258,7 +275,12 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 	// Stop one follower's transport to simulate network failure
 	followerID := (leaderID + 1) % 3
 	t.Logf("Stopping transport for follower %d", followerID)
-	transports[followerID].Stop()
+	if err := transports[followerID].Stop(); err != nil {
+		t.Logf("Warning: error stopping transport: %v", err)
+	}
+	
+	// Give OS time to release the port
+	time.Sleep(100 * time.Millisecond)
 
 	// Submit a command - should still work with 2 nodes
 	command := "command-during-failure"
@@ -304,12 +326,15 @@ func TestHTTPTransportHighLoad(t *testing.T) {
 	// Create a 3-node cluster
 	nodes := make([]raft.Node, 3)
 	transports := make([]*httpTransport.HTTPTransport, 3)
-	basePort := 19200
 
 	// Create peer discovery first
 	peers := make(map[int]string)
 	for i := 0; i < 3; i++ {
-		peers[i] = fmt.Sprintf("localhost:%d", basePort+i)
+		port, err := getFreePort()
+		if err != nil {
+			t.Fatalf("Failed to get free port: %v", err)
+		}
+		peers[i] = fmt.Sprintf("localhost:%d", port)
 	}
 	discovery := transport.NewStaticPeerDiscovery(peers)
 
@@ -317,7 +342,7 @@ func TestHTTPTransportHighLoad(t *testing.T) {
 		// Create HTTP transport
 		transportConfig := &transport.Config{
 			ServerID:   i,
-			Address:    fmt.Sprintf("localhost:%d", basePort+i),
+			Address:    peers[i],
 			RPCTimeout: 1000,
 		}
 		httpTrans, err := httpTransport.NewHTTPTransport(transportConfig, discovery)

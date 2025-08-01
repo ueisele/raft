@@ -275,6 +275,8 @@ func TestReplicationManagerCommitAdvancement(t *testing.T) {
 	rm.BecomeLeader()
 
 	// Simulate successful replication
+	// Use proper locking when modifying internal state
+	rm.mu.Lock()
 	// Leader (server 1) always has matchIndex = lastIndex
 	rm.matchIndex[1] = 3
 	// Follower 2 has replicated up to index 2
@@ -282,6 +284,7 @@ func TestReplicationManagerCommitAdvancement(t *testing.T) {
 	rm.nextIndex[2] = 3
 	// Follower 3 hasn't replicated anything yet
 	rm.matchIndex[3] = 0
+	rm.mu.Unlock()
 
 	// Debug state before advancing
 	t.Logf("Current term: %d", state.GetTerm())
@@ -296,8 +299,10 @@ func TestReplicationManagerCommitAdvancement(t *testing.T) {
 	}
 
 	// Simulate follower 3 catching up
+	rm.mu.Lock()
 	rm.matchIndex[3] = 3
 	rm.nextIndex[3] = 4
+	rm.mu.Unlock()
 
 	// Advance commit index again
 	rm.advanceCommitIndex()
@@ -306,6 +311,9 @@ func TestReplicationManagerCommitAdvancement(t *testing.T) {
 	if log.GetCommitIndex() != 3 {
 		t.Errorf("Commit index should advance to 3, got %d", log.GetCommitIndex())
 	}
+
+	// Stop replication to clean up background goroutines
+	rm.StopReplication()
 }
 
 // TestReplicationManagerHandleAppendEntriesReply tests handling replication responses

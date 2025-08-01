@@ -62,9 +62,12 @@ func (t *HTTPTransport) Start() error {
 		Handler: t.mux,
 	}
 
+	// Copy server reference for goroutine to avoid race
+	server := t.httpServer
+
 	// Start server in background
 	go func() {
-		if err := t.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			// Log error but don't crash
 			fmt.Printf("HTTP server error: %v\n", err)
 		}
