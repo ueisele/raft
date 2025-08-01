@@ -14,6 +14,8 @@ in realistic scenarios.
 - `snapshot/` - Snapshot operations
 - `leadership/` - Leadership stability and transfer
 - `stress/` - Edge cases and stress tests
+- `transport/` - Transport implementation tests (HTTP)
+- `persistence/` - Persistence implementation tests (JSON)
 - `helpers/` - Shared test utilities
 
 ## Running Tests

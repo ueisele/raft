@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	raft "github.com/ueisele/raft"
+	"github.com/ueisele/raft"
 	"github.com/ueisele/raft/persistence"
 )
 
