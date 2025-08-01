@@ -914,7 +914,7 @@ func (n *raftNode) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) e
 	defer n.mu.Unlock()
 
 	n.election.HandleRequestVote(args, reply)
-	
+
 	// Persist state after vote handling
 	if err := n.persist(); err != nil {
 		// Log error but don't fail the RPC - the vote has already been processed
@@ -938,7 +938,7 @@ func (n *raftNode) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesRe
 	defer n.mu.Unlock()
 
 	n.replication.HandleAppendEntries(args, reply)
-	
+
 	// Persist state after handling entries
 	if err := n.persist(); err != nil {
 		// Log error but don't fail the RPC - the entries have already been processed
@@ -970,7 +970,7 @@ func (n *raftNode) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnap
 	if err := n.snapshot.HandleInstallSnapshot(args, reply, currentTerm); err != nil {
 		return err
 	}
-	
+
 	// Persist state after snapshot installation
 	if err := n.persist(); err != nil {
 		// Log error but don't fail the RPC - the snapshot has already been applied

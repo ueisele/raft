@@ -52,17 +52,15 @@ func TestBasicNodeCreation(t *testing.T) {
 
 	attempts := 0
 	for time.Now().Before(deadline) {
-		select {
-		case <-ticker.C:
-			attempts++
-			term, isLeader := node.GetState()
-			if isLeader {
+		<-ticker.C
+		attempts++
+		term, isLeader := node.GetState()
+		if isLeader {
 				t.Logf("Node became leader after %d attempts (term=%d)", attempts, term)
 				return
 			}
 			if attempts%10 == 0 {
 				t.Logf("Still waiting... attempt %d: term=%d, isLeader=%v", attempts, term, isLeader)
-			}
 		}
 	}
 

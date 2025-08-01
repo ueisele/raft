@@ -282,12 +282,9 @@ func main() {
 			ticker := time.NewTicker(30 * time.Second)
 			defer ticker.Stop()
 
-			for {
-				select {
-				case <-ticker.C:
-					// In production, this would fetch from service discovery
-					log.Println("Would refresh peers from cloud provider here")
-				}
+			for range ticker.C {
+				// In production, this would fetch from service discovery
+				log.Println("Would refresh peers from cloud provider here")
 			}
 		}()
 	}

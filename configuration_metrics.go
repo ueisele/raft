@@ -165,7 +165,7 @@ type ServerMetricSummary struct {
 
 // String returns a string representation of the metrics summary
 func (s ConfigMetricsSummary) String() string {
-	str := fmt.Sprintf("Configuration Metrics:\n")
+	str := "Configuration Metrics:\n"
 	str += fmt.Sprintf("  Servers Added: %d\n", s.ServersAdded)
 	str += fmt.Sprintf("  Servers Promoted: %d\n", s.ServersPromoted)
 	str += fmt.Sprintf("  Configuration Errors: %d\n", s.ConfigErrors)

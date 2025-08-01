@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"sync"
 	"testing"
 	"time"
 	// "github.com/ueisele/raft/test" - removed to avoid import cycle
@@ -9,6 +10,7 @@ import (
 // replicationTestTransport wraps MockTransport for replication-specific test behavior
 type replicationTestTransport struct {
 	*MockTransport
+	mu                sync.RWMutex
 	appendResponses   map[int]*AppendEntriesReply
 	appendErrors      map[int]error
 	snapshotResponses map[int]*InstallSnapshotReply
@@ -30,6 +32,8 @@ func newReplicationTestTransport(serverID int) *replicationTestTransport {
 	// Set up append entries handler
 	rt.SetAppendEntriesHandler(func(sid int, args *AppendEntriesArgs) (*AppendEntriesReply, error) {
 		// This handler is called when the transport sends append entries
+		rt.mu.RLock()
+		defer rt.mu.RUnlock()
 		if err, ok := rt.appendErrors[sid]; ok {
 			return nil, err
 		}
@@ -42,6 +46,8 @@ func newReplicationTestTransport(serverID int) *replicationTestTransport {
 
 	// Set up install snapshot handler
 	rt.SetInstallSnapshotHandler(func(sid int, args *InstallSnapshotArgs) (*InstallSnapshotReply, error) {
+		rt.mu.RLock()
+		defer rt.mu.RUnlock()
 		if err, ok := rt.snapshotErrors[sid]; ok {
 			return nil, err
 		}
@@ -94,8 +100,10 @@ func TestReplicationManagerHeartbeat(t *testing.T) {
 	transport.ClearCalls()
 
 	// Set up successful responses (for peers 1 and 2)
+	transport.mu.Lock()
 	transport.appendResponses[1] = &AppendEntriesReply{Term: 1, Success: true}
 	transport.appendResponses[2] = &AppendEntriesReply{Term: 1, Success: true}
+	transport.mu.Unlock()
 
 	// Log peers before sending
 	t.Logf("Peers: %v, ServerID: %d", rm.peers, rm.serverID)
@@ -200,8 +208,10 @@ func TestReplicationManagerReplicate(t *testing.T) {
 	rm.nextIndex[3] = 1  // Next index to send to follower 3
 
 	// Set up responses
+	transport.mu.Lock()
 	transport.appendResponses[2] = &AppendEntriesReply{Term: 2, Success: true}
 	transport.appendResponses[3] = &AppendEntriesReply{Term: 2, Success: true}
+	transport.mu.Unlock()
 
 	// Replicate entries
 	rm.Replicate()
@@ -257,9 +267,9 @@ func TestReplicationManagerCommitAdvancement(t *testing.T) {
 	transport := newReplicationTestTransport(1)
 
 	// Add entries with current term
-	state.BecomeCandidate() // Term 1
-	state.BecomeCandidate() // Term 2
-	state.BecomeLeader()    // Still Term 2
+	state.BecomeCandidate()             // Term 1
+	state.BecomeCandidate()             // Term 2
+	state.BecomeLeader()                // Still Term 2
 	log.AppendEntries(0, 0, []LogEntry{ //nolint:errcheck // test setup
 		{Term: 2, Index: 1, Command: "cmd1"},
 		{Term: 2, Index: 2, Command: "cmd2"},

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -399,8 +400,8 @@ func TestConcurrentOperations(t *testing.T) {
 	t.Run("ConcurrentReadsAndWrites", func(t *testing.T) {
 		// Mix of reads and writes
 		var wg sync.WaitGroup
-		writeCount := int64(0)
-		readCount := int64(0)
+		var writeCount atomic.Int64
+		var readCount atomic.Int64
 
 		// Writers
 		for i := 0; i < 10; i++ {
@@ -409,7 +410,7 @@ func TestConcurrentOperations(t *testing.T) {
 				defer wg.Done()
 				for j := 0; j < 50; j++ {
 					cluster.SubmitCommand(fmt.Sprintf("write-%d-%d", writerID, j)) //nolint:errcheck // concurrent write test
-					writeCount++
+					writeCount.Add(1)
 				}
 			}(i)
 		}
@@ -424,7 +425,7 @@ func TestConcurrentOperations(t *testing.T) {
 					for _, node := range cluster.Nodes {
 						node.GetCommitIndex()
 						node.GetState()
-						readCount++
+						readCount.Add(1)
 					}
 					time.Sleep(10 * time.Millisecond)
 				}
@@ -433,7 +434,7 @@ func TestConcurrentOperations(t *testing.T) {
 
 		wg.Wait()
 
-		t.Logf("✓ Completed %d writes and %d reads concurrently", writeCount, readCount)
+		t.Logf("✓ Completed %d writes and %d reads concurrently", writeCount.Load(), readCount.Load())
 	})
 }
 

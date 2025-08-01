@@ -535,15 +535,3 @@ func TestSnapshotTransmissionFailure(t *testing.T) {
 }
 
 // Helper functions
-
-// WaitForConditionWithTimeout waits for condition to become true
-func waitForConditionWithTimeout(t *testing.T, condition func() bool, timeout time.Duration, description string) {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if condition() {
-			return
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	t.Fatalf("Timeout waiting for %s", description)
-}

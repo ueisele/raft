@@ -129,7 +129,7 @@ func TestBasicConfigurationChange(t *testing.T) {
 
 		if !allSynced {
 			// Submit a command to trigger replication
-			leader.Submit(fmt.Sprintf("sync"))
+			leader.Submit("sync")
 			leaderCommitIndex = leader.GetCommitIndex()
 		}
 
@@ -150,7 +150,7 @@ func TestBasicConfigurationChange(t *testing.T) {
 
 		if len(config.Servers) != 3 {
 			// Submit a dummy command to trigger replication
-			leader.Submit(fmt.Sprintf("remove-helper"))
+			leader.Submit("remove-helper")
 		}
 
 		return len(config.Servers) == 3, fmt.Sprintf("waiting for config to have 3 servers after removal, currently has %d", len(config.Servers))
