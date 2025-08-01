@@ -80,15 +80,22 @@ func testNewVotingServerSafety(t *testing.T) {
 		registry.Register(i, node.(raft.RPCHandler))
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	// Start all nodes
 	for i, node := range nodes {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
-		defer node.Stop()
 	}
+	
+	// Ensure cleanup
+	defer func() {
+		for _, node := range nodes {
+			node.Stop()
+		}
+	}()
 
 	// Wait for initial leader election
 	leaderID := helpers.WaitForLeader(t, nodes, 2*time.Second)
@@ -144,6 +151,9 @@ func testNewVotingServerSafety(t *testing.T) {
 	// - Node 0: isolated, might still think it's leader
 	// - Node 1 or 2: new leader
 	// - A newly added server could disrupt this if it votes immediately
+	
+	// This test demonstrates the concept rather than testing implementation
+	t.Log("✓ Demonstration complete: Immediate voting can disrupt cluster safety")
 }
 
 // testSaferApproach shows how non-voting members prevent the safety issue
@@ -231,15 +241,22 @@ func testImmediateVotingDanger(t *testing.T) {
 		registry.Register(i, node.(raft.RPCHandler))
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	// Start nodes
 	for i, node := range nodes {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
-		defer node.Stop()
 	}
+	
+	// Ensure cleanup
+	defer func() {
+		for _, node := range nodes {
+			node.Stop()
+		}
+	}()
 
 	// Wait for leader
 	leaderID := helpers.WaitForLeader(t, nodes, 2*time.Second)

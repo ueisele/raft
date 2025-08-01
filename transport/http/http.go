@@ -12,13 +12,13 @@ import (
 	"github.com/ueisele/raft/transport"
 )
 
-// HTTPTransport implements Transport interface using HTTP
+// HTTPTransport implements raft.Transport interface using HTTP
 type HTTPTransport struct {
 	serverID   int
 	address    string
 	httpClient *http.Client
 	httpServer *http.Server
-	handler    transport.RPCHandler
+	handler    raft.RPCHandler
 	mux        *http.ServeMux
 }
 
@@ -34,7 +34,7 @@ func NewHTTPTransport(config *transport.Config) *HTTPTransport {
 }
 
 // SetRPCHandler sets the RPC handler for incoming requests
-func (t *HTTPTransport) SetRPCHandler(handler transport.RPCHandler) {
+func (t *HTTPTransport) SetRPCHandler(handler raft.RPCHandler) {
 	t.handler = handler
 }
 

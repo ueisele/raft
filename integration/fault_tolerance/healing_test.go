@@ -239,7 +239,14 @@ func TestEventualConsistency(t *testing.T) {
 						Logger:             raft.NewTestLogger(t),
 					}
 					
-					transport := helpers.NewMultiNodeTransport(i, cluster.Registry.(*helpers.NodeRegistry))
+					// Create transport based on cluster type
+					var transport raft.Transport
+					switch reg := cluster.Registry.(type) {
+					case *helpers.PartitionRegistry:
+						transport = helpers.NewPartitionableTransport(i, reg)
+					case *helpers.NodeRegistry:
+						transport = helpers.NewMultiNodeTransport(i, reg)
+					}
 					newNode, err := raft.NewNode(config, transport, nil, raft.NewMockStateMachine())
 					if err == nil {
 						cluster.Nodes[i] = newNode
@@ -327,19 +334,32 @@ func TestHealingWithDivergentLogs(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 	}
 	
+	// Wait for leader election in majority partition
+	time.Sleep(1 * time.Second)
+	
 	// Submit to majority partition
 	var majorityLeader int = -1
-	for i := 2; i <= 4; i++ {
-		_, isLeader := cluster.Nodes[i].GetState()
-		if isLeader {
-			majorityLeader = i
+	for attempts := 0; attempts < 10; attempts++ {
+		for i := 2; i <= 4; i++ {
+			_, isLeader := cluster.Nodes[i].GetState()
+			if isLeader {
+				majorityLeader = i
+				break
+			}
+		}
+		
+		if majorityLeader != -1 {
 			break
 		}
+		
+		time.Sleep(200 * time.Millisecond)
 	}
 	
 	if majorityLeader == -1 {
-		t.Fatal("No leader in majority partition")
+		t.Fatal("No leader in majority partition after waiting")
 	}
+	
+	t.Logf("Majority partition elected leader: %d", majorityLeader)
 	
 	// Submit different commands to each partition
 	for i := 0; i < 5; i++ {

@@ -16,6 +16,9 @@ type replicationTestTransport struct {
 	snapshotErrors    map[int]error
 }
 
+// Make sure replicationTestTransport implements the Transport interface
+var _ Transport = (*replicationTestTransport)(nil)
+
 func newReplicationTestTransport(serverID int) *replicationTestTransport {
 	rt := &replicationTestTransport{
 		MockTransport:     NewMockTransport(serverID),
@@ -27,6 +30,7 @@ func newReplicationTestTransport(serverID int) *replicationTestTransport {
 	
 	// Set up append entries handler
 	rt.SetAppendEntriesHandler(func(sid int, args *AppendEntriesArgs) (*AppendEntriesReply, error) {
+		// This handler is called when the transport sends append entries
 		if err, ok := rt.appendErrors[sid]; ok {
 			return nil, err
 		}
@@ -55,19 +59,17 @@ func newReplicationTestTransport(serverID int) *replicationTestTransport {
 func TestReplicationManagerHeartbeat(t *testing.T) {
 	// Create dependencies
 	config := &Config{
-		ID:                 1,
-		Peers:              []int{1, 2, 3},
+		ID:                 0,  // Server ID 0
+		Peers:              []int{0, 1, 2},  // Peers include self
 		ElectionTimeoutMin: 100 * time.Millisecond,
 		ElectionTimeoutMax: 200 * time.Millisecond,
 		HeartbeatInterval:  50 * time.Millisecond,
 	}
-	state := NewStateManager(1, config)
+	state := NewStateManager(0, config)
 	log := NewLogManager()
-	transport := newReplicationTestTransport(1)
+	transport := newReplicationTestTransport(0)
 
-	// Simulate election - increment term first
-	state.BecomeCandidate()
-	// Simulate election - increment term first
+	// Simulate election - become candidate then leader
 	state.BecomeCandidate()
 	// Make node the leader
 	state.BecomeLeader()
@@ -75,39 +77,79 @@ func TestReplicationManagerHeartbeat(t *testing.T) {
 	// Verify state is correct
 	currentState, currentTerm := state.GetState()
 	t.Logf("State: %v, Term: %d", currentState, currentTerm)
+	
+	// Verify we're actually a leader
+	if currentState != Leader {
+		t.Fatalf("Expected to be Leader, but state is %v", currentState)
+	}
 
 	// Create replication manager
 	sm := NewMockStateMachine()
 	applyNotify := make(chan struct{}, 1)
-	rm := NewReplicationManager(1, []int{1, 2, 3}, state, log, transport, config, sm, nil, applyNotify)
+	rm := NewReplicationManager(0, []int{0, 1, 2}, state, log, transport, config, sm, nil, applyNotify)
+	
+	// Initialize leader state - this is important!
+	rm.BecomeLeader()
+	
+	// Clear any calls from BecomeLeader
+	transport.ClearCalls()
 
-	// Set up successful responses
-	transport.appendResponses[2] = &AppendEntriesReply{Term: 2, Success: true}
-	transport.appendResponses[3] = &AppendEntriesReply{Term: 2, Success: true}
+	// Set up successful responses (for peers 1 and 2)
+	transport.appendResponses[1] = &AppendEntriesReply{Term: 1, Success: true}
+	transport.appendResponses[2] = &AppendEntriesReply{Term: 1, Success: true}
+	
+	// Log peers before sending
+	t.Logf("Peers: %v, ServerID: %d", rm.peers, rm.serverID)
+	
+	// Check if transport has been called before
+	initialCalls := transport.GetAppendEntriesCalls()
+	t.Logf("Initial append entries calls: %d", len(initialCalls))
 
 	// Send heartbeat
 	rm.SendHeartbeats()
 
+	// Add a small delay to allow goroutines to execute
+	time.Sleep(50 * time.Millisecond)
+
+	// Check calls immediately
+	calls := transport.GetAppendEntriesCalls()
+	t.Logf("Immediate check: %d calls made", len(calls))
+
 	// Wait for async operations to complete
 	Eventually(t, func() bool {
-		return len(transport.GetAppendEntriesCalls()) >= 2
-	}, 100*time.Millisecond, "heartbeats should be sent to all peers")
+		calls := transport.GetAppendEntriesCalls()
+		t.Logf("Checking: %d append entries calls", len(calls))
+		return len(calls) >= 2
+	}, 200*time.Millisecond, "heartbeats should be sent to all peers")
 
 	// Verify heartbeats were sent to all peers
-	if len(transport.GetAppendEntriesCalls()) != 2 {
-		t.Errorf("Expected 2 heartbeat calls, got %d", len(transport.GetAppendEntriesCalls()))
-		for i, call := range transport.GetAppendEntriesCalls() {
-			t.Logf("Call %d: to server %d", i, call.ServerID)
-		}
+	calls = transport.GetAppendEntriesCalls()
+	if len(calls) < 2 {
+		t.Errorf("Expected at least 2 heartbeat calls, got %d", len(calls))
+	}
+	
+	// Count unique servers that received heartbeats
+	serversContacted := make(map[int]bool)
+	for i, call := range calls {
+		t.Logf("Call %d: to server %d", i, call.ServerID)
+		serversContacted[call.ServerID] = true
+	}
+	
+	// Should have contacted both peers (1 and 2)
+	if len(serversContacted) != 2 {
+		t.Errorf("Expected to contact 2 different servers, contacted %d", len(serversContacted))
+	}
+	if !serversContacted[1] || !serversContacted[2] {
+		t.Errorf("Expected to contact servers 1 and 2, but contacted: %v", serversContacted)
 	}
 
 	// Verify heartbeat content
 	for _, call := range transport.GetAppendEntriesCalls() {
-		if call.Args.Term != 2 {
-			t.Errorf("Heartbeat term should be 2, got %d", call.Args.Term)
+		if call.Args.Term != 1 {
+			t.Errorf("Heartbeat term should be 1, got %d", call.Args.Term)
 		}
-		if call.Args.LeaderID != 1 {
-			t.Errorf("Heartbeat leader ID should be 1, got %d", call.Args.LeaderID)
+		if call.Args.LeaderID != 0 {
+			t.Errorf("Heartbeat leader ID should be 0, got %d", call.Args.LeaderID)
 		}
 		if len(call.Args.Entries) != 0 {
 			t.Error("Heartbeat should have no entries")

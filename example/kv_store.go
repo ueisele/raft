@@ -103,6 +103,7 @@ func (l *SimpleLogger) Error(format string, args ...interface{}) {
 	log.Printf("[ERROR] "+format, args...)
 }
 
+
 func main() {
 	// Example configuration for a 3-node cluster
 	serverID := 1 // Change this for each server
@@ -113,13 +114,13 @@ func main() {
 		data: make(map[string]string),
 	}
 
-	// Create transport
+	// Create HTTP transport
 	transportConfig := &transport.Config{
 		ServerID:   serverID,
 		Address:    fmt.Sprintf("localhost:%d", 8000+serverID),
 		RPCTimeout: 1000, // 1 second
 	}
-	transport := httpTransport.NewHTTPTransport(transportConfig)
+	httpTransport := httpTransport.NewHTTPTransport(transportConfig)
 
 	// Create persistence
 	persistenceConfig := &persistence.Config{
@@ -143,7 +144,7 @@ func main() {
 	}
 
 	// Create Raft node
-	node, err := raft.NewNode(config, transport, persistence, kvStore)
+	node, err := raft.NewNode(config, httpTransport, persistence, kvStore)
 	if err != nil {
 		log.Fatalf("Failed to create Raft node: %v", err)
 	}
@@ -154,7 +155,7 @@ func main() {
 		log.Fatalf("Failed to start Raft node: %v", err)
 	}
 
-	log.Printf("Raft node %d started on %s", serverID, transport.GetAddress())
+	log.Printf("Raft node %d started on %s", serverID, httpTransport.GetAddress())
 
 	// Example: Submit commands after a delay to allow leader election
 	time.Sleep(5 * time.Second)
