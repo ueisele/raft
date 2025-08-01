@@ -20,6 +20,9 @@ type HTTPTransport struct {
 	httpServer *http.Server
 	handler    raft.RPCHandler
 	mux        *http.ServeMux
+	
+	// addressResolver can be set for testing to override getServerAddress
+	addressResolver func(serverID int) string
 }
 
 // NewHTTPTransport creates a new HTTP transport
@@ -210,6 +213,11 @@ func (t *HTTPTransport) handleInstallSnapshot(w http.ResponseWriter, r *http.Req
 // getServerAddress returns the address for a given server ID
 // In a real implementation, this would use a configuration or discovery service
 func (t *HTTPTransport) getServerAddress(serverID int) string {
+	// Use custom resolver if set (for testing)
+	if t.addressResolver != nil {
+		return t.addressResolver(serverID)
+	}
+	
 	// For now, use a simple port mapping
 	port := 8000 + serverID
 	return "localhost:" + strconv.Itoa(port)
