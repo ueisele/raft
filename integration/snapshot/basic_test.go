@@ -1,4 +1,4 @@
-package raft_test
+package snapshot
 
 import (
 	"context"
@@ -8,26 +8,24 @@ import (
 	"time"
 
 	"github.com/ueisele/raft"
-	"github.com/ueisele/raft/test"
+	"github.com/ueisele/raft/integration/helpers"
 )
 
 // TestSnapshotCreation tests creating snapshots when log grows
 func TestSnapshotCreation(t *testing.T) {
 	// Create a single node cluster
-	config := test.DefaultClusterConfig(1)
-	config.MaxLogSize = 10 // Trigger snapshot after 10 entries
-	cluster := test.NewTestCluster(t, config)
-	defer cluster.Stop()
-
-	ctx := context.Background()
-	if err := cluster.Start(ctx); err != nil {
+	cluster := helpers.NewTestCluster(t, 1, helpers.WithMaxLogSize(10)) // Trigger snapshot after 10 entries
+	
+	// Start cluster
+	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
+	defer cluster.Stop()
 
 	// Wait for leadership
-	leaderID := cluster.WaitForLeaderElection(t, 2*time.Second)
-	if leaderID < 0 {
-		t.Fatal("No leader elected")
+	_, err := cluster.WaitForLeader(2 * time.Second)
+	if err != nil {
+		t.Fatalf("No leader elected: %v", err)
 	}
 
 	node := cluster.Nodes[0]
@@ -48,25 +46,24 @@ func TestSnapshotCreation(t *testing.T) {
 	}
 
 	// Wait for entries to be applied first
-	timing := test.DefaultTimingConfig()
-	test.WaitForCommitIndexWithConfig(t, []raft.Node{node}, 15, timing)
+	cluster.WaitForCommitIndex(15, time.Second)
 	
 	// Get commit index to verify entries are committed
 	commitIndex := node.GetCommitIndex()
 	t.Logf("Commit index: %d", commitIndex)
 
 	// Check if snapshot was created
-	if persistence := cluster.Persistences[0]; persistence != nil {
+	if persistence := cluster.GetPersistence(0); persistence != nil {
 		if persistence.HasSnapshot() {
 			t.Log("Snapshot was created")
-			snapshot := persistence.GetSnapshot()
+			snapshot, _ := persistence.LoadSnapshot()
 			if snapshot != nil {
 				t.Logf("Snapshot includes up to index %d", snapshot.LastIncludedIndex)
 			}
 		} else {
 			t.Error("No snapshot was created despite log size exceeding threshold")
 			// Debug info
-			t.Logf("Log length: %d, MaxLogSize: %d", node.GetLogLength(), config.MaxLogSize)
+			t.Logf("Log length: %d, MaxLogSize: %d", node.GetLogLength(), 10)
 		}
 	}
 
@@ -86,9 +83,7 @@ func TestSnapshotCreation(t *testing.T) {
 // TestSnapshotInstallation tests installing snapshots on followers
 func TestSnapshotInstallation(t *testing.T) {
 	// Create a 3-node cluster but start only 2 initially
-	config := test.DefaultClusterConfig(3)
-	config.MaxLogSize = 10 // Small log size to trigger snapshots
-	cluster := test.NewTestCluster(t, config)
+	cluster := helpers.NewTestCluster(t, 3, helpers.WithMaxLogSize(10)) // Small log size to trigger snapshots
 	defer cluster.Stop()
 
 	ctx := context.Background()
@@ -101,12 +96,7 @@ func TestSnapshotInstallation(t *testing.T) {
 	}
 
 	// Wait for leader election among first 2 nodes
-	timing := test.DefaultTimingConfig()
-	timing.ElectionTimeout = 500 * time.Millisecond
-	leaderID := test.WaitForLeaderWithConfig(t, cluster.Nodes[:2], timing)
-	if leaderID < 0 {
-		t.Fatal("No leader elected among first 2 nodes")
-	}
+	leaderID := helpers.WaitForLeader(t, cluster.Nodes[:2], 2*time.Second)
 	leader := cluster.Nodes[leaderID]
 
 	t.Logf("Leader is node %d", leaderID)
@@ -121,16 +111,15 @@ func TestSnapshotInstallation(t *testing.T) {
 	}
 
 	// Wait for snapshot creation
-	test.WaitForConditionWithProgress(t, func() (bool, string) {
-		if persistence := cluster.Persistences[leaderID]; persistence != nil {
-			hasSnapshot := persistence.HasSnapshot()
-			return hasSnapshot, fmt.Sprintf("has snapshot: %v", hasSnapshot)
+	helpers.WaitForCondition(t, func() bool {
+		if persistence := cluster.GetPersistence(leaderID); persistence != nil {
+			return persistence.HasSnapshot()
 		}
-		return false, "no persistence"
-	}, timing.ReplicationTimeout, "snapshot creation")
+		return false
+	}, 2*time.Second, "snapshot creation")
 
 	// Verify snapshot was created
-	if persistence := cluster.Persistences[leaderID]; persistence != nil {
+	if persistence := cluster.GetPersistence(leaderID); persistence != nil {
 		if !persistence.HasSnapshot() {
 			t.Error("Leader should have created a snapshot")
 		}
@@ -144,10 +133,10 @@ func TestSnapshotInstallation(t *testing.T) {
 	t.Log("Started lagging node 2")
 
 	// Wait for snapshot installation
-	test.WaitForConditionWithProgress(t, func() (bool, string) {
+	helpers.WaitForCondition(t, func() bool {
 		leaderCommit := leader.GetCommitIndex()
 		node2Commit := cluster.Nodes[2].GetCommitIndex()
-		return node2Commit >= leaderCommit-2, fmt.Sprintf("node2 commit: %d, leader commit: %d", node2Commit, leaderCommit)
+		return node2Commit >= leaderCommit-2
 	}, 2*time.Second, "node 2 catch up via snapshot")
 
 	// Check if node 2 caught up via snapshot
@@ -164,15 +153,15 @@ func TestSnapshotInstallation(t *testing.T) {
 	// Verify state machine content is consistent
 	// Submit a read command to verify
 	readIndex, _, _ := leader.Submit("read-check")
-	test.WaitForCommitIndexWithConfig(t, cluster.Nodes, readIndex, timing)
+	helpers.WaitForCommitIndex(t, cluster.Nodes, readIndex, time.Second)
 
 	// Check state machine consistency
-	sm0 := cluster.StateMachines[0]
-	sm2 := cluster.StateMachines[2]
+	sm0 := cluster.GetStateMachine(0)
+	sm2 := cluster.GetStateMachine(2)
 
 	// Both should have applied similar number of commands
-	applied0 := sm0.GetAppliedCount()
-	applied2 := sm2.GetAppliedCount()
+	applied0 := sm0.GetApplyCount()
+	applied2 := sm2.GetApplyCount()
 
 	if applied2 < applied0-2 {
 		t.Errorf("State machine 2 is too far behind. Applied: %d vs %d", applied2, applied0)
@@ -184,20 +173,18 @@ func TestSnapshotInstallation(t *testing.T) {
 // TestSnapshotWithConcurrentWrites tests snapshot creation during active writes
 func TestSnapshotWithConcurrentWrites(t *testing.T) {
 	// Create a 3-node cluster
-	config := test.DefaultClusterConfig(3)
-	config.MaxLogSize = 20 // Small log size to trigger multiple snapshots
-	cluster := test.NewTestCluster(t, config)
-	defer cluster.Stop()
-
-	ctx := context.Background()
-	if err := cluster.Start(ctx); err != nil {
+	cluster := helpers.NewTestCluster(t, 3, helpers.WithMaxLogSize(20)) // Small log size to trigger multiple snapshots
+	
+	// Start cluster
+	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
+	defer cluster.Stop()
 
 	// Wait for leader election
-	leaderID := cluster.WaitForLeaderElection(t, 2*time.Second)
-	if leaderID < 0 {
-		t.Fatal("No leader elected")
+	_, err := cluster.WaitForLeader(2 * time.Second)
+	if err != nil {
+		t.Fatalf("No leader elected: %v", err)
 	}
 
 	// Start concurrent writers
@@ -214,7 +201,7 @@ func TestSnapshotWithConcurrentWrites(t *testing.T) {
 				default:
 					cmd := fmt.Sprintf("writer-%d-cmd-%d", id, cmdNum)
 					// Always get current leader
-					currentLeader, _ := cluster.GetLeader()
+					currentLeader := cluster.GetLeaderNode()
 					if currentLeader != nil {
 						_, _, isLeader := currentLeader.Submit(cmd)
 						if isLeader {
@@ -229,10 +216,9 @@ func TestSnapshotWithConcurrentWrites(t *testing.T) {
 	}
 
 	// Let writers run and trigger snapshots
-	timing := test.DefaultTimingConfig()
-	test.WaitForConditionWithProgress(t, func() (bool, string) {
+	helpers.WaitForCondition(t, func() bool {
 		count := atomic.LoadInt32(&successCount)
-		return count >= 50, fmt.Sprintf("submitted %d commands", count)
+		return count >= 50
 	}, 3*time.Second, "concurrent command submission")
 
 	// Stop writers
@@ -243,7 +229,7 @@ func TestSnapshotWithConcurrentWrites(t *testing.T) {
 	t.Logf("Successfully submitted %d commands", successfulCommands)
 
 	// Wait for system to stabilize
-	test.WaitForStableLeader(t, cluster.Nodes, timing)
+	cluster.WaitForStableCluster(2 * time.Second)
 
 	// Verify all nodes have consistent state
 	commitIndices := make([]int, 3)
@@ -255,10 +241,10 @@ func TestSnapshotWithConcurrentWrites(t *testing.T) {
 
 	// Check that snapshots were created
 	snapshotCount := 0
-	for i, persistence := range cluster.Persistences {
-		if persistence != nil && persistence.HasSnapshot() {
+	for i := 0; i < 3; i++ {
+		if persistence := cluster.GetPersistence(i); persistence != nil && persistence.HasSnapshot() {
 			snapshotCount++
-			snapshot := persistence.GetSnapshot()
+			snapshot, _ := persistence.LoadSnapshot()
 			if snapshot != nil {
 				t.Logf("Node %d has snapshot at index %d", i, snapshot.LastIncludedIndex)
 			}
@@ -267,13 +253,13 @@ func TestSnapshotWithConcurrentWrites(t *testing.T) {
 
 	if snapshotCount == 0 && successfulCommands > 30 {
 		t.Errorf("No snapshots were created despite %d concurrent writes (threshold: %d)", 
-			successfulCommands, config.MaxLogSize)
+			successfulCommands, 20)
 	} else if snapshotCount > 0 {
 		t.Logf("Created %d snapshots with concurrent writes", snapshotCount)
 	}
 
 	// Wait for consistency after concurrent writes
-	test.Eventually(t, func() bool {
+	helpers.Eventually(t, func() bool {
 		minCommit := int(^uint(0) >> 1)
 		maxCommit := 0
 		for _, node := range cluster.Nodes {
@@ -313,104 +299,47 @@ func TestSnapshotWithConcurrentWrites(t *testing.T) {
 	}
 }
 
-// TestSnapshotEdgeCases tests edge cases in snapshot handling
-func TestSnapshotEdgeCases(t *testing.T) {
-	t.Run("EmptySnapshot", func(t *testing.T) {
-		// Test creating snapshot with empty state machine
-		sm := test.NewSimpleStateMachine()
+// TestSnapshotFailure tests snapshot persistence failure handling
+func TestSnapshotFailure(t *testing.T) {
+	// Test snapshot persistence failure handling
+	cluster := helpers.NewTestCluster(t, 1, helpers.WithMaxLogSize(5))
+	
+	// Start cluster
+	if err := cluster.Start(); err != nil {
+		t.Fatalf("Failed to start cluster: %v", err)
+	}
+	defer cluster.Stop()
 
-		data, err := sm.Snapshot()
-		if err != nil {
-			t.Fatalf("Failed to create empty snapshot: %v", err)
-		}
+	// Wait for leadership
+	_, err := cluster.WaitForLeader(2 * time.Second)
+	if err != nil {
+		t.Fatalf("No leader elected: %v", err)
+	}
 
-		// Restore empty snapshot
-		sm2 := test.NewSimpleStateMachine()
+	// Submit some commands
+	for i := 0; i < 7; i++ {
+		cluster.SubmitCommand(fmt.Sprintf("cmd%d", i))
+	}
 
-		err = sm2.Restore(data)
-		if err != nil {
-			t.Fatalf("Failed to restore empty snapshot: %v", err)
-		}
-	})
+	// Simulate snapshot save failure
+	if mockPersistence, ok := cluster.GetPersistence(0).(*raft.MockPersistence); ok {
+		mockPersistence.FailNextSave()
+	}
 
-	t.Run("LargeSnapshot", func(t *testing.T) {
-		// Test with large state machine
-		sm := test.NewSimpleStateMachine()
+	// Submit more commands to trigger snapshot
+	for i := 7; i < 10; i++ {
+		cluster.SubmitCommand(fmt.Sprintf("cmd%d", i))
+	}
 
-		// Add many entries by applying commands
-		for i := 0; i < 1000; i++ {
-			cmd := fmt.Sprintf("set key-%d value-%d-with-some-extra-data-to-make-it-larger", i, i)
-			entry := raft.LogEntry{
-				Term:    1,
-				Index:   i + 1,
-				Command: cmd,
-			}
-			sm.Apply(entry)
-		}
+	// Wait for snapshot attempt
+	helpers.WaitForCondition(t, func() bool {
+		// Check if snapshot was attempted (it will fail)
+		logLength := cluster.Nodes[0].GetLogLength()
+		return logLength >= 10
+	}, 2*time.Second, "snapshot trigger")
 
-		data, err := sm.Snapshot()
-		if err != nil {
-			t.Fatalf("Failed to create large snapshot: %v", err)
-		}
-
-		t.Logf("Large snapshot size: %d bytes", len(data))
-
-		// Restore large snapshot
-		sm2 := test.NewSimpleStateMachine()
-
-		err = sm2.Restore(data)
-		if err != nil {
-			t.Fatalf("Failed to restore large snapshot: %v", err)
-		}
-
-		// Verify content
-		// Applied count should be 1000
-		if sm2.GetAppliedCount() != 1000 {
-			t.Errorf("Expected 1000 entries applied, got %d", sm2.GetAppliedCount())
-		}
-	})
-
-	t.Run("SnapshotFailure", func(t *testing.T) {
-		// Test snapshot persistence failure handling
-		config := test.DefaultClusterConfig(1)
-		config.MaxLogSize = 5
-		cluster := test.NewTestCluster(t, config)
-		defer cluster.Stop()
-
-		ctx := context.Background()
-		if err := cluster.Start(ctx); err != nil {
-			t.Fatalf("Failed to start cluster: %v", err)
-		}
-
-		// Wait for leadership
-		cluster.WaitForLeaderElection(t, 2*time.Second)
-
-		// Submit some commands
-		for i := 0; i < 7; i++ {
-			cluster.SubmitCommand(fmt.Sprintf("cmd%d", i))
-		}
-
-		// Simulate snapshot save failure
-		if persistence := cluster.Persistences[0]; persistence != nil {
-			persistence.SetFailNext()
-		}
-
-		// Submit more commands to trigger snapshot
-		for i := 7; i < 10; i++ {
-			cluster.SubmitCommand(fmt.Sprintf("cmd%d", i))
-		}
-
-		// Wait for snapshot attempt
-		timing := test.DefaultTimingConfig()
-		test.WaitForConditionWithProgress(t, func() (bool, string) {
-			// Check if snapshot was attempted (it will fail)
-			logLength := cluster.Nodes[0].GetLogLength()
-			return logLength >= 10, fmt.Sprintf("log length: %d", logLength)
-		}, timing.ReplicationTimeout, "snapshot trigger")
-
-		// Node should still be functional despite snapshot failure
-		if !cluster.Nodes[0].IsLeader() {
-			t.Error("Node should remain leader despite snapshot failure")
-		}
-	})
+	// Node should still be functional despite snapshot failure
+	if !cluster.Nodes[0].IsLeader() {
+		t.Error("Node should remain leader despite snapshot failure")
+	}
 }

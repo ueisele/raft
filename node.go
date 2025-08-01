@@ -250,6 +250,15 @@ func (n *raftNode) GetLogLength() int {
 	return n.log.GetLastLogIndex()
 }
 
+// GetLogEntry returns the log entry at the specified index
+func (n *raftNode) GetLogEntry(index int) *LogEntry {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	entry := n.log.GetEntry(index)
+	return entry
+}
+
 // GetTransportHandler returns the transport handler for this node
 func (n *raftNode) GetTransportHandler() Transport {
 	return n.transport

@@ -2,6 +2,7 @@ package raft
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -48,167 +49,138 @@ func NewMockTransport(serverID int) *MockTransport {
 	}
 }
 
-func (m *MockTransport) SendRequestVote(serverID int, args *RequestVoteArgs) (*RequestVoteReply, error) {
-	m.mu.Lock()
-	m.requestVoteCalls = append(m.requestVoteCalls, RequestVoteCall{ServerID: serverID, Args: args})
-	handler := m.requestVoteHandler
-	m.mu.Unlock()
-
+func (t *MockTransport) SendRequestVote(serverID int, args *RequestVoteArgs) (*RequestVoteReply, error) {
+	t.mu.Lock()
+	t.requestVoteCalls = append(t.requestVoteCalls, RequestVoteCall{ServerID: serverID, Args: args})
+	handler := t.requestVoteHandler
+	t.mu.Unlock()
+	
 	if handler != nil {
 		return handler(serverID, args)
 	}
-
-	// Default response - vote not granted
-	return &RequestVoteReply{Term: args.Term, VoteGranted: false}, nil
+	
+	return &RequestVoteReply{
+		Term:        args.Term,
+		VoteGranted: false,
+	}, nil
 }
 
-func (m *MockTransport) SendAppendEntries(serverID int, args *AppendEntriesArgs) (*AppendEntriesReply, error) {
-	m.mu.Lock()
-	m.appendEntriesCalls = append(m.appendEntriesCalls, AppendEntriesCall{ServerID: serverID, Args: args})
-	handler := m.appendEntriesHandler
-	m.mu.Unlock()
-
+func (t *MockTransport) SendAppendEntries(serverID int, args *AppendEntriesArgs) (*AppendEntriesReply, error) {
+	t.mu.Lock()
+	t.appendEntriesCalls = append(t.appendEntriesCalls, AppendEntriesCall{ServerID: serverID, Args: args})
+	handler := t.appendEntriesHandler
+	t.mu.Unlock()
+	
 	if handler != nil {
 		return handler(serverID, args)
 	}
-
-	// Default response - success
-	return &AppendEntriesReply{Term: args.Term, Success: true}, nil
+	
+	return &AppendEntriesReply{
+		Term:    args.Term,
+		Success: false,
+	}, nil
 }
 
-func (m *MockTransport) SendInstallSnapshot(serverID int, args *InstallSnapshotArgs) (*InstallSnapshotReply, error) {
-	m.mu.Lock()
-	m.installSnapshotCalls = append(m.installSnapshotCalls, InstallSnapshotCall{ServerID: serverID, Args: args})
-	handler := m.installSnapshotHandler
-	m.mu.Unlock()
-
+func (t *MockTransport) SendInstallSnapshot(serverID int, args *InstallSnapshotArgs) (*InstallSnapshotReply, error) {
+	t.mu.Lock()
+	t.installSnapshotCalls = append(t.installSnapshotCalls, InstallSnapshotCall{ServerID: serverID, Args: args})
+	handler := t.installSnapshotHandler
+	t.mu.Unlock()
+	
 	if handler != nil {
 		return handler(serverID, args)
 	}
-
-	// Default response - success
-	return &InstallSnapshotReply{Term: args.Term}, nil
+	
+	return &InstallSnapshotReply{
+		Term: args.Term,
+	}, nil
 }
 
-func (m *MockTransport) SetRPCHandler(handler RPCHandler) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.rpcHandler = handler
+func (t *MockTransport) SetRPCHandler(handler RPCHandler) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.rpcHandler = handler
 }
 
-func (m *MockTransport) Start() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.started = true
+func (t *MockTransport) Start() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.started = true
 	return nil
 }
 
-func (m *MockTransport) Stop() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.started = false
+func (t *MockTransport) Stop() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.started = false
 	return nil
 }
 
-func (m *MockTransport) GetAddress() string {
-	return fmt.Sprintf("mock://server%d", m.serverID)
+func (t *MockTransport) GetAddress() string {
+	return fmt.Sprintf("mock-transport-%d", t.serverID)
 }
 
-// Set custom handlers
-func (m *MockTransport) SetRequestVoteHandler(handler func(serverID int, args *RequestVoteArgs) (*RequestVoteReply, error)) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.requestVoteHandler = handler
+// Handler setter methods
+func (t *MockTransport) SetRequestVoteHandler(handler func(serverID int, args *RequestVoteArgs) (*RequestVoteReply, error)) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.requestVoteHandler = handler
 }
 
-func (m *MockTransport) SetAppendEntriesHandler(handler func(serverID int, args *AppendEntriesArgs) (*AppendEntriesReply, error)) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.appendEntriesHandler = handler
+func (t *MockTransport) SetAppendEntriesHandler(handler func(serverID int, args *AppendEntriesArgs) (*AppendEntriesReply, error)) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.appendEntriesHandler = handler
 }
 
-func (m *MockTransport) SetInstallSnapshotHandler(handler func(serverID int, args *InstallSnapshotArgs) (*InstallSnapshotReply, error)) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.installSnapshotHandler = handler
+func (t *MockTransport) SetInstallSnapshotHandler(handler func(serverID int, args *InstallSnapshotArgs) (*InstallSnapshotReply, error)) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.installSnapshotHandler = handler
 }
 
-// Get call history
-func (m *MockTransport) GetRequestVoteCalls() []RequestVoteCall {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]RequestVoteCall{}, m.requestVoteCalls...)
+// Call tracking methods
+func (t *MockTransport) GetRequestVoteCalls() []RequestVoteCall {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	result := make([]RequestVoteCall, len(t.requestVoteCalls))
+	copy(result, t.requestVoteCalls)
+	return result
 }
 
-func (m *MockTransport) GetAppendEntriesCalls() []AppendEntriesCall {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]AppendEntriesCall{}, m.appendEntriesCalls...)
+func (t *MockTransport) GetAppendEntriesCalls() []AppendEntriesCall {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	result := make([]AppendEntriesCall, len(t.appendEntriesCalls))
+	copy(result, t.appendEntriesCalls)
+	return result
 }
 
-func (m *MockTransport) GetInstallSnapshotCalls() []InstallSnapshotCall {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]InstallSnapshotCall{}, m.installSnapshotCalls...)
+func (t *MockTransport) GetInstallSnapshotCalls() []InstallSnapshotCall {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	result := make([]InstallSnapshotCall, len(t.installSnapshotCalls))
+	copy(result, t.installSnapshotCalls)
+	return result
 }
 
 // ClearCalls clears all recorded calls
-func (m *MockTransport) ClearCalls() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.requestVoteCalls = m.requestVoteCalls[:0]
-	m.appendEntriesCalls = m.appendEntriesCalls[:0]
-	m.installSnapshotCalls = m.installSnapshotCalls[:0]
+func (t *MockTransport) ClearCalls() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.requestVoteCalls = make([]RequestVoteCall, 0)
+	t.appendEntriesCalls = make([]AppendEntriesCall, 0)
+	t.installSnapshotCalls = make([]InstallSnapshotCall, 0)
 }
 
-// MockStateMachine for testing
-type MockStateMachine struct {
-	mu          sync.Mutex
-	appliedLogs []LogEntry
-	state       map[string]interface{}
-}
+// ========== Test loggers ==========
 
-func NewMockStateMachine() *MockStateMachine {
-	return &MockStateMachine{
-		appliedLogs: make([]LogEntry, 0),
-		state:       make(map[string]interface{}),
-	}
-}
-
-func (m *MockStateMachine) Apply(entry LogEntry) interface{} {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.appliedLogs = append(m.appliedLogs, entry)
-	return nil
-}
-
-func (m *MockStateMachine) Snapshot() ([]byte, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	// Simple snapshot - just return the number of applied logs
-	return []byte(fmt.Sprintf("snapshot-%d", len(m.appliedLogs))), nil
-}
-
-func (m *MockStateMachine) Restore(snapshot []byte) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	// Reset state
-	m.appliedLogs = make([]LogEntry, 0)
-	m.state = make(map[string]interface{})
-	return nil
-}
-
-func (m *MockStateMachine) GetAppliedLogs() []LogEntry {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]LogEntry{}, m.appliedLogs...)
-}
-
-// TestLogger for testing
+// TestLogger is a logger that writes to testing.T
 type TestLogger struct {
 	t *testing.T
 }
 
+// NewTestLogger creates a new test logger
 func NewTestLogger(t *testing.T) *TestLogger {
 	return &TestLogger{t: t}
 }
@@ -226,10 +198,10 @@ func (l *TestLogger) Warn(format string, args ...interface{}) {
 }
 
 func (l *TestLogger) Error(format string, args ...interface{}) {
-	l.t.Logf("[ERROR] "+format, args...)
+	l.t.Errorf("[ERROR] "+format, args...)
 }
 
-// SafeTestLogger wraps testing.T and handles logging after test completion
+// SafeTestLogger is a thread-safe test logger
 type SafeTestLogger struct {
 	t    *testing.T
 	done atomic.Bool
@@ -292,17 +264,21 @@ func (m *MockPersistence) SaveState(state *PersistentState) error {
 	
 	if m.failNextSave {
 		m.failNextSave = false
-		return fmt.Errorf("mock save state error")
+		return fmt.Errorf("mock save failure")
 	}
 	
 	// Deep copy the state
-	m.state = &PersistentState{
-		CurrentTerm: state.CurrentTerm,
-		VotedFor:    state.VotedFor,
-		Log:         make([]LogEntry, len(state.Log)),
-		CommitIndex: state.CommitIndex,
+	if state != nil {
+		m.state = &PersistentState{
+			CurrentTerm: state.CurrentTerm,
+			VotedFor:    state.VotedFor,
+			CommitIndex: state.CommitIndex,
+		}
+		if state.Log != nil {
+			m.state.Log = make([]LogEntry, len(state.Log))
+			copy(m.state.Log, state.Log)
+		}
 	}
-	copy(m.state.Log, state.Log)
 	
 	return nil
 }
@@ -315,10 +291,25 @@ func (m *MockPersistence) LoadState() (*PersistentState, error) {
 	
 	if m.failNextLoad {
 		m.failNextLoad = false
-		return nil, fmt.Errorf("mock load state error")
+		return nil, fmt.Errorf("mock load failure")
 	}
 	
-	return m.state, nil
+	if m.state == nil {
+		return nil, nil
+	}
+	
+	// Deep copy the state
+	result := &PersistentState{
+		CurrentTerm: m.state.CurrentTerm,
+		VotedFor:    m.state.VotedFor,
+		CommitIndex: m.state.CommitIndex,
+	}
+	if m.state.Log != nil {
+		result.Log = make([]LogEntry, len(m.state.Log))
+		copy(result.Log, m.state.Log)
+	}
+	
+	return result, nil
 }
 
 func (m *MockPersistence) SaveSnapshot(snapshot *Snapshot) error {
@@ -329,16 +320,17 @@ func (m *MockPersistence) SaveSnapshot(snapshot *Snapshot) error {
 	
 	if m.failNextSave {
 		m.failNextSave = false
-		return fmt.Errorf("mock save snapshot error")
+		return fmt.Errorf("mock snapshot save failure")
 	}
 	
-	// Deep copy the snapshot
-	m.snapshot = &Snapshot{
-		Data:              make([]byte, len(snapshot.Data)),
-		LastIncludedIndex: snapshot.LastIncludedIndex,
-		LastIncludedTerm:  snapshot.LastIncludedTerm,
+	if snapshot != nil {
+		m.snapshot = &Snapshot{
+			LastIncludedIndex: snapshot.LastIncludedIndex,
+			LastIncludedTerm:  snapshot.LastIncludedTerm,
+			Data:              make([]byte, len(snapshot.Data)),
+		}
+		copy(m.snapshot.Data, snapshot.Data)
 	}
-	copy(m.snapshot.Data, snapshot.Data)
 	
 	return nil
 }
@@ -351,10 +343,21 @@ func (m *MockPersistence) LoadSnapshot() (*Snapshot, error) {
 	
 	if m.failNextLoad {
 		m.failNextLoad = false
-		return nil, fmt.Errorf("mock load snapshot error")
+		return nil, fmt.Errorf("mock snapshot load failure")
 	}
 	
-	return m.snapshot, nil
+	if m.snapshot == nil {
+		return nil, nil
+	}
+	
+	result := &Snapshot{
+		LastIncludedIndex: m.snapshot.LastIncludedIndex,
+		LastIncludedTerm:  m.snapshot.LastIncludedTerm,
+		Data:              make([]byte, len(m.snapshot.Data)),
+	}
+	copy(result.Data, m.snapshot.Data)
+	
+	return result, nil
 }
 
 func (m *MockPersistence) HasSnapshot() bool {
@@ -363,121 +366,168 @@ func (m *MockPersistence) HasSnapshot() bool {
 	return m.snapshot != nil
 }
 
-// MockSnapshotProvider is a general-purpose snapshot provider mock for testing
-type MockSnapshotProvider struct {
-	mu       sync.Mutex
-	snapshot *Snapshot
-	err      error
-	calls    int
-}
-
-func NewMockSnapshotProvider() *MockSnapshotProvider {
-	return &MockSnapshotProvider{}
-}
-
-func (m *MockSnapshotProvider) GetLatestSnapshot() (*Snapshot, error) {
+// Helper methods for testing
+func (m *MockPersistence) GetSaveCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.calls++
-	return m.snapshot, m.err
+	return m.saveStateCount
 }
 
-func (m *MockSnapshotProvider) SetSnapshot(snapshot *Snapshot) {
+func (m *MockPersistence) GetLoadCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.snapshot = snapshot
+	return m.loadStateCount
 }
 
-func (m *MockSnapshotProvider) SetError(err error) {
+func (m *MockPersistence) FailNextSave() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.err = err
+	m.failNextSave = true
 }
 
-func (m *MockSnapshotProvider) GetCalls() int {
+func (m *MockPersistence) FailNextLoad() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.calls
+	m.failNextLoad = true
 }
 
-// MockMetrics is a general-purpose metrics mock for testing
-type MockMetrics struct {
-	mu             sync.Mutex
-	elections      []electionRecord
-	heartbeats     []heartbeatRecord
-	appends        []int
-	commits        []int
-	snapshots      []snapshotRecord
+// MockStateMachine is a test implementation of StateMachine
+type MockStateMachine struct {
+	mu                sync.RWMutex
+	state             map[string]interface{}
+	applyCount        int
+	lastAppliedIndex  int
+	lastAppliedTerm   int
+	applyDelay        time.Duration
+	failNextApply     bool
+	captureAppliedCmds []interface{}
 }
 
-type electionRecord struct {
-	won      bool
-	duration time.Duration
-}
-
-type heartbeatRecord struct {
-	peer     int
-	success  bool
-	duration time.Duration
-}
-
-type snapshotRecord struct {
-	size     int
-	duration time.Duration
-}
-
-func NewMockMetrics() *MockMetrics {
-	return &MockMetrics{
-		elections:  make([]electionRecord, 0),
-		heartbeats: make([]heartbeatRecord, 0),
-		appends:    make([]int, 0),
-		commits:    make([]int, 0),
-		snapshots:  make([]snapshotRecord, 0),
+func NewMockStateMachine() *MockStateMachine {
+	return &MockStateMachine{
+		state:              make(map[string]interface{}),
+		captureAppliedCmds: make([]interface{}, 0),
 	}
 }
 
-func (m *MockMetrics) RecordElection(won bool, duration time.Duration) {
+func (m *MockStateMachine) Apply(entry LogEntry) interface{} {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.elections = append(m.elections, electionRecord{won: won, duration: duration})
+	
+	if m.applyDelay > 0 {
+		time.Sleep(m.applyDelay)
+	}
+	
+	m.applyCount++
+	m.captureAppliedCmds = append(m.captureAppliedCmds, entry.Command)
+	
+	if m.failNextApply {
+		m.failNextApply = false
+		return fmt.Errorf("mock apply failure")
+	}
+	
+	// Simple key-value store simulation
+	if cmd, ok := entry.Command.(string); ok {
+		parts := strings.SplitN(cmd, " ", 3)
+		if len(parts) >= 2 {
+			switch parts[0] {
+			case "SET":
+				if len(parts) == 3 {
+					key := parts[1]
+					value := parts[2]
+					m.state[key] = value
+					return fmt.Sprintf("OK: %s=%s", key, value)
+				}
+			case "GET":
+				key := parts[1]
+				if value, exists := m.state[key]; exists {
+					return value
+				}
+				return nil
+			case "DELETE":
+				key := parts[1]
+				delete(m.state, key)
+				return "OK"
+			}
+		}
+	}
+	
+	// Store any command type
+	if key, ok := entry.Command.(string); ok {
+		m.state[key] = entry.Command
+	}
+	
+	return entry.Command
 }
 
-func (m *MockMetrics) RecordHeartbeat(peer int, success bool, duration time.Duration) {
+func (m *MockStateMachine) Snapshot() ([]byte, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
+	// Simple snapshot: just count of entries
+	return []byte(fmt.Sprintf("entries:%d", len(m.state))), nil
+}
+
+func (m *MockStateMachine) Restore(data []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.heartbeats = append(m.heartbeats, heartbeatRecord{peer: peer, success: success, duration: duration})
+	
+	m.state = make(map[string]interface{})
+	// For simplicity, we just clear the state
+	return nil
 }
 
-func (m *MockMetrics) RecordLogAppend(entries int) {
+// GetData returns the current state map (for testing)
+func (m *MockStateMachine) GetData() map[string]interface{} {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.appends = append(m.appends, entries)
+	
+	// Return a copy to avoid external modifications
+	result := make(map[string]interface{})
+	for k, v := range m.state {
+		result[k] = v
+	}
+	return result
 }
 
-func (m *MockMetrics) RecordCommit(index int) {
+// Helper methods for testing
+func (m *MockStateMachine) GetApplyCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.applyCount
+}
+
+func (m *MockStateMachine) SetApplyDelay(delay time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.commits = append(m.commits, index)
+	m.applyDelay = delay
 }
 
-func (m *MockMetrics) RecordSnapshot(size int, duration time.Duration) {
+func (m *MockStateMachine) FailNextApply() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.snapshots = append(m.snapshots, snapshotRecord{size: size, duration: duration})
+	m.failNextApply = true
 }
 
-// ========== Multi-node test helpers (from multi_node_test.go) ==========
-
-// Multi-node transport that allows nodes to communicate
-type multiNodeTransport struct {
-	id       int
-	registry *nodeRegistry
-	handler  RPCHandler
+func (m *MockStateMachine) GetAppliedCommands() []interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]interface{}, len(m.captureAppliedCmds))
+	copy(result, m.captureAppliedCmds)
+	return result
 }
+
+// ========== Test helpers for multi-node clusters ==========
 
 type nodeRegistry struct {
 	mu    sync.RWMutex
 	nodes map[int]RPCHandler
+}
+
+type multiNodeTransport struct {
+	id       int
+	registry *nodeRegistry
+	handler  RPCHandler
 }
 
 func (t *multiNodeTransport) SendRequestVote(serverID int, args *RequestVoteArgs) (*RequestVoteReply, error) {
@@ -540,56 +590,10 @@ func (t *multiNodeTransport) GetAddress() string {
 
 // ========== Debug test helpers (from debug_multi_test.go) ==========
 
-type testLogger struct {
-	t      *testing.T
-	mu     sync.RWMutex
-	closed bool
-}
-
+// For backward compatibility
+type testLogger = TestLogger
 func newTestLogger(t *testing.T) *testLogger {
-	logger := &testLogger{t: t}
-	// Register cleanup to mark logger as closed when test ends
-	t.Cleanup(func() {
-		logger.mu.Lock()
-		logger.closed = true
-		logger.mu.Unlock()
-	})
-	return logger
-}
-
-func (l *testLogger) log(level, format string, args ...interface{}) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	
-	// Don't log if test has completed
-	if l.closed {
-		return
-	}
-	
-	// Use a defer to catch any panic from t.Logf
-	defer func() {
-		if r := recover(); r != nil {
-			// Silently ignore logging after test completion
-		}
-	}()
-	
-	l.t.Logf(level+" "+format, args...)
-}
-
-func (l *testLogger) Debug(format string, args ...interface{}) {
-	l.log("[DEBUG]", format, args...)
-}
-
-func (l *testLogger) Info(format string, args ...interface{}) {
-	l.log("[INFO]", format, args...)
-}
-
-func (l *testLogger) Warn(format string, args ...interface{}) {
-	l.log("[WARN]", format, args...)
-}
-
-func (l *testLogger) Error(format string, args ...interface{}) {
-	l.log("[ERROR]", format, args...)
+	return NewTestLogger(t)
 }
 
 type debugNodeRegistry struct {
@@ -632,9 +636,6 @@ func (t *debugTransport) SendAppendEntries(serverID int, args *AppendEntriesArgs
 	t.registry.mu.RUnlock()
 
 	if !exists {
-		if t.logger != nil {
-			t.logger.Debug("SendAppendEntries: node %d not found in registry", serverID)
-		}
 		return nil, fmt.Errorf("node %d not found", serverID)
 	}
 
@@ -670,23 +671,22 @@ func (t *debugTransport) Stop() error {
 }
 
 func (t *debugTransport) GetAddress() string {
-	return fmt.Sprintf("node-%d", t.id)
+	return fmt.Sprintf("debug-node-%d", t.id)
 }
 
-// ========== Partitionable transport helpers (from vote_denial_test.go) ==========
+// ========== Partitionable transport ==========
 
-// partitionableTransport is a transport that can simulate network partitions
+type partitionRegistry struct {
+	mu    sync.RWMutex
+	nodes map[int]RPCHandler
+}
+
 type partitionableTransport struct {
 	id       int
 	registry *partitionRegistry
 	handler  RPCHandler
 	mu       sync.Mutex
 	blocked  map[int]bool
-}
-
-type partitionRegistry struct {
-	mu    sync.RWMutex
-	nodes map[int]RPCHandler
 }
 
 func (t *partitionableTransport) Block(serverID int) {
@@ -699,6 +699,24 @@ func (t *partitionableTransport) Unblock(serverID int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	delete(t.blocked, serverID)
+}
+
+func (t *partitionableTransport) BlockAll() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.registry.mu.RLock()
+	for id := range t.registry.nodes {
+		if id != t.id {
+			t.blocked[id] = true
+		}
+	}
+	t.registry.mu.RUnlock()
+}
+
+func (t *partitionableTransport) UnblockAll() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.blocked = make(map[int]bool)
 }
 
 func (t *partitionableTransport) SendRequestVote(serverID int, args *RequestVoteArgs) (*RequestVoteReply, error) {
@@ -781,4 +799,82 @@ func (t *partitionableTransport) Stop() error {
 
 func (t *partitionableTransport) GetAddress() string {
 	return fmt.Sprintf("partition-transport-%d", t.id)
+}
+
+// ========== Simple test transport for unit tests ==========
+
+// testTransport is a minimal transport for unit testing
+type testTransport struct {
+	responses map[int]*RequestVoteReply
+	handler   RPCHandler
+}
+
+func (t *testTransport) SendRequestVote(serverID int, args *RequestVoteArgs) (*RequestVoteReply, error) {
+	if reply, ok := t.responses[serverID]; ok {
+		return reply, nil
+	}
+	return &RequestVoteReply{Term: args.Term, VoteGranted: false}, nil
+}
+
+func (t *testTransport) SendAppendEntries(serverID int, args *AppendEntriesArgs) (*AppendEntriesReply, error) {
+	return &AppendEntriesReply{Term: args.Term, Success: false}, nil
+}
+
+func (t *testTransport) SendInstallSnapshot(serverID int, args *InstallSnapshotArgs) (*InstallSnapshotReply, error) {
+	return &InstallSnapshotReply{Term: args.Term}, nil
+}
+
+func (t *testTransport) SetRPCHandler(handler RPCHandler) {
+	t.handler = handler
+}
+
+func (t *testTransport) Start() error {
+	return nil
+}
+
+func (t *testTransport) Stop() error {
+	return nil
+}
+
+func (t *testTransport) GetAddress() string {
+	return "test-transport"
+}
+
+// ========== Simple test state machine for unit tests ==========
+
+// testStateMachine is a minimal state machine for unit testing
+type testStateMachine struct {
+	mu   sync.RWMutex
+	data map[string]string
+}
+
+func (s *testStateMachine) Apply(entry LogEntry) interface{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	if cmd, ok := entry.Command.(string); ok {
+		parts := strings.Split(cmd, "=")
+		if len(parts) == 2 && parts[0] == "SET" {
+			s.data[parts[1]] = parts[1]
+			return parts[1]
+		}
+	}
+	return nil
+}
+
+func (s *testStateMachine) Snapshot() ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	
+	// Simple snapshot: just count entries
+	return []byte(fmt.Sprintf("entries:%d", len(s.data))), nil
+}
+
+func (s *testStateMachine) Restore(data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	s.data = make(map[string]string)
+	// Simple restore: just clear data
+	return nil
 }

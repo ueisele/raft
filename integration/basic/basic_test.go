@@ -1,16 +1,18 @@
-package raft
+package basic
 
 import (
 	"context"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ueisele/raft"
 )
 
 // TestBasicNodeCreation tests creating a single node
 func TestBasicNodeCreation(t *testing.T) {
 	// Create configuration
-	config := &Config{
+	config := &raft.Config{
 		ID:                 1,
 		Peers:              []int{1},
 		ElectionTimeoutMin: 100 * time.Millisecond,
@@ -20,7 +22,7 @@ func TestBasicNodeCreation(t *testing.T) {
 
 	// Create simple in-memory transport
 	transport := &testTransport{
-		responses: make(map[int]*RequestVoteReply),
+		responses: make(map[int]*raft.RequestVoteReply),
 	}
 
 	// Create simple state machine
@@ -29,7 +31,7 @@ func TestBasicNodeCreation(t *testing.T) {
 	}
 
 	// Create node
-	node, err := NewNode(config, transport, nil, stateMachine)
+	node, err := raft.NewNode(config, transport, nil, stateMachine)
 	if err != nil {
 		t.Fatalf("Failed to create node: %v", err)
 	}
@@ -72,26 +74,26 @@ func TestBasicNodeCreation(t *testing.T) {
 
 // Simple test transport
 type testTransport struct {
-	responses map[int]*RequestVoteReply
-	handler   RPCHandler
+	responses map[int]*raft.RequestVoteReply
+	handler   raft.RPCHandler
 }
 
-func (t *testTransport) SendRequestVote(serverID int, args *RequestVoteArgs) (*RequestVoteReply, error) {
+func (t *testTransport) SendRequestVote(serverID int, args *raft.RequestVoteArgs) (*raft.RequestVoteReply, error) {
 	if reply, ok := t.responses[serverID]; ok {
 		return reply, nil
 	}
-	return &RequestVoteReply{Term: args.Term, VoteGranted: false}, nil
+	return &raft.RequestVoteReply{Term: args.Term, VoteGranted: false}, nil
 }
 
-func (t *testTransport) SendAppendEntries(serverID int, args *AppendEntriesArgs) (*AppendEntriesReply, error) {
-	return &AppendEntriesReply{Term: args.Term, Success: false}, nil
+func (t *testTransport) SendAppendEntries(serverID int, args *raft.AppendEntriesArgs) (*raft.AppendEntriesReply, error) {
+	return &raft.AppendEntriesReply{Term: args.Term, Success: false}, nil
 }
 
-func (t *testTransport) SendInstallSnapshot(serverID int, args *InstallSnapshotArgs) (*InstallSnapshotReply, error) {
-	return &InstallSnapshotReply{Term: args.Term}, nil
+func (t *testTransport) SendInstallSnapshot(serverID int, args *raft.InstallSnapshotArgs) (*raft.InstallSnapshotReply, error) {
+	return &raft.InstallSnapshotReply{Term: args.Term}, nil
 }
 
-func (t *testTransport) SetRPCHandler(handler RPCHandler) {
+func (t *testTransport) SetRPCHandler(handler raft.RPCHandler) {
 	t.handler = handler
 }
 
@@ -113,7 +115,7 @@ type testStateMachine struct {
 	data map[string]string
 }
 
-func (sm *testStateMachine) Apply(entry LogEntry) interface{} {
+func (sm *testStateMachine) Apply(entry raft.LogEntry) interface{} {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 

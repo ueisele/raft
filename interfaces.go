@@ -48,6 +48,9 @@ type Node interface {
 	// GetLogLength returns the current log length
 	GetLogLength() int
 
+	// GetLogEntry returns the log entry at the specified index
+	GetLogEntry(index int) *LogEntry
+
 	// GetTransportHandler returns the transport handler for this node
 	GetTransportHandler() Transport
 

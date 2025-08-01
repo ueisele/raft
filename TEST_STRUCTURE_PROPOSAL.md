@@ -59,6 +59,7 @@ raft/
     ├── cluster/
     │   ├── election_test.go        # Multi-node election scenarios
     │   ├── replication_test.go     # Log replication across cluster
+    │   ├── replication_extended_test.go # Extended replication tests with failures
     │   └── membership_test.go      # Adding/removing nodes
     │
     ├── configuration/
