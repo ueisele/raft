@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -794,5 +796,498 @@ func TestHTTPTransport_HandleRPCError(t *testing.T) {
 
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("expected status 500, got %d", resp.StatusCode)
+	}
+}
+
+// TestHTTPTransport_WithStaticDiscovery tests static peer discovery integration
+func TestHTTPTransport_WithStaticDiscovery(t *testing.T) {
+	// Set up mock servers for testing
+	servers := make([]*httptest.Server, 3)
+	for i := range servers {
+		serverID := i
+		servers[i] = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/raft/requestvote" {
+				var args raft.RequestVoteArgs
+				json.NewDecoder(r.Body).Decode(&args)
+				
+				reply := raft.RequestVoteReply{
+					Term:        args.Term,
+					VoteGranted: true,
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(reply)
+			}
+		}))
+		defer servers[serverID].Close()
+	}
+
+	// Create peer mapping
+	peers := make(map[int]string)
+	for i, server := range servers {
+		peers[i] = server.Listener.Addr().String()
+	}
+
+	// Create transport with static discovery
+	config := &transport.Config{
+		ServerID:   0,
+		Address:    peers[0],
+		RPCTimeout: 500,
+	}
+	
+	httpTrans, err := httpTransport.NewHTTPTransportWithStaticPeers(config, peers)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
+
+	// Test sending RPC to each peer
+	for peerID := 1; peerID < 3; peerID++ {
+		args := &raft.RequestVoteArgs{
+			Term:        1,
+			CandidateID: 0,
+		}
+		
+		reply, err := httpTrans.SendRequestVote(peerID, args)
+		if err != nil {
+			t.Errorf("failed to send request to peer %d: %v", peerID, err)
+			continue
+		}
+		
+		if !reply.VoteGranted {
+			t.Errorf("expected vote to be granted by peer %d", peerID)
+		}
+	}
+}
+
+// TestHTTPTransport_DynamicDiscoveryUpdate tests dynamic discovery updates
+func TestHTTPTransport_DynamicDiscoveryUpdate(t *testing.T) {
+	// Create initial server
+	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reply := raft.RequestVoteReply{Term: 1, VoteGranted: true}
+		json.NewEncoder(w).Encode(reply)
+	}))
+	defer server1.Close()
+
+	// Create discovery with initial peer
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{
+		1: server1.Listener.Addr().String(),
+	})
+
+	// Create transport
+	config := &transport.Config{
+		ServerID:   0,
+		Address:    "localhost:8000",
+		RPCTimeout: 500,
+	}
+	
+	httpTrans, err := httpTransport.NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
+
+	// Send initial RPC - should work
+	args := &raft.RequestVoteArgs{Term: 1}
+	_, err = httpTrans.SendRequestVote(1, args)
+	if err != nil {
+		t.Errorf("failed to send to initial peer: %v", err)
+	}
+
+	// Create new server
+	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reply := raft.RequestVoteReply{Term: 2, VoteGranted: false}
+		json.NewEncoder(w).Encode(reply)
+	}))
+	defer server2.Close()
+
+	// Update discovery with new peer configuration
+	discovery.UpdatePeers(map[int]string{
+		2: server2.Listener.Addr().String(),
+		// Note: peer 1 is removed
+	})
+
+	// Try to send to old peer - should fail
+	_, err = httpTrans.SendRequestVote(1, args)
+	if err == nil {
+		t.Error("expected error for removed peer")
+	}
+
+	// Send to new peer - should work
+	reply, err := httpTrans.SendRequestVote(2, args)
+	if err != nil {
+		t.Errorf("failed to send to new peer: %v", err)
+	}
+	if reply.Term != 2 {
+		t.Errorf("unexpected term from new peer: %d", reply.Term)
+	}
+}
+
+// TestHTTPTransport_SendRequestVote tests sending RequestVote RPC
+func TestHTTPTransport_SendRequestVote(t *testing.T) {
+	// Set up mock server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/raft/requestvote" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+
+		var args raft.RequestVoteArgs
+		if err := json.NewDecoder(r.Body).Decode(&args); err != nil {
+			t.Errorf("failed to decode request: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Verify request
+		if args.Term != 5 || args.CandidateID != 1 {
+			t.Errorf("unexpected args: %+v", args)
+		}
+
+		reply := raft.RequestVoteReply{
+			Term:        5,
+			VoteGranted: true,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(reply)
+	}))
+	defer server.Close()
+
+	// Create transport
+	config := &transport.Config{
+		ServerID:   1,
+		Address:    "localhost:8001",
+		RPCTimeout: 500,
+	}
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{
+		2: server.Listener.Addr().String(),
+	})
+	httpTrans, err := httpTransport.NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
+
+	// Send request
+	args := &raft.RequestVoteArgs{
+		Term:         5,
+		CandidateID:  1,
+		LastLogIndex: 10,
+		LastLogTerm:  4,
+	}
+
+	reply, err := httpTrans.SendRequestVote(2, args)
+	if err != nil {
+		t.Fatalf("failed to send request vote: %v", err)
+	}
+
+	if reply.Term != 5 || !reply.VoteGranted {
+		t.Errorf("unexpected reply: %+v", reply)
+	}
+}
+
+// TestHTTPTransport_SendAppendEntries tests sending AppendEntries RPC
+func TestHTTPTransport_SendAppendEntries(t *testing.T) {
+	// Set up mock server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/raft/appendentries" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+
+		var args raft.AppendEntriesArgs
+		if err := json.NewDecoder(r.Body).Decode(&args); err != nil {
+			t.Errorf("failed to decode request: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Verify request
+		if args.Term != 5 || args.LeaderID != 1 || len(args.Entries) != 2 {
+			t.Errorf("unexpected args: %+v", args)
+		}
+
+		reply := raft.AppendEntriesReply{
+			Term:    5,
+			Success: true,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(reply)
+	}))
+	defer server.Close()
+
+	// Create transport
+	config := &transport.Config{
+		ServerID:   1,
+		Address:    "localhost:8001",
+		RPCTimeout: 500,
+	}
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{
+		2: server.Listener.Addr().String(),
+	})
+	httpTrans, err := httpTransport.NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
+
+	// Send request
+	args := &raft.AppendEntriesArgs{
+		Term:         5,
+		LeaderID:     1,
+		PrevLogIndex: 10,
+		PrevLogTerm:  4,
+		Entries: []raft.LogEntry{
+			{Index: 11, Term: 5, Command: "cmd1"},
+			{Index: 12, Term: 5, Command: "cmd2"},
+		},
+		LeaderCommit: 10,
+	}
+
+	reply, err := httpTrans.SendAppendEntries(2, args)
+	if err != nil {
+		t.Fatalf("failed to send append entries: %v", err)
+	}
+
+	if reply.Term != 5 || !reply.Success {
+		t.Errorf("unexpected reply: %+v", reply)
+	}
+}
+
+// TestHTTPTransport_SendInstallSnapshot tests sending InstallSnapshot RPC
+func TestHTTPTransport_SendInstallSnapshot(t *testing.T) {
+	// Set up mock server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/raft/installsnapshot" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+
+		var args raft.InstallSnapshotArgs
+		if err := json.NewDecoder(r.Body).Decode(&args); err != nil {
+			t.Errorf("failed to decode request: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Verify request
+		if args.Term != 5 || args.LeaderID != 1 || len(args.Data) != 4 {
+			t.Errorf("unexpected args: %+v", args)
+		}
+
+		reply := raft.InstallSnapshotReply{
+			Term: 5,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(reply)
+	}))
+	defer server.Close()
+
+	// Create transport
+	config := &transport.Config{
+		ServerID:   1,
+		Address:    "localhost:8001",
+		RPCTimeout: 500,
+	}
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{
+		2: server.Listener.Addr().String(),
+	})
+	httpTrans, err := httpTransport.NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
+
+	// Send request
+	args := &raft.InstallSnapshotArgs{
+		Term:              5,
+		LeaderID:          1,
+		LastIncludedIndex: 10,
+		LastIncludedTerm:  4,
+		Data:              []byte("test"),
+	}
+
+	reply, err := httpTrans.SendInstallSnapshot(2, args)
+	if err != nil {
+		t.Fatalf("failed to send install snapshot: %v", err)
+	}
+
+	if reply.Term != 5 {
+		t.Errorf("unexpected reply: %+v", reply)
+	}
+}
+
+// TestHTTPTransport_SendRPCError tests RPC error handling
+func TestHTTPTransport_SendRPCError(t *testing.T) {
+	tests := []struct {
+		name           string
+		serverResponse func(w http.ResponseWriter, r *http.Request)
+		expectedError  string
+	}{
+		{
+			name: "server returns 500",
+			serverResponse: func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+			},
+			expectedError: "RPC failed with status 500",
+		},
+		{
+			name: "server returns invalid JSON",
+			serverResponse: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte("invalid json"))
+			},
+			expectedError: "failed to decode response",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up mock server
+			server := httptest.NewServer(http.HandlerFunc(tt.serverResponse))
+			defer server.Close()
+
+			// Create transport
+			config := &transport.Config{
+				ServerID:   1,
+				Address:    "localhost:8001",
+				RPCTimeout: 500,
+			}
+			discovery := transport.NewStaticPeerDiscovery(map[int]string{
+				2: server.Listener.Addr().String(),
+			})
+			httpTrans, err := httpTransport.NewHTTPTransport(config, discovery)
+			if err != nil {
+				t.Fatalf("failed to create transport: %v", err)
+			}
+
+			// Send request
+			args := &raft.RequestVoteArgs{
+				Term:        5,
+				CandidateID: 1,
+			}
+
+			_, err = httpTrans.SendRequestVote(2, args)
+			if err == nil {
+				t.Error("expected error but got none")
+			}
+
+			transportErr, ok := err.(*transport.TransportError)
+			if !ok {
+				t.Errorf("expected TransportError, got %T", err)
+			}
+
+			if transportErr.ServerID != 2 {
+				t.Errorf("expected ServerID 2, got %d", transportErr.ServerID)
+			}
+		})
+	}
+}
+
+// TestHTTPTransport_NetworkError tests network error handling
+func TestHTTPTransport_NetworkError(t *testing.T) {
+	config := &transport.Config{
+		ServerID:   1,
+		Address:    "localhost:8001",
+		RPCTimeout: 100, // Short timeout
+	}
+
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{
+		2: "localhost:19999", // Non-existent port
+	})
+	httpTrans, err := httpTransport.NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
+
+	args := &raft.RequestVoteArgs{Term: 5}
+	_, err = httpTrans.SendRequestVote(2, args)
+	
+	if err == nil {
+		t.Error("expected error for network failure")
+	}
+
+	transportErr, ok := err.(*transport.TransportError)
+	if !ok {
+		t.Errorf("expected TransportError, got %T", err)
+	}
+
+	if transportErr.ServerID != 2 {
+		t.Errorf("expected ServerID 2, got %d", transportErr.ServerID)
+	}
+}
+
+// TestHTTPTransport_Timeout tests timeout handling
+func TestHTTPTransport_Timeout(t *testing.T) {
+	// Create a slow server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond) // Sleep longer than timeout
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	config := &transport.Config{
+		ServerID:   1,
+		Address:    "localhost:8001",
+		RPCTimeout: 50, // Very short timeout
+	}
+
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{
+		2: server.Listener.Addr().String(),
+	})
+	httpTrans, err := httpTransport.NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
+
+	args := &raft.RequestVoteArgs{Term: 5}
+	_, err = httpTrans.SendRequestVote(2, args)
+	
+	if err == nil {
+		t.Error("expected timeout error")
+	}
+
+	_, ok := err.(*transport.TransportError)
+	if !ok {
+		t.Errorf("expected TransportError, got %T", err)
+	}
+
+	// Check that it's a timeout error
+	errStr := err.Error()
+	if !strings.Contains(errStr, "context deadline exceeded") && 
+	   !strings.Contains(errStr, "Client.Timeout exceeded") {
+		t.Errorf("expected timeout error, got %v", err)
+	}
+}
+
+// TestHTTPTransport_ContextCancellation tests that context cancellation works properly
+func TestHTTPTransport_ContextCancellation(t *testing.T) {
+	// Create a slow mock server that takes longer than the timeout
+	slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Sleep for 200ms - longer than our 100ms timeout
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer slowServer.Close()
+
+	config := &transport.Config{
+		ServerID:   0,
+		Address:    "localhost:8000",
+		RPCTimeout: 100, // 100ms timeout
+	}
+
+	// Parse the test server address
+	addr := slowServer.Listener.Addr().String()
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{
+		1: addr,
+	})
+	
+	httpTrans, err := httpTransport.NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
+
+	// Test that RPC times out properly
+	args := &raft.RequestVoteArgs{Term: 1}
+	_, err = httpTrans.SendRequestVote(1, args)
+	
+	if err == nil {
+		t.Error("expected timeout error when server is slow")
+	}
+	
+	// Verify it's a timeout error
+	if !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Errorf("expected context deadline exceeded error, got: %v", err)
 	}
 }
