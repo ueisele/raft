@@ -3,13 +3,17 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/ueisele/raft"
-	"github.com/ueisele/raft/persistence"
 	jsonPersistence "github.com/ueisele/raft/persistence/json"
 	"github.com/ueisele/raft/transport"
 	httpTransport "github.com/ueisele/raft/transport/http"
@@ -46,10 +50,12 @@ func (kv *KVStore) Apply(entry raft.LogEntry) interface{} {
 				key, _ := cmd["key"].(string)
 				value, _ := cmd["value"].(string)
 				kv.data[key] = value
+				log.Printf("Applied SET: %s = %s", key, value)
 				return fmt.Sprintf("OK: set %s=%s", key, value)
 			case "delete":
 				key, _ := cmd["key"].(string)
 				delete(kv.data, key)
+				log.Printf("Applied DELETE: %s", key)
 				return fmt.Sprintf("OK: deleted %s", key)
 			}
 		}
@@ -84,6 +90,18 @@ func (kv *KVStore) Get(key string) (string, bool) {
 	return value, exists
 }
 
+// GetAll returns all key-value pairs
+func (kv *KVStore) GetAll() map[string]string {
+	kv.mu.RLock()
+	defer kv.mu.RUnlock()
+
+	result := make(map[string]string)
+	for k, v := range kv.data {
+		result[k] = v
+	}
+	return result
+}
+
 // SimpleLogger implements the Logger interface
 type SimpleLogger struct{}
 
@@ -103,40 +121,119 @@ func (l *SimpleLogger) Error(format string, args ...interface{}) {
 	log.Printf("[ERROR] "+format, args...)
 }
 
+// CloudDiscovery demonstrates a custom discovery implementation for cloud environments
+type CloudDiscovery struct {
+	cloudProvider string
+	serviceName   string
+}
+
+func NewCloudDiscovery(provider, serviceName string) *CloudDiscovery {
+	return &CloudDiscovery{
+		cloudProvider: provider,
+		serviceName:   serviceName,
+	}
+}
+
+func (c *CloudDiscovery) GetPeerAddress(ctx context.Context, serverID int) (string, error) {
+	// In production, this would query cloud provider APIs
+	switch c.cloudProvider {
+	case "k8s":
+		// Use predictable StatefulSet DNS names
+		return fmt.Sprintf("raft-%d.%s.default.svc.cluster.local:8000", serverID, c.serviceName), nil
+	case "aws":
+		// Would use AWS SDK to query EC2 instances by tags
+		return "", fmt.Errorf("AWS discovery not implemented in example")
+	case "gcp":
+		// Would use GCP SDK to query compute instances
+		return "", fmt.Errorf("GCP discovery not implemented in example")
+	default:
+		return "", fmt.Errorf("unsupported cloud provider: %s", c.cloudProvider)
+	}
+}
+
+func (c *CloudDiscovery) RefreshPeers(ctx context.Context) error {
+	// Refresh cached peer information
+	return nil
+}
+
+func (c *CloudDiscovery) Close() error {
+	// Clean up any resources
+	return nil
+}
 
 func main() {
-	// Example configuration for a 3-node cluster
-	serverID := 1 // Change this for each server
-	peers := []int{1, 2, 3}
+	var (
+		nodeID      = flag.Int("id", 0, "Node ID (0-2 for 3-node cluster)")
+		httpPort    = flag.Int("port", 0, "HTTP port (default: 8000+nodeID)")
+		dataDir     = flag.String("data", "", "Data directory (default: ./data/nodeN)")
+		cloudMode   = flag.String("cloud", "", "Cloud provider mode: k8s, aws, gcp (default: static)")
+		serviceName = flag.String("service", "raft-service", "Service name for cloud discovery")
+	)
+	flag.Parse()
+
+	// Validate node ID
+	if *nodeID < 0 || *nodeID > 2 {
+		log.Fatal("Node ID must be between 0 and 2")
+	}
+
+	// Set defaults
+	if *httpPort == 0 {
+		*httpPort = 8000 + *nodeID
+	}
+	if *dataDir == "" {
+		*dataDir = fmt.Sprintf("./data/node%d", *nodeID)
+	}
+
+	// Create data directory
+	if err := os.MkdirAll(*dataDir, 0755); err != nil {
+		log.Fatalf("Failed to create data directory: %v", err)
+	}
 
 	// Create KV store
 	kvStore := &KVStore{
 		data: make(map[string]string),
 	}
 
-	// Create peer discovery
-	peers := map[int]string{
-		0: "localhost:8000",
-		1: "localhost:8001",
-		2: "localhost:8002",
+	// Create peer discovery based on mode
+	var discovery transport.PeerDiscovery
+	
+	if *cloudMode != "" {
+		// Cloud-based discovery
+		log.Printf("Using cloud discovery: provider=%s, service=%s", *cloudMode, *serviceName)
+		discovery = NewCloudDiscovery(*cloudMode, *serviceName)
+	} else {
+		// Static peer discovery for local development
+		peers := map[int]string{
+			0: "localhost:8000",
+			1: "localhost:8001",
+			2: "localhost:8002",
+		}
+		log.Printf("Using static peer discovery: %v", peers)
+		discovery = transport.NewStaticPeerDiscovery(peers)
 	}
-	discovery := transport.NewStaticPeerDiscovery(peers)
 
 	// Create HTTP transport with discovery
 	transportConfig := &transport.Config{
-		ServerID:   serverID,
-		Address:    fmt.Sprintf("localhost:%d", 8000+serverID),
-		RPCTimeout: 1000, // 1 second
+		ServerID:   *nodeID,
+		Address:    fmt.Sprintf("localhost:%d", *httpPort),
+		RPCTimeout: 5000, // 5 seconds
 	}
-	httpTransport, err := httpTransport.NewHTTPTransport(transportConfig, discovery)
+	
+	// You can also use the builder pattern:
+	// httpTransport, err := httpTransport.NewBuilder(*nodeID, transportConfig.Address).
+	//     WithDiscovery(discovery).
+	//     WithTimeout(5 * time.Second).
+	//     Build()
+	
+	httpTrans, err := httpTransport.NewHTTPTransport(transportConfig, discovery)
 	if err != nil {
 		log.Fatalf("Failed to create transport: %v", err)
 	}
 
 	// Create persistence
-	persistenceConfig := &persistence.Config{
-		DataDir:  fmt.Sprintf("./data/node%d", serverID),
-		ServerID: serverID,
+	persistenceConfig := &raft.PersistenceConfig{
+		DataDir:  *dataDir,
+		ServerID: *nodeID,
 	}
 	persistence, err := jsonPersistence.NewJSONPersistence(persistenceConfig)
 	if err != nil {
@@ -145,19 +242,27 @@ func main() {
 
 	// Create Raft configuration
 	config := &raft.Config{
-		ID:                 serverID,
-		Peers:              peers,
+		ID:                 *nodeID,
+		Peers:              []int{0, 1, 2},
 		ElectionTimeoutMin: 150 * time.Millisecond,
 		ElectionTimeoutMax: 300 * time.Millisecond,
 		HeartbeatInterval:  50 * time.Millisecond,
-		MaxLogSize:         1000,
+		MaxLogSize:         10000,
 		Logger:             &SimpleLogger{},
 	}
 
 	// Create Raft node
-	node, err := raft.NewNode(config, httpTransport, persistence, kvStore)
+	node, err := raft.NewNode(config, httpTrans, persistence, kvStore)
 	if err != nil {
 		log.Fatalf("Failed to create Raft node: %v", err)
+	}
+
+	// Set RPC handler for the transport
+	httpTrans.SetRPCHandler(node)
+
+	// Start transport
+	if err := httpTrans.Start(); err != nil {
+		log.Fatalf("Failed to start transport: %v", err)
 	}
 
 	// Start the node
@@ -166,25 +271,167 @@ func main() {
 		log.Fatalf("Failed to start Raft node: %v", err)
 	}
 
-	log.Printf("Raft node %d started on %s", serverID, httpTransport.GetAddress())
+	log.Printf("Raft node %d started on %s", *nodeID, httpTrans.GetAddress())
 
-	// Example: Submit commands after a delay to allow leader election
-	time.Sleep(5 * time.Second)
+	// Setup HTTP API for client interaction
+	setupHTTPAPI(node, kvStore, *httpPort+1000)
 
-	// Try to set a value
-	setCmd := map[string]interface{}{
-		"type":  "set",
-		"key":   "foo",
-		"value": "bar",
+	// Example: Dynamic peer updates (useful for cloud environments)
+	if *cloudMode != "" {
+		go func() {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ticker.C:
+					// In production, this would fetch from service discovery
+					log.Println("Would refresh peers from cloud provider here")
+				}
+			}
+		}()
 	}
 
-	index, term, isLeader := node.Submit(setCmd)
-	if isLeader {
-		log.Printf("Command submitted: index=%d, term=%d", index, term)
-	} else {
-		log.Printf("Not the leader, cannot submit command")
-	}
+	// Example usage after cluster is ready
+	go func() {
+		time.Sleep(5 * time.Second)
+		
+		// Only submit commands if we're the leader
+		if node.IsLeader() {
+			// Set a value
+			setCmd := map[string]interface{}{
+				"type":  "set",
+				"key":   "example",
+				"value": "Hello from Raft!",
+			}
+			
+			index, term, isLeader := node.Submit(setCmd)
+			if isLeader {
+				log.Printf("Example command submitted: index=%d, term=%d", index, term)
+			}
+		}
+	}()
 
-	// Keep the server running
-	select {}
+	// Handle graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	<-sigChan
+
+	log.Println("Shutting down...")
+	node.Stop()
+	httpTrans.Stop()
 }
+
+// setupHTTPAPI creates a simple HTTP API for client interaction
+func setupHTTPAPI(node raft.Node, kvStore *KVStore, port int) {
+	mux := http.NewServeMux()
+
+	// GET /kv/{key} - Get a value
+	mux.HandleFunc("/kv/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		key := r.URL.Path[4:] // Remove "/kv/" prefix
+		value, exists := kvStore.Get(key)
+		if !exists {
+			http.Error(w, "Key not found", http.StatusNotFound)
+			return
+		}
+
+		w.Write([]byte(value))
+	})
+
+	// POST /kv - Set a key-value pair
+	mux.HandleFunc("/kv", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var cmd SetCommand
+		if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		setCmd := map[string]interface{}{
+			"type":  "set",
+			"key":   cmd.Key,
+			"value": cmd.Value,
+		}
+
+		index, term, isLeader := node.Submit(setCmd)
+		if !isLeader {
+			// Return leader info if available
+			leaderID := node.GetLeader()
+			w.Header().Set("X-Raft-Leader", fmt.Sprintf("%d", leaderID))
+			http.Error(w, "Not the leader", http.StatusServiceUnavailable)
+			return
+		}
+
+		response := map[string]interface{}{
+			"index": index,
+			"term":  term,
+		}
+		json.NewEncoder(w).Encode(response)
+	})
+
+	// GET /status - Get node status
+	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		term, isLeader := node.GetState()
+		status := map[string]interface{}{
+			"nodeId":       node.GetConfiguration().ID,
+			"term":         term,
+			"isLeader":     isLeader,
+			"leaderID":     node.GetLeader(),
+			"commitIndex":  node.GetCommitIndex(),
+			"lastLogIndex": node.GetLogLength() - 1,
+			"peers":        node.GetConfiguration().Peers,
+		}
+		json.NewEncoder(w).Encode(status)
+	})
+
+	// GET /kv - Get all key-value pairs (for debugging)
+	mux.HandleFunc("/debug/kv", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		data := kvStore.GetAll()
+		json.NewEncoder(w).Encode(data)
+	})
+
+	// Start HTTP server
+	addr := fmt.Sprintf(":%d", port)
+	go func() {
+		log.Printf("Client API listening on %s", addr)
+		if err := http.ListenAndServe(addr, mux); err != nil {
+			log.Printf("Client API server error: %v", err)
+		}
+	}()
+}
+
+// Example commands to interact with the cluster:
+//
+// 1. Start a 3-node cluster:
+//    Terminal 1: go run kv_store.go -id 0
+//    Terminal 2: go run kv_store.go -id 1
+//    Terminal 3: go run kv_store.go -id 2
+//
+// 2. Set a value (to leader on port 9000, 9001, or 9002):
+//    curl -X POST http://localhost:9000/kv -d '{"key":"foo","value":"bar"}'
+//
+// 3. Get a value:
+//    curl http://localhost:9000/kv/foo
+//
+// 4. Check node status:
+//    curl http://localhost:9000/status
+//
+// 5. View all data (debug):
+//    curl http://localhost:9000/debug/kv
+//
+// 6. For Kubernetes deployment:
+//    go run kv_store.go -id 0 -cloud k8s -service raft-service

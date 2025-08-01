@@ -116,15 +116,28 @@ err = node.AddServer(5, "server-5:8005", true) // true = voting
 
 ### Running a Cluster
 
+See the comprehensive example in `example/kv_store.go` which demonstrates:
+- Complete key-value store implementation
+- HTTP API for client interaction
+- Static and cloud-based peer discovery
+- Graceful shutdown handling
+- Command-line configuration
+
 ```bash
-# Terminal 1 - Start server 0
-go run example/main.go 0 0 1 2
+# Terminal 1 - Start node 0
+go run example/kv_store.go -id 0
 
-# Terminal 2 - Start server 1  
-go run example/main.go 1 0 1 2
+# Terminal 2 - Start node 1  
+go run example/kv_store.go -id 1
 
-# Terminal 3 - Start server 2
-go run example/main.go 2 0 1 2
+# Terminal 3 - Start node 2
+go run example/kv_store.go -id 2
+
+# Set a value (finds leader automatically)
+curl -X POST http://localhost:9000/kv -d '{"key":"foo","value":"bar"}'
+
+# Get a value
+curl http://localhost:9000/kv/foo
 ```
 
 ### RPC Interface
