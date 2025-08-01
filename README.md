@@ -2,6 +2,8 @@
 
 A comprehensive implementation of the Raft consensus algorithm in Go, following the design from the extended Raft paper by Diego Ongaro and John Ousterhout.
 
+**Documentation**: This README covers usage and features. For internal implementation details, see [IMPLEMENTATION.md](IMPLEMENTATION.md).
+
 ## Features
 
 This implementation includes all the core features described in the Raft paper:
@@ -161,9 +163,9 @@ These satisfy the timing requirement: `broadcastTime ≪ electionTimeout ≪ MTB
 
 ### Persistence
 
-Data is persisted to JSON files in the specified data directory:
-- `raft-state-{id}.json` - Persistent state
-- `raft-snapshot-{id}.json` - Snapshots
+The implementation uses JSON-based persistence for human readability and debugging ease. State is persisted to the specified data directory.
+
+For detailed persistence format and file structure, see [Architecture - Persistence Format](docs/ARCHITECTURE.md#persistence-format).
 
 ## Testing
 
@@ -193,10 +195,11 @@ The implementation ensures all Raft safety properties:
 
 ### Performance Characteristics
 
-- **Leader election**: Typically completes in 150-300ms
+- **Leader election**: Typically completes in 150-300ms (benchmark: ~500ms average)
 - **Log replication**: Single round-trip to majority for each entry
 - **Throughput**: Supports batching and pipelining (configurable)
 - **Recovery**: Fast recovery after failures through log repair
+- **Memory usage**: O(log size + cluster size)
 
 ### Configuration Changes
 
@@ -288,6 +291,7 @@ See [Roadmap and Limitations](ROADMAP_AND_LIMITATIONS.md) for comprehensive info
 
 - [Documentation Index](docs/README.md) - Complete documentation overview
 - [Implementation Details](IMPLEMENTATION.md) - Detailed implementation notes
+- [Changelog](CHANGELOG.md) - Recent changes and version history
 - [Roadmap and Limitations](ROADMAP_AND_LIMITATIONS.md) - Known limitations and future work
 - [Test Results](TEST_RESULTS_SUMMARY.md) - Current test status
 

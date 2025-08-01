@@ -4,6 +4,8 @@ This document provides a comprehensive overview of the Raft consensus algorithm 
 
 **Last Updated**: After implementing all paper requirements including vote denial, non-voting members, and configuration change safety.
 
+**Note**: For usage examples and getting started, see the main [README.md](README.md). This document focuses on internal implementation details.
+
 ## Implementation Overview
 
 ### Core Components Implemented
@@ -64,11 +66,8 @@ This document provides a comprehensive overview of the Raft consensus algorithm 
 3. **InstallSnapshot** - For log compaction
 
 ### Safety Properties Guaranteed
-1. **Election Safety**: At most one leader per term
-2. **Leader Append-Only**: Leaders never overwrite entries
-3. **Log Matching**: Identical entries imply identical prefixes
-4. **Leader Completeness**: All committed entries in future leaders
-5. **State Machine Safety**: Same command sequence on all servers
+
+The implementation ensures all five Raft safety properties. See [Safety Properties](README.md#safety-properties) in the README for details.
 
 ## Architecture Details
 
@@ -88,41 +87,17 @@ raft/
 
 ### Key Data Structures
 
-```go
-type Raft struct {
-    // Persistent state (survives crashes)
-    currentTerm int
-    votedFor    *int
-    log         []LogEntry
-
-    // Volatile state (all servers)
-    commitIndex int
-    lastApplied int
-
-    // Volatile state (leaders only)
-    nextIndex  []int
-    matchIndex []int
-    
-    // Implementation details
-    state         State
-    electionTimer *time.Timer
-    heartbeatTick *time.Ticker
-}
-```
+See the main [README.md](README.md#basic-usage) for the Raft struct definition and field descriptions.
 
 ## Performance Characteristics
 
 ### Timing Requirements
-- **Election timeout**: 150-300ms (randomized)
-- **Heartbeat interval**: 50ms
-- **RPC timeout**: 5s
 
-These satisfy: `broadcastTime ≪ electionTimeout ≪ MTBF`
+See [README.md](README.md#configuration) for timing parameter defaults and the formula: `broadcastTime ≪ electionTimeout ≪ MTBF`
 
 ### Benchmark Results
-- **Leader election**: ~500ms average completion time
-- **Log replication**: Single round-trip to majority
-- **Memory usage**: O(log size + cluster size)
+
+See [Performance Characteristics](README.md#performance-characteristics) in the README for current benchmark results.
 
 ## Testing Strategy
 
@@ -228,11 +203,8 @@ The implementation ensures safety through:
 5. **Vote denial**: Followers reject votes when they have an active leader
 6. **Non-voting members**: Only voting members participate in consensus
 
-### Recent Fixes Applied
-1. **Vote Denial**: Added check to deny votes if heard from leader within election timeout
-2. **Non-Voting Members**: New servers added as non-voting first, then promoted after catch-up
-3. **Bounds Checking**: Fixed index out of bounds during configuration changes
-4. **Leader Step-Down**: Leaders step down when removed from configuration
+### Recent Changes
+See [CHANGELOG.md](CHANGELOG.md) for recent fixes and improvements.
 
 ### Testing Validation
 - Comprehensive unit tests verify core functionality
