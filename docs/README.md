@@ -9,11 +9,12 @@
 
 ## Features
 - [Safe Server Addition](features/SAFE_SERVER_ADDITION.md) - Safe server addition without joint consensus
+- [Peer Discovery](features/DISCOVERY.md) - Pluggable peer discovery mechanism for production deployments
 
 ## Additional Documentation
 - [Main README](../README.md) - Project overview and usage
-- [Implementation Details](../IMPLEMENTATION.md) - Core implementation details and design decisions
+- [Implementation Details](implementation/IMPLEMENTATION.md) - Core implementation details and design decisions
 - [Changelog](../CHANGELOG.md) - Recent changes and version history
-- [Roadmap and Limitations](../ROADMAP_AND_LIMITATIONS.md) - Known limitations, future work, and roadmap
-- [Test Results](../TEST_RESULTS_SUMMARY.md) - Current test status
+- [Roadmap and Limitations](ROADMAP_AND_LIMITATIONS.md) - Known limitations, future work, and roadmap
+- [Test Results](TEST_RESULTS_SUMMARY.md) - Current test status
 - [Integration Tests](../integration/README.md) - Integration test documentation

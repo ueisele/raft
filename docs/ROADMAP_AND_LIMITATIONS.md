@@ -98,7 +98,7 @@ This document consolidates all known limitations, unimplemented features, and fu
 
 ### Existing Documentation
 - **Architecture Overview**: Internal components and data flow (ARCHITECTURE.md)
-- **Implementation Details**: Design decisions and internals (IMPLEMENTATION.md)
+- **Implementation Details**: Design decisions and internals (implementation/IMPLEMENTATION.md)
 - **Test Optimization Guide**: Writing reliable distributed tests
 - **Safe Server Addition**: Membership change best practices
 - **Changelog**: Version history and recent changes

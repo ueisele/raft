@@ -2,7 +2,7 @@
 
 A comprehensive implementation of the Raft consensus algorithm in Go, following the design from the extended Raft paper by Diego Ongaro and John Ousterhout.
 
-**Documentation**: This README covers usage and features. For internal implementation details, see [IMPLEMENTATION.md](IMPLEMENTATION.md).
+**Documentation**: This README covers usage and features. For internal implementation details, see [docs/implementation/IMPLEMENTATION.md](docs/implementation/IMPLEMENTATION.md).
 
 ## Features
 
@@ -210,7 +210,7 @@ Implements safe server addition with automatic promotion:
 3. Once caught up (95% of log), they are automatically promoted to voting
 4. This prevents empty-log servers from disrupting cluster availability
 
-For more details, see [SAFE_SERVER_ADDITION.md](SAFE_SERVER_ADDITION.md).
+For more details, see [docs/features/SAFE_SERVER_ADDITION.md](docs/features/SAFE_SERVER_ADDITION.md).
 
 ### Log Compaction
 
@@ -280,7 +280,7 @@ The current implementation does not support automatic rollback of failed configu
 
 ## Limitations and Future Work
 
-See [Roadmap and Limitations](ROADMAP_AND_LIMITATIONS.md) for comprehensive information about:
+See [Roadmap and Limitations](docs/ROADMAP_AND_LIMITATIONS.md) for comprehensive information about:
 - Current limitations and known issues
 - Unimplemented features and design decisions
 - Performance considerations
@@ -290,10 +290,10 @@ See [Roadmap and Limitations](ROADMAP_AND_LIMITATIONS.md) for comprehensive info
 ## Documentation
 
 - [Documentation Index](docs/README.md) - Complete documentation overview
-- [Implementation Details](IMPLEMENTATION.md) - Detailed implementation notes
+- [Implementation Details](docs/implementation/IMPLEMENTATION.md) - Detailed implementation notes
 - [Changelog](CHANGELOG.md) - Recent changes and version history
-- [Roadmap and Limitations](ROADMAP_AND_LIMITATIONS.md) - Known limitations and future work
-- [Test Results](TEST_RESULTS_SUMMARY.md) - Current test status
+- [Roadmap and Limitations](docs/ROADMAP_AND_LIMITATIONS.md) - Known limitations and future work
+- [Test Results](docs/TEST_RESULTS_SUMMARY.md) - Current test status
 
 ### Guides
 - [Test Optimization Guide](docs/guides/TEST_OPTIMIZATION_GUIDE.md) - Writing reliable tests

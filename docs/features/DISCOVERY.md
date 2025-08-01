@@ -223,7 +223,6 @@ Should migrate to:
 transport, err := http.NewHTTPTransportWithDiscovery(config, discovery)
 ```
 
-See [MIGRATION_PEERDISCOVERY.md](MIGRATION_PEERDISCOVERY.md) for detailed migration guide.
 
 ## Future Enhancements
 

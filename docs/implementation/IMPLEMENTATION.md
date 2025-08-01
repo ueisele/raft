@@ -4,7 +4,7 @@ This document provides a comprehensive overview of the Raft consensus algorithm 
 
 **Last Updated**: After implementing all paper requirements including vote denial, non-voting members, and configuration change safety.
 
-**Note**: For usage examples and getting started, see the main [README.md](README.md). This document focuses on internal implementation details.
+**Note**: For usage examples and getting started, see the main [README.md](../../README.md). This document focuses on internal implementation details.
 
 ## Implementation Overview
 
@@ -67,7 +67,7 @@ This document provides a comprehensive overview of the Raft consensus algorithm 
 
 ### Safety Properties Guaranteed
 
-The implementation ensures all five Raft safety properties. See [Safety Properties](README.md#safety-properties) in the README for details.
+The implementation ensures all five Raft safety properties. See [Safety Properties](../../README.md#safety-properties) in the README for details.
 
 ## Architecture Details
 
@@ -87,17 +87,17 @@ raft/
 
 ### Key Data Structures
 
-See the main [README.md](README.md#basic-usage) for the Raft struct definition and field descriptions.
+See the main [README.md](../../README.md#basic-usage) for the Raft struct definition and field descriptions.
 
 ## Performance Characteristics
 
 ### Timing Requirements
 
-See [README.md](README.md#configuration) for timing parameter defaults and the formula: `broadcastTime ≪ electionTimeout ≪ MTBF`
+See [README.md](../../README.md#configuration) for timing parameter defaults and the formula: `broadcastTime ≪ electionTimeout ≪ MTBF`
 
 ### Benchmark Results
 
-See [Performance Characteristics](README.md#performance-characteristics) in the README for current benchmark results.
+See [Performance Characteristics](../../README.md#performance-characteristics) in the README for current benchmark results.
 
 ## Testing Strategy
 
@@ -186,7 +186,7 @@ Our safer alternative:
 
 ## Extensions and Future Work
 
-See [Roadmap and Limitations](ROADMAP_AND_LIMITATIONS.md) for detailed information about:
+See [Roadmap and Limitations](../ROADMAP_AND_LIMITATIONS.md) for detailed information about:
 - Potential improvements and optimizations
 - Production readiness requirements
 - Security considerations

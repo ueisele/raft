@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Obsolete backup directories containing ~15,000 lines of outdated code
 - Redundant markdown documentation files (reduced from 28 to 9)
 - Duplicate Transport interface definitions
-- Redundant sections between README.md and IMPLEMENTATION.md
+- Redundant sections between README.md and docs/implementation/IMPLEMENTATION.md
 
 ## [1.0.0] - Initial Release
 
@@ -50,4 +50,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Joint consensus not implemented (safe server addition used instead)
 - No automatic configuration rollback
 - Single-node configuration changes only
-- See [ROADMAP_AND_LIMITATIONS.md](ROADMAP_AND_LIMITATIONS.md) for complete list
+- See [docs/ROADMAP_AND_LIMITATIONS.md](docs/ROADMAP_AND_LIMITATIONS.md) for complete list
