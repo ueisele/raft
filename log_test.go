@@ -23,7 +23,7 @@ func TestLogManagerAppend(t *testing.T) {
 		{Term: 2, Index: 3, Command: "cmd3"},
 	}
 
-	err := lm.AppendEntries(0, 0, entries)
+	err := lm.AppendEntries(0, 0, entries) //nolint:errcheck // test setup
 	if err != nil {
 		t.Errorf("AppendEntries failed: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestLogManagerGet(t *testing.T) {
 		{Term: 1, Index: 2, Command: "cmd2"},
 		{Term: 2, Index: 3, Command: "cmd3"},
 	}
-	lm.AppendEntries(0, 0, entries)
+	lm.AppendEntries(0, 0, entries) //nolint:errcheck // test setup
 
 	// Test GetEntry
 	entry := lm.GetEntry(2)
@@ -92,7 +92,7 @@ func TestLogManagerMatch(t *testing.T) {
 		{Term: 1, Index: 2, Command: "cmd2"},
 		{Term: 2, Index: 3, Command: "cmd3"},
 	}
-	lm.AppendEntries(0, 0, entries)
+	lm.AppendEntries(0, 0, entries) //nolint:errcheck // test setup
 
 	// Test successful match
 	if !lm.MatchEntry(2, 1) {
@@ -126,7 +126,7 @@ func TestLogManagerTruncate(t *testing.T) {
 		{Term: 2, Index: 3, Command: "cmd3"},
 		{Term: 2, Index: 4, Command: "cmd4"},
 	}
-	lm.AppendEntries(0, 0, entries)
+	lm.AppendEntries(0, 0, entries) //nolint:errcheck // test setup
 
 	// Truncate after index 2
 	lm.TruncateAfter(2)
@@ -158,7 +158,7 @@ func TestLogManagerCommitIndex(t *testing.T) {
 		{Term: 1, Index: 2, Command: "cmd2"},
 		{Term: 2, Index: 3, Command: "cmd3"},
 	}
-	lm.AppendEntries(0, 0, entries)
+	lm.AppendEntries(0, 0, entries) //nolint:errcheck // test setup
 
 	// Test initial commit index
 	if lm.GetCommitIndex() != 0 {
@@ -195,11 +195,11 @@ func TestLogManagerSnapshot(t *testing.T) {
 		{Term: 2, Index: 3, Command: "cmd3"},
 		{Term: 2, Index: 4, Command: "cmd4"},
 	}
-	lm.AppendEntries(0, 0, entries)
+	lm.AppendEntries(0, 0, entries) //nolint:errcheck // test setup
 	lm.SetCommitIndex(3)
 
 	// Create snapshot at index 2
-	lm.CreateSnapshot(2, 1)
+	lm.CreateSnapshot(2, 1) //nolint:errcheck // test setup
 
 	// Verify we can still get entries after snapshot
 	entry := lm.GetEntry(3)
@@ -224,7 +224,7 @@ func TestLogManagerReplaceEntries(t *testing.T) {
 		{Term: 1, Index: 2, Command: "cmd2"},
 		{Term: 1, Index: 3, Command: "cmd3"},
 	}
-	lm.AppendEntries(0, 0, entries)
+	lm.AppendEntries(0, 0, entries) //nolint:errcheck // test setup
 
 	// Replace entries starting from index 2 with different terms
 	newEntries := []LogEntry{
@@ -235,7 +235,7 @@ func TestLogManagerReplaceEntries(t *testing.T) {
 
 	// Truncate after index 1 and append new entries
 	lm.TruncateAfter(1)
-	lm.AppendEntries(1, 1, newEntries)
+	lm.AppendEntries(1, 1, newEntries) //nolint:errcheck // test expected scenario
 
 	// Verify the log state
 	if lm.GetLastLogIndex() != 4 {

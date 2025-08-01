@@ -189,7 +189,7 @@ func TestConfigChangeLeadershipTransfer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
-		cluster.WaitForCommitIndex(idx, time.Second)
+		cluster.WaitForCommitIndex(idx, time.Second) //nolint:errcheck // best effort wait
 	}
 
 	// Start config change
@@ -326,7 +326,7 @@ func TestEdgeCaseScenarios(t *testing.T) {
 		activeCount := 0
 		for _, node := range cluster.Nodes {
 			if func() bool {
-				defer func() { recover() }()
+				defer func() { recover() }() //nolint:errcheck // panic recovery
 				node.GetState()
 				return true
 			}() {
@@ -408,7 +408,7 @@ func TestConcurrentOperations(t *testing.T) {
 			go func(writerID int) {
 				defer wg.Done()
 				for j := 0; j < 50; j++ {
-					cluster.SubmitCommand(fmt.Sprintf("write-%d-%d", writerID, j))
+					cluster.SubmitCommand(fmt.Sprintf("write-%d-%d", writerID, j)) //nolint:errcheck // concurrent write test
 					writeCount++
 				}
 			}(i)

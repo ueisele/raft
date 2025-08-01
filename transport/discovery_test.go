@@ -198,7 +198,7 @@ func TestStaticPeerDiscovery_ConcurrentAccess(t *testing.T) {
 			ctx := context.Background()
 			for j := 0; j < 100; j++ {
 				serverID := (j % 3) + 1
-				discovery.GetPeerAddress(ctx, serverID)
+				discovery.GetPeerAddress(ctx, serverID) //nolint:errcheck // test mock
 				discovery.GetPeers()
 			}
 			done <- true

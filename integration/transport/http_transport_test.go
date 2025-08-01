@@ -477,7 +477,7 @@ func TestHTTPTransport_StartStop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to connect to server: %v", err)
 	}
-	resp.Body.Close()
+	resp.Body.Close() //nolint:errcheck // test cleanup
 
 	// Stop transport
 	err = transport.Stop()
@@ -543,7 +543,7 @@ func TestHTTPTransport_HandleRequestVote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to send request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // test cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -610,7 +610,7 @@ func TestHTTPTransport_HandleAppendEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to send request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // test cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -677,7 +677,7 @@ func TestHTTPTransport_HandleInstallSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to send request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // test cleanup
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -727,7 +727,7 @@ func TestHTTPTransport_HandleInvalidMethod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to send request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // test cleanup
 
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("expected status 405, got %d", resp.StatusCode)
@@ -768,7 +768,7 @@ func TestHTTPTransport_HandleInvalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to send request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // test cleanup
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected status 400, got %d", resp.StatusCode)
@@ -817,7 +817,7 @@ func TestHTTPTransport_HandleRPCError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to send request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // test cleanup
 
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("expected status 500, got %d", resp.StatusCode)
@@ -833,14 +833,14 @@ func TestHTTPTransport_WithStaticDiscovery(t *testing.T) {
 		servers[i] = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/raft/requestvote" {
 				var args raft.RequestVoteArgs
-				json.NewDecoder(r.Body).Decode(&args)
+				json.NewDecoder(r.Body).Decode(&args) //nolint:errcheck // test mock handler
 
 				reply := raft.RequestVoteReply{
 					Term:        args.Term,
 					VoteGranted: true,
 				}
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(reply)
+				json.NewEncoder(w).Encode(reply) //nolint:errcheck // test mock response //nolint:errcheck // test mock response
 			}
 		}))
 		defer servers[serverID].Close()
@@ -888,7 +888,7 @@ func TestHTTPTransport_DynamicDiscoveryUpdate(t *testing.T) {
 	// Create initial server
 	server1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reply := raft.RequestVoteReply{Term: 1, VoteGranted: true}
-		json.NewEncoder(w).Encode(reply)
+		json.NewEncoder(w).Encode(reply) //nolint:errcheck // test mock response
 	}))
 	defer server1.Close()
 
@@ -925,7 +925,7 @@ func TestHTTPTransport_DynamicDiscoveryUpdate(t *testing.T) {
 	// Create new server
 	server2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reply := raft.RequestVoteReply{Term: 2, VoteGranted: false}
-		json.NewEncoder(w).Encode(reply)
+		json.NewEncoder(w).Encode(reply) //nolint:errcheck // test mock response
 	}))
 	defer server2.Close()
 
@@ -982,7 +982,7 @@ func TestHTTPTransport_SendRequestVote(t *testing.T) {
 			VoteGranted: true,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(reply)
+		json.NewEncoder(w).Encode(reply) //nolint:errcheck // test mock response
 	}))
 	defer server.Close()
 
@@ -1049,7 +1049,7 @@ func TestHTTPTransport_SendAppendEntries(t *testing.T) {
 			Success: true,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(reply)
+		json.NewEncoder(w).Encode(reply) //nolint:errcheck // test mock response
 	}))
 	defer server.Close()
 
@@ -1120,7 +1120,7 @@ func TestHTTPTransport_SendInstallSnapshot(t *testing.T) {
 			Term: 5,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(reply)
+		json.NewEncoder(w).Encode(reply) //nolint:errcheck // test mock response
 	}))
 	defer server.Close()
 
@@ -1175,7 +1175,7 @@ func TestHTTPTransport_SendRPCError(t *testing.T) {
 			name: "server returns invalid JSON",
 			serverResponse: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte("invalid json"))
+				w.Write([]byte("invalid json")) //nolint:errcheck // test error response
 			},
 			expectedError: "failed to decode response",
 		},

@@ -222,8 +222,8 @@ func TestRapidPartitionChanges(t *testing.T) {
 			name: "Split brain (2-3)",
 			partition: func() {
 				// Partition into [0,1] and [2,3,4]
-				cluster.PartitionNode(0)
-				cluster.PartitionNode(1)
+				cluster.PartitionNode(0) //nolint:errcheck // test partition setup
+				cluster.PartitionNode(1) //nolint:errcheck // test partition setup
 			},
 			duration: 300 * time.Millisecond,
 		},
@@ -234,7 +234,7 @@ func TestRapidPartitionChanges(t *testing.T) {
 				for i, node := range cluster.Nodes {
 					_, isLeader := node.GetState()
 					if isLeader {
-						cluster.PartitionNode(i)
+						cluster.PartitionNode(i) //nolint:errcheck // test partition setup
 						break
 					}
 				}
@@ -247,7 +247,7 @@ func TestRapidPartitionChanges(t *testing.T) {
 				// Isolate nodes one by one
 				go func() {
 					for i := 0; i < 5; i++ {
-						cluster.PartitionNode(i)
+						cluster.PartitionNode(i) //nolint:errcheck // test partition setup
 						time.Sleep(50 * time.Millisecond)
 						cluster.HealPartition()
 					}
@@ -259,9 +259,9 @@ func TestRapidPartitionChanges(t *testing.T) {
 			name: "Majority isolated",
 			partition: func() {
 				// Isolate 3 out of 5 nodes
-				cluster.PartitionNode(0)
-				cluster.PartitionNode(1)
-				cluster.PartitionNode(2)
+				cluster.PartitionNode(0) //nolint:errcheck // test partition setup
+				cluster.PartitionNode(1) //nolint:errcheck // test partition setup
+				cluster.PartitionNode(2) //nolint:errcheck // test partition setup
 			},
 			duration: 300 * time.Millisecond,
 		},
@@ -343,7 +343,7 @@ func TestPartitionDuringConfigChange(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
-		cluster.WaitForCommitIndex(idx, time.Second)
+		cluster.WaitForCommitIndex(idx, time.Second) //nolint:errcheck // best effort wait
 	}
 
 	t.Log("Starting configuration change...")
@@ -427,7 +427,7 @@ func TestCascadingPartitions(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
-		cluster.WaitForCommitIndex(idx, time.Second)
+		cluster.WaitForCommitIndex(idx, time.Second) //nolint:errcheck // best effort wait
 	}
 
 	// Cascading partition scenario:
@@ -438,8 +438,8 @@ func TestCascadingPartitions(t *testing.T) {
 	t.Log("Starting cascading partitions...")
 
 	// Phase 1: Partition nodes 0 and 1
-	cluster.PartitionNode(0)
-	cluster.PartitionNode(1)
+	cluster.PartitionNode(0) //nolint:errcheck // test partition setup
+	cluster.PartitionNode(1) //nolint:errcheck // test partition setup
 	t.Log("Phase 1: Partitioned nodes 0 and 1 (5 nodes remaining)")
 
 	time.Sleep(500 * time.Millisecond)
@@ -460,8 +460,8 @@ func TestCascadingPartitions(t *testing.T) {
 	}
 
 	// Phase 2: Partition nodes 2 and 3
-	cluster.PartitionNode(2)
-	cluster.PartitionNode(3)
+	cluster.PartitionNode(2) //nolint:errcheck // test partition setup
+	cluster.PartitionNode(3) //nolint:errcheck // test partition setup
 	t.Log("Phase 2: Partitioned nodes 2 and 3 (3 nodes remaining)")
 
 	time.Sleep(500 * time.Millisecond)
@@ -482,7 +482,7 @@ func TestCascadingPartitions(t *testing.T) {
 	}
 
 	// Phase 3: Partition node 4 (leaving only 2 nodes: 5 and 6)
-	cluster.PartitionNode(4)
+	cluster.PartitionNode(4) //nolint:errcheck // test partition setup
 	t.Log("Phase 3: Partitioned node 4 (2 nodes remaining - no quorum)")
 
 	time.Sleep(500 * time.Millisecond)

@@ -45,7 +45,7 @@ func TestSnapshotCreation(t *testing.T) {
 	}
 
 	// Wait for entries to be applied first
-	cluster.WaitForCommitIndex(15, time.Second)
+	cluster.WaitForCommitIndex(15, time.Second) //nolint:errcheck // best effort wait
 
 	// Get commit index to verify entries are committed
 	commitIndex := node.GetCommitIndex()
@@ -300,7 +300,7 @@ func TestSnapshotFailure(t *testing.T) {
 
 	// Submit some commands
 	for i := 0; i < 7; i++ {
-		cluster.SubmitCommand(fmt.Sprintf("cmd%d", i))
+		cluster.SubmitCommand(fmt.Sprintf("cmd%d", i)) //nolint:errcheck // background commands
 	}
 
 	// Simulate snapshot save failure
@@ -310,7 +310,7 @@ func TestSnapshotFailure(t *testing.T) {
 
 	// Submit more commands to trigger snapshot
 	for i := 7; i < 10; i++ {
-		cluster.SubmitCommand(fmt.Sprintf("cmd%d", i))
+		cluster.SubmitCommand(fmt.Sprintf("cmd%d", i)) //nolint:errcheck // background commands
 	}
 
 	// Wait for snapshot attempt

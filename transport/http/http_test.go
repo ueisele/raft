@@ -169,7 +169,7 @@ func TestHTTPTransport_StartWithBothRequired(t *testing.T) {
 	}
 
 	// Clean up
-	transport.Stop()
+	transport.Stop() //nolint:errcheck // test cleanup
 }
 
 // TestHTTPTransport_DefaultAddressResolution tests the default address resolution logic

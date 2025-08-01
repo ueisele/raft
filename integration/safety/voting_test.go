@@ -184,7 +184,7 @@ func testSaferApproach(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
-		cluster.WaitForCommitIndex(idx, time.Second)
+		cluster.WaitForCommitIndex(idx, time.Second) //nolint:errcheck // best effort wait
 	}
 
 	t.Log("✓ Safer approach: New servers added as non-voting members first")
@@ -520,7 +520,7 @@ func testVoteDenialPreventsUnnecessaryElections(t *testing.T) {
 			case <-done:
 				return
 			case <-ticker.C:
-				cluster.SubmitCommand(fmt.Sprintf("heartbeat-%d", cmdIndex))
+				cluster.SubmitCommand(fmt.Sprintf("heartbeat-%d", cmdIndex)) //nolint:errcheck // background heartbeat
 				cmdIndex++
 			}
 		}

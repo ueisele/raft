@@ -312,7 +312,7 @@ func TestHealingWithDivergentLogs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
-		cluster.WaitForCommitIndex(idx, time.Second)
+		cluster.WaitForCommitIndex(idx, time.Second) //nolint:errcheck // best effort wait
 	}
 
 	commonCommitIndex := cluster.Nodes[0].GetCommitIndex()

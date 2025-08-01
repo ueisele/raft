@@ -21,7 +21,7 @@ func GetFreePorts(n int) ([]int, error) {
 		if err != nil {
 			// Clean up any listeners we already opened
 			for j := 0; j < i; j++ {
-				listeners[j].Close()
+				listeners[j].Close() //nolint:errcheck // cleanup on error
 			}
 			return nil, err
 		}
@@ -31,7 +31,7 @@ func GetFreePorts(n int) ([]int, error) {
 
 	// Then close them all
 	for i := 0; i < n; i++ {
-		listeners[i].Close()
+		listeners[i].Close() //nolint:errcheck // cleanup on error
 	}
 
 	return ports, nil

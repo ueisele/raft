@@ -171,7 +171,7 @@ func TestReplicationManagerReplicate(t *testing.T) {
 	transport := newReplicationTestTransport(1)
 
 	// Add some entries to the log
-	log.AppendEntries(0, 0, []LogEntry{
+	log.AppendEntries(0, 0, []LogEntry{ //nolint:errcheck // test setup
 		{Term: 2, Index: 1, Command: "cmd1"},
 		{Term: 2, Index: 2, Command: "cmd2"},
 		{Term: 2, Index: 3, Command: "cmd3"},
@@ -260,7 +260,7 @@ func TestReplicationManagerCommitAdvancement(t *testing.T) {
 	state.BecomeCandidate() // Term 1
 	state.BecomeCandidate() // Term 2
 	state.BecomeLeader()    // Still Term 2
-	log.AppendEntries(0, 0, []LogEntry{
+	log.AppendEntries(0, 0, []LogEntry{ //nolint:errcheck // test setup
 		{Term: 2, Index: 1, Command: "cmd1"},
 		{Term: 2, Index: 2, Command: "cmd2"},
 		{Term: 2, Index: 3, Command: "cmd3"},
@@ -332,7 +332,7 @@ func TestReplicationManagerHandleAppendEntriesReply(t *testing.T) {
 
 	// Add entries
 	state.BecomeLeader()
-	log.AppendEntries(1, 0, []LogEntry{
+	log.AppendEntries(1, 0, []LogEntry{ //nolint:errcheck // test setup
 		{Term: 1, Index: 1, Command: "cmd1"},
 		{Term: 1, Index: 2, Command: "cmd2"},
 		{Term: 1, Index: 3, Command: "cmd3"},

@@ -456,7 +456,7 @@ func TestCommitIndexMonotonicity(t *testing.T) {
 
 	// Submit commands over time
 	for i := 0; i < 20; i++ {
-		cluster.SubmitCommand(fmt.Sprintf("cmd-%d", i))
+		cluster.SubmitCommand(fmt.Sprintf("cmd-%d", i)) //nolint:errcheck // background load generation
 		time.Sleep(50 * time.Millisecond)
 	}
 

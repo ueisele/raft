@@ -496,7 +496,7 @@ func TestSnapshotTransmissionFailure(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
-		cluster.WaitForCommitIndex(idx, time.Second)
+		cluster.WaitForCommitIndex(idx, time.Second) //nolint:errcheck // best effort wait
 	}
 
 	// Partition follower
@@ -507,7 +507,7 @@ func TestSnapshotTransmissionFailure(t *testing.T) {
 
 	// Submit more commands and create snapshot
 	for i := 20; i < 40; i++ {
-		cluster.SubmitCommand(fmt.Sprintf("cmd-%d", i))
+		cluster.SubmitCommand(fmt.Sprintf("cmd-%d", i)) //nolint:errcheck // background commands
 	}
 
 	// Wait for automatic snapshot creation
@@ -516,7 +516,7 @@ func TestSnapshotTransmissionFailure(t *testing.T) {
 	// Briefly heal and re-partition to simulate transmission failure
 	cluster.HealPartition()
 	time.Sleep(100 * time.Millisecond)
-	cluster.PartitionNode(followerID)
+	cluster.PartitionNode(followerID) //nolint:errcheck // test partition setup
 	time.Sleep(100 * time.Millisecond)
 
 	// Finally heal
