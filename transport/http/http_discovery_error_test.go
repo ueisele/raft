@@ -3,8 +3,11 @@ package http
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ueisele/raft"
 	"github.com/ueisele/raft/transport"
@@ -127,3 +130,43 @@ func TestHTTPTransport_DiscoveryTimeout(t *testing.T) {
 		t.Errorf("error should contain timeout information: %v", err)
 	}
 }
+
+// TestHTTPTransport_ContextCancellation tests that context cancellation works properly
+func TestHTTPTransport_ContextCancellation(t *testing.T) {
+	// Create a slow mock server that takes longer than the timeout
+	slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Sleep for 200ms - longer than our 100ms timeout
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer slowServer.Close()
+
+	config := &transport.Config{
+		ServerID:   0,
+		Address:    "localhost:8000",
+		RPCTimeout: 100, // 100ms timeout
+	}
+
+	// Parse the test server address
+	addr := slowServer.Listener.Addr().String()
+	discovery := &mockDiscovery{address: addr}
+	
+	httpTransport, err := NewHTTPTransport(config, discovery)
+	if err != nil {
+		t.Fatalf("failed to create transport: %v", err)
+	}
+
+	// Test that RPC times out properly
+	args := &raft.RequestVoteArgs{Term: 1}
+	_, err = httpTransport.SendRequestVote(1, args)
+	
+	if err == nil {
+		t.Error("expected timeout error when server is slow")
+	}
+	
+	// Verify it's a timeout error
+	if !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Errorf("expected context deadline exceeded error, got: %v", err)
+	}
+}
+

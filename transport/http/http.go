@@ -22,6 +22,7 @@ type HTTPTransport struct {
 	handler    raft.RPCHandler
 	mux        *http.ServeMux
 	discovery  transport.PeerDiscovery
+	rpcTimeout time.Duration
 }
 
 // NewHTTPTransport creates a new HTTP transport with required peer discovery
@@ -31,12 +32,11 @@ func NewHTTPTransport(config *transport.Config, discovery transport.PeerDiscover
 	}
 
 	return &HTTPTransport{
-		serverID: config.ServerID,
-		address:  config.Address,
-		httpClient: &http.Client{
-			Timeout: time.Duration(config.RPCTimeout) * time.Millisecond,
-		},
-		discovery: discovery,
+		serverID:   config.ServerID,
+		address:    config.Address,
+		httpClient: &http.Client{},
+		discovery:  discovery,
+		rpcTimeout: time.Duration(config.RPCTimeout) * time.Millisecond,
 	}, nil
 }
 
@@ -92,11 +92,15 @@ func (t *HTTPTransport) SendRequestVote(serverID int, args *raft.RequestVoteArgs
 	if err != nil {
 		return nil, &transport.TransportError{ServerID: serverID, Err: err}
 	}
-	
+
 	url := fmt.Sprintf("http://%s/raft/requestvote", addr)
 
+	// Create context with timeout based on configured RPC timeout
+	ctx, cancel := context.WithTimeout(context.Background(), t.rpcTimeout)
+	defer cancel()
+
 	var reply raft.RequestVoteReply
-	if err := t.sendRPC(url, args, &reply); err != nil {
+	if err := t.sendRPC(ctx, url, args, &reply); err != nil {
 		return nil, &transport.TransportError{ServerID: serverID, Err: err}
 	}
 
@@ -109,11 +113,15 @@ func (t *HTTPTransport) SendAppendEntries(serverID int, args *raft.AppendEntries
 	if err != nil {
 		return nil, &transport.TransportError{ServerID: serverID, Err: err}
 	}
-	
+
 	url := fmt.Sprintf("http://%s/raft/appendentries", addr)
 
+	// Create context with timeout based on configured RPC timeout
+	ctx, cancel := context.WithTimeout(context.Background(), t.rpcTimeout)
+	defer cancel()
+
 	var reply raft.AppendEntriesReply
-	if err := t.sendRPC(url, args, &reply); err != nil {
+	if err := t.sendRPC(ctx, url, args, &reply); err != nil {
 		return nil, &transport.TransportError{ServerID: serverID, Err: err}
 	}
 
@@ -126,27 +134,37 @@ func (t *HTTPTransport) SendInstallSnapshot(serverID int, args *raft.InstallSnap
 	if err != nil {
 		return nil, &transport.TransportError{ServerID: serverID, Err: err}
 	}
-	
+
 	url := fmt.Sprintf("http://%s/raft/installsnapshot", addr)
 
+	// Create context with timeout based on configured RPC timeout
+	ctx, cancel := context.WithTimeout(context.Background(), t.rpcTimeout)
+	defer cancel()
+
 	var reply raft.InstallSnapshotReply
-	if err := t.sendRPC(url, args, &reply); err != nil {
+	if err := t.sendRPC(ctx, url, args, &reply); err != nil {
 		return nil, &transport.TransportError{ServerID: serverID, Err: err}
 	}
 
 	return &reply, nil
 }
 
-// sendRPC sends a generic RPC request
-func (t *HTTPTransport) sendRPC(url string, args interface{}, reply interface{}) error {
+// sendRPC sends a generic RPC request with context support
+func (t *HTTPTransport) sendRPC(ctx context.Context, url string, args interface{}, reply interface{}) error {
 	jsonData, err := json.Marshal(args)
 	if err != nil {
-		return fmt.Errorf("failed to marshal request: %v", err)
+		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	resp, err := t.httpClient.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(jsonData))
 	if err != nil {
-		return fmt.Errorf("failed to send request: %v", err)
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := t.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -155,7 +173,7 @@ func (t *HTTPTransport) sendRPC(url string, args interface{}, reply interface{})
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(reply); err != nil {
-		return fmt.Errorf("failed to decode response: %v", err)
+		return fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	return nil

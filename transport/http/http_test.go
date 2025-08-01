@@ -61,8 +61,8 @@ func TestNewHTTPTransport(t *testing.T) {
 	}
 
 	expectedTimeout := time.Duration(config.RPCTimeout) * time.Millisecond
-	if transport.httpClient.Timeout != expectedTimeout {
-		t.Errorf("expected timeout %v, got %v", expectedTimeout, transport.httpClient.Timeout)
+	if transport.rpcTimeout != expectedTimeout {
+		t.Errorf("expected timeout %v, got %v", expectedTimeout, transport.rpcTimeout)
 	}
 }
 
