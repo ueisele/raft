@@ -3,7 +3,6 @@ package persistence
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -194,7 +193,7 @@ func TestLoadStateCorruptedFile(t *testing.T) {
 
 	// Write corrupted JSON
 	stateFile := filepath.Join(tempDir, "raft-state-1.json")
-	if err := ioutil.WriteFile(stateFile, []byte("invalid json"), 0644); err != nil {
+	if err := os.WriteFile(stateFile, []byte("invalid json"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -433,7 +432,7 @@ func TestAtomicWrites(t *testing.T) {
 	}
 
 	// Verify no temp files remain
-	files, err := ioutil.ReadDir(tempDir)
+	files, err := os.ReadDir(tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -559,7 +558,7 @@ func TestJSONFormatVerification(t *testing.T) {
 
 	// Read and verify JSON format
 	stateFile := filepath.Join(tempDir, "raft-state-1.json")
-	data, err := ioutil.ReadFile(stateFile)
+	data, err := os.ReadFile(stateFile)
 	if err != nil {
 		t.Fatal(err)
 	}

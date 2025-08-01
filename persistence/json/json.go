@@ -3,7 +3,6 @@ package json
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
@@ -46,7 +45,7 @@ func (p *JSONPersistence) SaveState(state *raft.PersistentState) error {
 	filename := p.getStateFilename()
 	tempFilename := filename + ".tmp"
 
-	if err := ioutil.WriteFile(tempFilename, data, 0644); err != nil {
+	if err := os.WriteFile(tempFilename, data, 0644); err != nil {
 		return &persistence.PersistenceError{Op: "save", Err: err}
 	}
 
@@ -65,7 +64,7 @@ func (p *JSONPersistence) LoadState() (*raft.PersistentState, error) {
 
 	filename := p.getStateFilename()
 
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// No state file exists - return nil
@@ -112,7 +111,7 @@ func (p *JSONPersistence) SaveSnapshot(snapshot *raft.Snapshot) error {
 	filename := p.getSnapshotFilename()
 	tempFilename := filename + ".tmp"
 
-	if err := ioutil.WriteFile(tempFilename, data, 0644); err != nil {
+	if err := os.WriteFile(tempFilename, data, 0644); err != nil {
 		return &persistence.PersistenceError{Op: "save", Err: err}
 	}
 
@@ -131,7 +130,7 @@ func (p *JSONPersistence) LoadSnapshot() (*raft.Snapshot, error) {
 
 	filename := p.getSnapshotFilename()
 
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// No snapshot exists

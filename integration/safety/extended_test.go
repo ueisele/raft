@@ -202,7 +202,9 @@ func TestLogReplicationUnderPartitions(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
-		cluster.WaitForCommitIndex(idx, time.Second)
+		if err := cluster.WaitForCommitIndex(idx, time.Second); err != nil {
+			t.Logf("Warning: Failed to wait for commit index %d: %v", idx, err)
+		}
 	}
 
 	initialCommitIndex := cluster.Nodes[leaderID].GetCommitIndex()
@@ -335,7 +337,9 @@ func TestRapidLeadershipChanges(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		// Submit a command with current leader
 		cmd := fmt.Sprintf("leader-%d-cmd", len(leaderChanges)-1)
-		cluster.SubmitCommand(cmd)
+		if _, _, err := cluster.SubmitCommand(cmd); err != nil {
+			t.Logf("Failed to submit command during leader change: %v", err)
+		}
 
 		// Stop current leader
 		currentLeader := leaderChanges[len(leaderChanges)-1].leaderID

@@ -3,7 +3,6 @@ package fault_tolerance
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
@@ -121,7 +120,7 @@ func (p *filePersistence) HasSnapshot() bool {
 // TestNodeRestartWithPersistence tests that nodes can restart and recover state
 func TestNodeRestartWithPersistence(t *testing.T) {
 	// Create temp directory for persistence
-	tempDir, err := ioutil.TempDir("", "raft-test-")
+	tempDir, err := os.MkdirTemp("", "raft-test-")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -288,7 +287,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 // TestCrashRecoveryScenarios tests various crash and recovery scenarios
 func TestCrashRecoveryScenarios(t *testing.T) {
 	// Create temp directory for persistence
-	tempDir, err := ioutil.TempDir("", "raft-crash-test-")
+	tempDir, err := os.MkdirTemp("", "raft-crash-test-")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -409,7 +408,7 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 // TestPersistenceWithSnapshots tests persistence with snapshots
 func TestPersistenceWithSnapshots(t *testing.T) {
 	// Create temp directory
-	tempDir, err := ioutil.TempDir("", "raft-snap-test-")
+	tempDir, err := os.MkdirTemp("", "raft-snap-test-")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}

@@ -53,10 +53,12 @@ func TestElectionManagerStartElection(t *testing.T) {
 	transport := newElectionTestTransport(1)
 
 	// Add some log entries
-	log.AppendEntries(0, 0, []LogEntry{
+	if err := log.AppendEntries(0, 0, []LogEntry{
 		{Term: 1, Index: 1, Command: "cmd1"},
 		{Term: 1, Index: 2, Command: "cmd2"},
-	})
+	}); err != nil {
+		t.Fatalf("Failed to append entries: %v", err)
+	}
 
 	// Create election manager
 	em := NewElectionManager(config.ID, config.Peers, state, log, transport, config)
@@ -204,10 +206,12 @@ func TestElectionManagerHandleRequestVote(t *testing.T) {
 	transport := newElectionTestTransport(1)
 
 	// Add some log entries
-	log.AppendEntries(0, 0, []LogEntry{
+	if err := log.AppendEntries(0, 0, []LogEntry{
 		{Term: 1, Index: 1, Command: "cmd1"},
 		{Term: 2, Index: 2, Command: "cmd2"},
-	})
+	}); err != nil {
+		t.Fatalf("Failed to append entries: %v", err)
+	}
 
 	// Create election manager
 	em := NewElectionManager(config.ID, config.Peers, state, log, transport, config)
@@ -347,7 +351,9 @@ func TestElectionManagerLogComparison(t *testing.T) {
 			// Reset log
 			log = NewLogManager()
 			if len(tc.localLog) > 0 {
-				log.AppendEntries(0, 0, tc.localLog)
+				if err := log.AppendEntries(0, 0, tc.localLog); err != nil {
+					t.Fatalf("Failed to append entries: %v", err)
+				}
 			}
 			em.logManager = log
 

@@ -292,7 +292,9 @@ func TestConfigChangeWithNodeFailures(t *testing.T) {
 			if err == nil {
 				cluster.Nodes[followerToStop] = node
 				cluster.Registry.(*helpers.NodeRegistry).Register(followerToStop, node.(raft.RPCHandler))
-				node.Start(ctx)
+				if err := node.Start(ctx); err != nil {
+					t.Errorf("Failed to restart node %d: %v", followerToStop, err)
+				}
 				t.Logf("Restarted node %d", followerToStop)
 
 				// Wait for node to catch up

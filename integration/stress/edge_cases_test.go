@@ -265,7 +265,9 @@ func TestEdgeCaseScenarios(t *testing.T) {
 		if !isLeader {
 			t.Logf("Empty command rejected: not leader")
 		} else {
-			cluster.WaitForCommitIndex(idx, time.Second)
+			if err := cluster.WaitForCommitIndex(idx, time.Second); err != nil {
+				t.Logf("Warning: Failed to wait for commit index %d: %v", idx, err)
+			}
 			t.Log("✓ Empty command accepted and committed")
 		}
 	})

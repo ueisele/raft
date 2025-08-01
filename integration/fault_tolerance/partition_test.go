@@ -477,6 +477,10 @@ func TestCascadingPartitions(t *testing.T) {
 		}
 	}
 
+	if !leaderFound {
+		t.Error("No leader after partitioning 4 nodes")
+	}
+
 	// Phase 3: Partition node 4 (leaving only 2 nodes: 5 and 6)
 	cluster.PartitionNode(4)
 	t.Log("Phase 3: Partitioned node 4 (2 nodes remaining - no quorum)")

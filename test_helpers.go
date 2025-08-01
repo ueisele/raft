@@ -396,8 +396,6 @@ type MockStateMachine struct {
 	mu                 sync.RWMutex
 	state              map[string]interface{}
 	applyCount         int
-	lastAppliedIndex   int
-	lastAppliedTerm    int
 	applyDelay         time.Duration
 	failNextApply      bool
 	captureAppliedCmds []interface{}

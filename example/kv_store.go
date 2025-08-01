@@ -319,7 +319,9 @@ func main() {
 
 	log.Println("Shutting down...")
 	node.Stop()
-	httpTrans.Stop()
+	if err := httpTrans.Stop(); err != nil {
+		log.Printf("Error stopping transport: %v", err)
+	}
 }
 
 // setupHTTPAPI creates a simple HTTP API for client interaction
@@ -340,7 +342,9 @@ func setupHTTPAPI(node raft.Node, kvStore *KVStore, port int, nodeID int) {
 			return
 		}
 
-		w.Write([]byte(value))
+		if _, err := w.Write([]byte(value)); err != nil {
+			log.Printf("Error writing response: %v", err)
+		}
 	})
 
 	// POST /kv - Set a key-value pair
@@ -375,7 +379,9 @@ func setupHTTPAPI(node raft.Node, kvStore *KVStore, port int, nodeID int) {
 			"index": index,
 			"term":  term,
 		}
-		json.NewEncoder(w).Encode(response)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			log.Printf("Error encoding response: %v", err)
+		}
 	})
 
 	// GET /status - Get node status
@@ -401,7 +407,9 @@ func setupHTTPAPI(node raft.Node, kvStore *KVStore, port int, nodeID int) {
 			"lastLogIndex": node.GetLogLength() - 1,
 			"servers":      servers,
 		}
-		json.NewEncoder(w).Encode(status)
+		if err := json.NewEncoder(w).Encode(status); err != nil {
+			log.Printf("Error encoding response: %v", err)
+		}
 	})
 
 	// GET /kv - Get all key-value pairs (for debugging)
@@ -412,7 +420,9 @@ func setupHTTPAPI(node raft.Node, kvStore *KVStore, port int, nodeID int) {
 		}
 
 		data := kvStore.GetAll()
-		json.NewEncoder(w).Encode(data)
+		if err := json.NewEncoder(w).Encode(data); err != nil {
+			log.Printf("Error encoding response: %v", err)
+		}
 	})
 
 	// Start HTTP server

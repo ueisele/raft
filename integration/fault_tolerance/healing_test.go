@@ -147,8 +147,12 @@ func TestEventualConsistency(t *testing.T) {
 	t.Log("Disruption 1: Creating temporary partition")
 
 	// Partition nodes 0 and 1 from the rest
-	cluster.PartitionNode(0)
-	cluster.PartitionNode(1)
+	if err := cluster.PartitionNode(0); err != nil {
+		t.Fatalf("Failed to partition node 0: %v", err)
+	}
+	if err := cluster.PartitionNode(1); err != nil {
+		t.Fatalf("Failed to partition node 1: %v", err)
+	}
 
 	// Submit commands to majority partition
 	for i := 0; i < 5; i++ {
@@ -251,7 +255,9 @@ func TestEventualConsistency(t *testing.T) {
 					if err == nil {
 						cluster.Nodes[i] = newNode
 						cluster.Registry.(*helpers.NodeRegistry).Register(i, newNode.(raft.RPCHandler))
-						newNode.Start(ctx)
+						if err := newNode.Start(ctx); err != nil {
+							t.Errorf("Failed to start node %d: %v", i, err)
+						}
 						t.Logf("Restarted node %d", i)
 					}
 				}
@@ -313,8 +319,12 @@ func TestHealingWithDivergentLogs(t *testing.T) {
 	t.Logf("Common commit index before divergence: %d", commonCommitIndex)
 
 	// Create network partition: [0,1] vs [2,3,4]
-	cluster.PartitionNode(0)
-	cluster.PartitionNode(1)
+	if err := cluster.PartitionNode(0); err != nil {
+		t.Fatalf("Failed to partition node 0: %v", err)
+	}
+	if err := cluster.PartitionNode(1); err != nil {
+		t.Fatalf("Failed to partition node 1: %v", err)
+	}
 	t.Log("Created partition: [0,1] vs [2,3,4]")
 
 	// Each partition will elect its own leader and accept different commands

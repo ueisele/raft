@@ -99,7 +99,9 @@ func TestSnapshotDuringLeadershipChange(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
-		cluster.WaitForCommitIndex(idx, time.Second)
+		if err := cluster.WaitForCommitIndex(idx, time.Second); err != nil {
+			t.Logf("Warning: Failed to wait for commit index %d: %v", idx, err)
+		}
 	}
 
 	// Stop current leader to trigger new election
@@ -239,7 +241,10 @@ func TestConcurrentSnapshotAndReplication(t *testing.T) {
 				return
 			default:
 				cmd := fmt.Sprintf("concurrent-cmd-%d", i)
-				cluster.SubmitCommand(cmd)
+				if _, _, err := cluster.SubmitCommand(cmd); err != nil {
+					// Log but don't fail - expected during snapshots
+					t.Logf("Failed to submit command during snapshot: %v", err)
+				}
 				i++
 				time.Sleep(10 * time.Millisecond)
 			}

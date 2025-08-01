@@ -17,9 +17,6 @@ type ConfigurationManager struct {
 
 	// Pending configuration change (if any)
 	pendingConfig *PendingConfigChange
-
-	// Dependencies
-	node Node
 }
 
 // ClusterConfiguration represents the current cluster membership
