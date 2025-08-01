@@ -24,6 +24,16 @@ type HTTPTransport struct {
 }
 
 // NewHTTPTransport creates a new HTTP transport
+// 
+// Deprecated: This constructor will require a discovery parameter in v1.0.0.
+// For new code, use NewHTTPTransportWithDiscovery() or NewHTTPTransportWithStaticPeers().
+// 
+// Current usage (will be deprecated):
+//   transport := NewHTTPTransport(config)
+//   transport.SetDiscovery(discovery)
+//
+// Recommended usage:
+//   transport, err := NewHTTPTransportWithDiscovery(config, discovery)
 func NewHTTPTransport(config *transport.Config) *HTTPTransport {
 	return &HTTPTransport{
 		serverID: config.ServerID,
@@ -48,6 +58,10 @@ func (t *HTTPTransport) SetDiscovery(discovery transport.PeerDiscovery) {
 func (t *HTTPTransport) Start() error {
 	if t.handler == nil {
 		return fmt.Errorf("RPC handler not set")
+	}
+	
+	if t.discovery == nil {
+		return fmt.Errorf("peer discovery not set - use SetDiscovery() or NewHTTPTransportWithDiscovery()")
 	}
 
 	// Set up HTTP routes

@@ -208,6 +208,23 @@ transport.SetDiscovery(&mockDiscovery{
 - Use private networks or VPNs for cluster communication
 - Implement authentication in custom discovery mechanisms
 
+## Migration Notice
+
+**Important**: The `NewHTTPTransport()` constructor will require a `PeerDiscovery` parameter in v1.0.0. 
+
+Current code using:
+```go
+transport := http.NewHTTPTransport(config)
+transport.SetDiscovery(discovery)
+```
+
+Should migrate to:
+```go
+transport, err := http.NewHTTPTransportWithDiscovery(config, discovery)
+```
+
+See [MIGRATION_PEERDISCOVERY.md](MIGRATION_PEERDISCOVERY.md) for detailed migration guide.
+
 ## Future Enhancements
 
 - Built-in DNS SRV record discovery
