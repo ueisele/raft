@@ -291,6 +291,20 @@ The current implementation does not support automatic rollback of failed configu
 - Monitoring and metrics integration
 - Pre-vote optimization for reducing disruptions
 
+## Documentation
+
+- [Documentation Index](docs/README.md) - Complete documentation overview
+- [Implementation Details](IMPLEMENTATION.md) - Detailed implementation notes
+- [Test Results](TEST_RESULTS_SUMMARY.md) - Current test status
+- [Open Topics](open_topics.md) - Known limitations and future work
+
+### Guides
+- [Test Optimization Guide](docs/guides/TEST_OPTIMIZATION_GUIDE.md) - Writing reliable tests
+- [Timing Best Practices](docs/guides/TIMING_BEST_PRACTICES.md) - Timing-resilient tests
+
+### Features
+- [Safe Server Addition](docs/features/SAFE_SERVER_ADDITION.md) - Safe membership changes
+
 ## References
 
 - [Raft Paper](https://raft.github.io/raft.pdf) - In Search of an Understandable Consensus Algorithm
