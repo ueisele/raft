@@ -18,3 +18,6 @@
 - [Roadmap and Limitations](ROADMAP_AND_LIMITATIONS.md) - Known limitations, future work, and roadmap
 - [Test Results](TEST_RESULTS_SUMMARY.md) - Current test status
 - [Integration Tests](../integration/README.md) - Integration test documentation
+
+## Reference Papers
+- [Raft Paper (PDF)](raft-paper.pdf) - "In Search of an Understandable Consensus Algorithm" by Diego Ongaro and John Ousterhout
