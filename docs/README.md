@@ -10,6 +10,6 @@
 ## Additional Documentation
 - [Main README](../README.md) - Project overview and usage
 - [Implementation Details](../IMPLEMENTATION.md) - Core implementation details and design decisions
-- [Open Topics](../open_topics.md) - Known limitations and future work
+- [Roadmap and Limitations](../ROADMAP_AND_LIMITATIONS.md) - Known limitations, future work, and roadmap
 - [Test Results](../TEST_RESULTS_SUMMARY.md) - Current test status
 - [Integration Tests](../integration/README.md) - Integration test documentation

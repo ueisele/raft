@@ -211,20 +211,11 @@ Our safer alternative:
 
 ## Extensions and Future Work
 
-### Potential Improvements
-1. **Pre-vote optimization**: Reduce unnecessary elections
-2. **Read-only optimizations**: Lease-based reads
-3. **Batching**: Improve throughput
-4. **Pipelining**: Reduce latency
-5. **gRPC transport**: Better performance
-6. **Promotion to voting**: Currently logs intent but doesn't execute
-
-### Production Considerations
-1. **TLS encryption**: Secure communication
-2. **Authentication**: Access control
-3. **Monitoring**: Health checks and metrics
-4. **Configuration**: Runtime tuning
-5. **Backup/recovery**: Disaster recovery
+See [Roadmap and Limitations](ROADMAP_AND_LIMITATIONS.md) for detailed information about:
+- Potential improvements and optimizations
+- Production readiness requirements
+- Security considerations
+- Priority roadmap for future development
 
 ## Correctness Verification
 

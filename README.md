@@ -277,26 +277,19 @@ The current implementation does not support automatic rollback of failed configu
 
 ## Limitations and Future Work
 
-### Current Limitations
-
-- No Byzantine fault tolerance (assumes fail-stop)
-- HTTP RPC may not be optimal for high-performance scenarios
-- Basic persistence implementation (not optimized for large logs)
-
-### Potential Improvements
-
-- gRPC transport for better performance
-- More efficient binary persistence format
-- Additional optimizations (pipelining, batching)
-- Monitoring and metrics integration
-- Pre-vote optimization for reducing disruptions
+See [Roadmap and Limitations](ROADMAP_AND_LIMITATIONS.md) for comprehensive information about:
+- Current limitations and known issues
+- Unimplemented features and design decisions
+- Performance considerations
+- Security gaps
+- Future improvements and roadmap
 
 ## Documentation
 
 - [Documentation Index](docs/README.md) - Complete documentation overview
 - [Implementation Details](IMPLEMENTATION.md) - Detailed implementation notes
+- [Roadmap and Limitations](ROADMAP_AND_LIMITATIONS.md) - Known limitations and future work
 - [Test Results](TEST_RESULTS_SUMMARY.md) - Current test status
-- [Open Topics](open_topics.md) - Known limitations and future work
 
 ### Guides
 - [Test Optimization Guide](docs/guides/TEST_OPTIMIZATION_GUIDE.md) - Writing reliable tests
