@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -28,7 +29,7 @@ func NewHTTPTransport(config *transport.Config, discovery transport.PeerDiscover
 	if discovery == nil {
 		return nil, fmt.Errorf("discovery cannot be nil")
 	}
-	
+
 	return &HTTPTransport{
 		serverID: config.ServerID,
 		address:  config.Address,
@@ -43,7 +44,6 @@ func NewHTTPTransport(config *transport.Config, discovery transport.PeerDiscover
 func (t *HTTPTransport) SetRPCHandler(handler raft.RPCHandler) {
 	t.handler = handler
 }
-
 
 // Start starts the HTTP server
 func (t *HTTPTransport) Start() error {
@@ -64,7 +64,7 @@ func (t *HTTPTransport) Start() error {
 
 	// Start server in background
 	go func() {
-		if err := t.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := t.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			// Log error but don't crash
 			fmt.Printf("HTTP server error: %v\n", err)
 		}
@@ -88,7 +88,12 @@ func (t *HTTPTransport) GetAddress() string {
 
 // SendRequestVote sends a RequestVote RPC
 func (t *HTTPTransport) SendRequestVote(serverID int, args *raft.RequestVoteArgs) (*raft.RequestVoteReply, error) {
-	url := fmt.Sprintf("http://%s/raft/requestvote", t.getServerAddress(serverID))
+	addr, err := t.getServerAddress(serverID)
+	if err != nil {
+		return nil, &transport.TransportError{ServerID: serverID, Err: err}
+	}
+	
+	url := fmt.Sprintf("http://%s/raft/requestvote", addr)
 
 	var reply raft.RequestVoteReply
 	if err := t.sendRPC(url, args, &reply); err != nil {
@@ -100,7 +105,12 @@ func (t *HTTPTransport) SendRequestVote(serverID int, args *raft.RequestVoteArgs
 
 // SendAppendEntries sends an AppendEntries RPC
 func (t *HTTPTransport) SendAppendEntries(serverID int, args *raft.AppendEntriesArgs) (*raft.AppendEntriesReply, error) {
-	url := fmt.Sprintf("http://%s/raft/appendentries", t.getServerAddress(serverID))
+	addr, err := t.getServerAddress(serverID)
+	if err != nil {
+		return nil, &transport.TransportError{ServerID: serverID, Err: err}
+	}
+	
+	url := fmt.Sprintf("http://%s/raft/appendentries", addr)
 
 	var reply raft.AppendEntriesReply
 	if err := t.sendRPC(url, args, &reply); err != nil {
@@ -112,7 +122,12 @@ func (t *HTTPTransport) SendAppendEntries(serverID int, args *raft.AppendEntries
 
 // SendInstallSnapshot sends an InstallSnapshot RPC
 func (t *HTTPTransport) SendInstallSnapshot(serverID int, args *raft.InstallSnapshotArgs) (*raft.InstallSnapshotReply, error) {
-	url := fmt.Sprintf("http://%s/raft/installsnapshot", t.getServerAddress(serverID))
+	addr, err := t.getServerAddress(serverID)
+	if err != nil {
+		return nil, &transport.TransportError{ServerID: serverID, Err: err}
+	}
+	
+	url := fmt.Sprintf("http://%s/raft/installsnapshot", addr)
 
 	var reply raft.InstallSnapshotReply
 	if err := t.sendRPC(url, args, &reply); err != nil {
@@ -215,20 +230,13 @@ func (t *HTTPTransport) handleInstallSnapshot(w http.ResponseWriter, r *http.Req
 }
 
 // getServerAddress returns the address for a given server ID
-func (t *HTTPTransport) getServerAddress(serverID int) string {
-	if t.discovery == nil {
-		// No discovery mechanism configured - this should not happen in production
-		return ""
-	}
-	
+func (t *HTTPTransport) getServerAddress(serverID int) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	addr, err := t.discovery.GetPeerAddress(ctx, serverID)
 	if err != nil {
-		// In production, this should be properly logged
-		// For now, return empty string which will cause connection to fail
-		return ""
+		return "", fmt.Errorf("failed to get address for server %d: %w", serverID, err)
 	}
-	return addr
+	return addr, nil
 }
