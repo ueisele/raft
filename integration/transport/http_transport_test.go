@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,19 +13,10 @@ import (
 	"time"
 
 	"github.com/ueisele/raft"
+	"github.com/ueisele/raft/integration/helpers"
 	"github.com/ueisele/raft/transport"
 	httpTransport "github.com/ueisele/raft/transport/http"
 )
-
-// getFreePort returns a free port by letting the OS allocate one
-func getFreePort() (int, error) {
-	listener, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		return 0, err
-	}
-	defer listener.Close()
-	return listener.Addr().(*net.TCPAddr).Port, nil
-}
 
 // testStateMachine is a simple state machine for testing
 type testStateMachine struct {
@@ -54,16 +44,16 @@ func (sm *testStateMachine) Restore(snapshot []byte) error {
 func TestHTTPTransportBasicCluster(t *testing.T) {
 	// Create a 3-node cluster using HTTP transport
 	nodes := make([]raft.Node, 3)
-	transports := make([]*httpTransport.HTTPTransport, 3)
 
 	// Create peer discovery with all node addresses first
+	ports, err := helpers.GetFreePorts(3)
+	if err != nil {
+		t.Fatalf("Failed to get free ports: %v", err)
+	}
+
 	peers := make(map[int]string)
 	for i := 0; i < 3; i++ {
-		port, err := getFreePort()
-		if err != nil {
-			t.Fatalf("Failed to get free port: %v", err)
-		}
-		peers[i] = fmt.Sprintf("localhost:%d", port)
+		peers[i] = fmt.Sprintf("localhost:%d", ports[i])
 	}
 	discovery := transport.NewStaticPeerDiscovery(peers)
 
@@ -79,7 +69,6 @@ func TestHTTPTransportBasicCluster(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create transport %d: %v", i, err)
 		}
-		transports[i] = httpTrans
 
 		// Create persistence
 		persistence := raft.NewMockPersistence()
@@ -107,14 +96,7 @@ func TestHTTPTransportBasicCluster(t *testing.T) {
 		nodes[i] = node
 	}
 
-	// Start all transports
-	for i, trans := range transports {
-		if err := trans.Start(); err != nil {
-			t.Fatalf("Failed to start transport %d: %v", i, err)
-		}
-	}
-
-	// Start all nodes
+	// Start all nodes (this will also start the transports internally)
 	ctx := context.Background()
 	for i, node := range nodes {
 		if err := node.Start(ctx); err != nil {
@@ -126,9 +108,6 @@ func TestHTTPTransportBasicCluster(t *testing.T) {
 	defer func() {
 		for _, node := range nodes {
 			node.Stop()
-		}
-		for _, trans := range transports {
-			trans.Stop()
 		}
 	}()
 
@@ -177,16 +156,16 @@ func TestHTTPTransportBasicCluster(t *testing.T) {
 func TestHTTPTransportNetworkFailure(t *testing.T) {
 	// Create a 3-node cluster
 	nodes := make([]raft.Node, 3)
-	transports := make([]*httpTransport.HTTPTransport, 3)
 
 	// Create peer discovery first
+	ports, err := helpers.GetFreePorts(3)
+	if err != nil {
+		t.Fatalf("Failed to get free ports: %v", err)
+	}
+
 	peers := make(map[int]string)
 	for i := 0; i < 3; i++ {
-		port, err := getFreePort()
-		if err != nil {
-			t.Fatalf("Failed to get free port: %v", err)
-		}
-		peers[i] = fmt.Sprintf("localhost:%d", port)
+		peers[i] = fmt.Sprintf("localhost:%d", ports[i])
 	}
 	discovery := transport.NewStaticPeerDiscovery(peers)
 
@@ -201,7 +180,6 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create transport %d: %v", i, err)
 		}
-		transports[i] = httpTrans
 
 		// Create persistence
 		persistence := raft.NewMockPersistence()
@@ -229,14 +207,7 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 		nodes[i] = node
 	}
 
-	// Start all transports
-	for i, trans := range transports {
-		if err := trans.Start(); err != nil {
-			t.Fatalf("Failed to start transport %d: %v", i, err)
-		}
-	}
-
-	// Start all nodes
+	// Start all nodes (this will also start the transports internally)
 	ctx := context.Background()
 	for i, node := range nodes {
 		if err := node.Start(ctx); err != nil {
@@ -248,9 +219,6 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 	defer func() {
 		for _, node := range nodes {
 			node.Stop()
-		}
-		for _, trans := range transports {
-			trans.Stop()
 		}
 	}()
 
@@ -275,10 +243,11 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 	// Stop one follower's transport to simulate network failure
 	followerID := (leaderID + 1) % 3
 	t.Logf("Stopping transport for follower %d", followerID)
-	if err := transports[followerID].Stop(); err != nil {
+	followerTransport := nodes[followerID].GetTransportHandler()
+	if err := followerTransport.Stop(); err != nil {
 		t.Logf("Warning: error stopping transport: %v", err)
 	}
-	
+
 	// Give OS time to release the port
 	time.Sleep(100 * time.Millisecond)
 
@@ -307,7 +276,7 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 
 	// Restart the follower's transport
 	t.Logf("Restarting transport for follower %d", followerID)
-	if err := transports[followerID].Start(); err != nil {
+	if err := followerTransport.Start(); err != nil {
 		t.Fatalf("Failed to restart transport: %v", err)
 	}
 
@@ -325,16 +294,16 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 func TestHTTPTransportHighLoad(t *testing.T) {
 	// Create a 3-node cluster
 	nodes := make([]raft.Node, 3)
-	transports := make([]*httpTransport.HTTPTransport, 3)
 
 	// Create peer discovery first
+	ports, err := helpers.GetFreePorts(3)
+	if err != nil {
+		t.Fatalf("Failed to get free ports: %v", err)
+	}
+
 	peers := make(map[int]string)
 	for i := 0; i < 3; i++ {
-		port, err := getFreePort()
-		if err != nil {
-			t.Fatalf("Failed to get free port: %v", err)
-		}
-		peers[i] = fmt.Sprintf("localhost:%d", port)
+		peers[i] = fmt.Sprintf("localhost:%d", ports[i])
 	}
 	discovery := transport.NewStaticPeerDiscovery(peers)
 
@@ -349,7 +318,6 @@ func TestHTTPTransportHighLoad(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create transport %d: %v", i, err)
 		}
-		transports[i] = httpTrans
 
 		// Create persistence
 		persistence := raft.NewMockPersistence()
@@ -377,14 +345,7 @@ func TestHTTPTransportHighLoad(t *testing.T) {
 		nodes[i] = node
 	}
 
-	// Start all transports
-	for i, trans := range transports {
-		if err := trans.Start(); err != nil {
-			t.Fatalf("Failed to start transport %d: %v", i, err)
-		}
-	}
-
-	// Start all nodes
+	// Start all nodes (this will also start the transports internally)
 	ctx := context.Background()
 	for i, node := range nodes {
 		if err := node.Start(ctx); err != nil {
@@ -396,9 +357,6 @@ func TestHTTPTransportHighLoad(t *testing.T) {
 	defer func() {
 		for _, node := range nodes {
 			node.Stop()
-		}
-		for _, trans := range transports {
-			trans.Stop()
 		}
 	}()
 
@@ -479,13 +437,19 @@ func (m *MockRPCHandler) InstallSnapshot(args *raft.InstallSnapshotArgs, reply *
 
 // TestHTTPTransport_StartStop tests starting and stopping real HTTP servers
 func TestHTTPTransport_StartStop(t *testing.T) {
+	// Get a free port for this test
+	ports, err := helpers.GetFreePorts(1)
+	if err != nil {
+		t.Fatalf("Failed to get free port: %v", err)
+	}
+
 	config := &transport.Config{
 		ServerID:   1,
-		Address:    "localhost:18001",
+		Address:    fmt.Sprintf("localhost:%d", ports[0]),
 		RPCTimeout: 500,
 	}
 
-	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: "localhost:8001"})
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: fmt.Sprintf("localhost:%d", ports[0])})
 	transport, err := httpTransport.NewHTTPTransport(config, discovery)
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
@@ -530,13 +494,19 @@ func TestHTTPTransport_StartStop(t *testing.T) {
 
 // TestHTTPTransport_HandleRequestVote tests handling RequestVote RPCs with real server
 func TestHTTPTransport_HandleRequestVote(t *testing.T) {
+	// Get a free port for this test
+	ports, err := helpers.GetFreePorts(1)
+	if err != nil {
+		t.Fatalf("Failed to get free port: %v", err)
+	}
+
 	config := &transport.Config{
 		ServerID:   1,
-		Address:    "localhost:18002",
+		Address:    fmt.Sprintf("localhost:%d", ports[0]),
 		RPCTimeout: 500,
 	}
 
-	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: "localhost:8001"})
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: fmt.Sprintf("localhost:%d", ports[0])})
 	transport, err := httpTransport.NewHTTPTransport(config, discovery)
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
@@ -591,13 +561,19 @@ func TestHTTPTransport_HandleRequestVote(t *testing.T) {
 
 // TestHTTPTransport_HandleAppendEntries tests handling AppendEntries RPCs with real server
 func TestHTTPTransport_HandleAppendEntries(t *testing.T) {
+	// Get a free port for this test
+	ports, err := helpers.GetFreePorts(1)
+	if err != nil {
+		t.Fatalf("Failed to get free port: %v", err)
+	}
+
 	config := &transport.Config{
 		ServerID:   1,
-		Address:    "localhost:18003",
+		Address:    fmt.Sprintf("localhost:%d", ports[0]),
 		RPCTimeout: 500,
 	}
 
-	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: "localhost:8001"})
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: fmt.Sprintf("localhost:%d", ports[0])})
 	transport, err := httpTransport.NewHTTPTransport(config, discovery)
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
@@ -652,13 +628,19 @@ func TestHTTPTransport_HandleAppendEntries(t *testing.T) {
 
 // TestHTTPTransport_HandleInstallSnapshot tests handling InstallSnapshot RPCs with real server
 func TestHTTPTransport_HandleInstallSnapshot(t *testing.T) {
+	// Get a free port for this test
+	ports, err := helpers.GetFreePorts(1)
+	if err != nil {
+		t.Fatalf("Failed to get free port: %v", err)
+	}
+
 	config := &transport.Config{
 		ServerID:   1,
-		Address:    "localhost:18004",
+		Address:    fmt.Sprintf("localhost:%d", ports[0]),
 		RPCTimeout: 500,
 	}
 
-	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: "localhost:8001"})
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: fmt.Sprintf("localhost:%d", ports[0])})
 	transport, err := httpTransport.NewHTTPTransport(config, discovery)
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
@@ -713,13 +695,19 @@ func TestHTTPTransport_HandleInstallSnapshot(t *testing.T) {
 
 // TestHTTPTransport_HandleInvalidMethod tests handling invalid HTTP methods
 func TestHTTPTransport_HandleInvalidMethod(t *testing.T) {
+	// Get a free port for this test
+	ports, err := helpers.GetFreePorts(1)
+	if err != nil {
+		t.Fatalf("Failed to get free port: %v", err)
+	}
+
 	config := &transport.Config{
 		ServerID:   1,
-		Address:    "localhost:18005",
+		Address:    fmt.Sprintf("localhost:%d", ports[0]),
 		RPCTimeout: 500,
 	}
 
-	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: "localhost:8001"})
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: fmt.Sprintf("localhost:%d", ports[0])})
 	transport, err := httpTransport.NewHTTPTransport(config, discovery)
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
@@ -748,13 +736,19 @@ func TestHTTPTransport_HandleInvalidMethod(t *testing.T) {
 
 // TestHTTPTransport_HandleInvalidJSON tests handling invalid JSON requests
 func TestHTTPTransport_HandleInvalidJSON(t *testing.T) {
+	// Get a free port for this test
+	ports, err := helpers.GetFreePorts(1)
+	if err != nil {
+		t.Fatalf("Failed to get free port: %v", err)
+	}
+
 	config := &transport.Config{
 		ServerID:   1,
-		Address:    "localhost:18006",
+		Address:    fmt.Sprintf("localhost:%d", ports[0]),
 		RPCTimeout: 500,
 	}
 
-	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: "localhost:8001"})
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: fmt.Sprintf("localhost:%d", ports[0])})
 	transport, err := httpTransport.NewHTTPTransport(config, discovery)
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
@@ -783,13 +777,19 @@ func TestHTTPTransport_HandleInvalidJSON(t *testing.T) {
 
 // TestHTTPTransport_HandleRPCError tests handling RPC handler errors
 func TestHTTPTransport_HandleRPCError(t *testing.T) {
+	// Get a free port for this test
+	ports, err := helpers.GetFreePorts(1)
+	if err != nil {
+		t.Fatalf("Failed to get free port: %v", err)
+	}
+
 	config := &transport.Config{
 		ServerID:   1,
-		Address:    "localhost:18007",
+		Address:    fmt.Sprintf("localhost:%d", ports[0]),
 		RPCTimeout: 500,
 	}
 
-	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: "localhost:8001"})
+	discovery := transport.NewStaticPeerDiscovery(map[int]string{1: fmt.Sprintf("localhost:%d", ports[0])})
 	transport, err := httpTransport.NewHTTPTransport(config, discovery)
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
@@ -897,10 +897,16 @@ func TestHTTPTransport_DynamicDiscoveryUpdate(t *testing.T) {
 		1: server1.Listener.Addr().String(),
 	})
 
+	// Get a free port for the local transport
+	localPorts, err := helpers.GetFreePorts(1)
+	if err != nil {
+		t.Fatalf("Failed to get free port: %v", err)
+	}
+
 	// Create transport
 	config := &transport.Config{
 		ServerID:   0,
-		Address:    "localhost:8000",
+		Address:    fmt.Sprintf("localhost:%d", localPorts[0]),
 		RPCTimeout: 500,
 	}
 
@@ -947,6 +953,12 @@ func TestHTTPTransport_DynamicDiscoveryUpdate(t *testing.T) {
 
 // TestHTTPTransport_SendRequestVote tests sending RequestVote RPC
 func TestHTTPTransport_SendRequestVote(t *testing.T) {
+	// Get a free port for the local transport
+	localPorts, err := helpers.GetFreePorts(1)
+	if err != nil {
+		t.Fatalf("Failed to get free port: %v", err)
+	}
+
 	// Set up mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/raft/requestvote" {
@@ -977,7 +989,7 @@ func TestHTTPTransport_SendRequestVote(t *testing.T) {
 	// Create transport
 	config := &transport.Config{
 		ServerID:   1,
-		Address:    "localhost:8001",
+		Address:    fmt.Sprintf("localhost:%d", localPorts[0]),
 		RPCTimeout: 500,
 	}
 	discovery := transport.NewStaticPeerDiscovery(map[int]string{
@@ -1008,6 +1020,12 @@ func TestHTTPTransport_SendRequestVote(t *testing.T) {
 
 // TestHTTPTransport_SendAppendEntries tests sending AppendEntries RPC
 func TestHTTPTransport_SendAppendEntries(t *testing.T) {
+	// Get a free port for the local transport
+	localPorts, err := helpers.GetFreePorts(1)
+	if err != nil {
+		t.Fatalf("Failed to get free port: %v", err)
+	}
+
 	// Set up mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/raft/appendentries" {
@@ -1038,7 +1056,7 @@ func TestHTTPTransport_SendAppendEntries(t *testing.T) {
 	// Create transport
 	config := &transport.Config{
 		ServerID:   1,
-		Address:    "localhost:8001",
+		Address:    fmt.Sprintf("localhost:%d", localPorts[0]),
 		RPCTimeout: 500,
 	}
 	discovery := transport.NewStaticPeerDiscovery(map[int]string{
@@ -1074,6 +1092,12 @@ func TestHTTPTransport_SendAppendEntries(t *testing.T) {
 
 // TestHTTPTransport_SendInstallSnapshot tests sending InstallSnapshot RPC
 func TestHTTPTransport_SendInstallSnapshot(t *testing.T) {
+	// Get a free port for the local transport
+	localPorts, err := helpers.GetFreePorts(1)
+	if err != nil {
+		t.Fatalf("Failed to get free port: %v", err)
+	}
+
 	// Set up mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/raft/installsnapshot" {
@@ -1103,7 +1127,7 @@ func TestHTTPTransport_SendInstallSnapshot(t *testing.T) {
 	// Create transport
 	config := &transport.Config{
 		ServerID:   1,
-		Address:    "localhost:8001",
+		Address:    fmt.Sprintf("localhost:%d", localPorts[0]),
 		RPCTimeout: 500,
 	}
 	discovery := transport.NewStaticPeerDiscovery(map[int]string{
@@ -1159,6 +1183,12 @@ func TestHTTPTransport_SendRPCError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Get a free port for this sub-test
+			localPorts, err := helpers.GetFreePorts(1)
+			if err != nil {
+				t.Fatalf("Failed to get free port: %v", err)
+			}
+
 			// Set up mock server
 			server := httptest.NewServer(http.HandlerFunc(tt.serverResponse))
 			defer server.Close()
@@ -1166,7 +1196,7 @@ func TestHTTPTransport_SendRPCError(t *testing.T) {
 			// Create transport
 			config := &transport.Config{
 				ServerID:   1,
-				Address:    "localhost:8001",
+				Address:    fmt.Sprintf("localhost:%d", localPorts[0]),
 				RPCTimeout: 500,
 			}
 			discovery := transport.NewStaticPeerDiscovery(map[int]string{
@@ -1202,9 +1232,15 @@ func TestHTTPTransport_SendRPCError(t *testing.T) {
 
 // TestHTTPTransport_NetworkError tests network error handling
 func TestHTTPTransport_NetworkError(t *testing.T) {
+	// Get a free port for the local transport
+	localPorts, err := helpers.GetFreePorts(1)
+	if err != nil {
+		t.Fatalf("Failed to get free port: %v", err)
+	}
+
 	config := &transport.Config{
 		ServerID:   1,
-		Address:    "localhost:8001",
+		Address:    fmt.Sprintf("localhost:%d", localPorts[0]),
 		RPCTimeout: 100, // Short timeout
 	}
 
@@ -1235,6 +1271,12 @@ func TestHTTPTransport_NetworkError(t *testing.T) {
 
 // TestHTTPTransport_Timeout tests timeout handling
 func TestHTTPTransport_Timeout(t *testing.T) {
+	// Get a free port for the local transport
+	localPorts, err := helpers.GetFreePorts(1)
+	if err != nil {
+		t.Fatalf("Failed to get free port: %v", err)
+	}
+
 	// Create a slow server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(200 * time.Millisecond) // Sleep longer than timeout
@@ -1244,7 +1286,7 @@ func TestHTTPTransport_Timeout(t *testing.T) {
 
 	config := &transport.Config{
 		ServerID:   1,
-		Address:    "localhost:8001",
+		Address:    fmt.Sprintf("localhost:%d", localPorts[0]),
 		RPCTimeout: 50, // Very short timeout
 	}
 
@@ -1278,6 +1320,12 @@ func TestHTTPTransport_Timeout(t *testing.T) {
 
 // TestHTTPTransport_ContextCancellation tests that context cancellation works properly
 func TestHTTPTransport_ContextCancellation(t *testing.T) {
+	// Get a free port for the local transport
+	localPorts, err := helpers.GetFreePorts(1)
+	if err != nil {
+		t.Fatalf("Failed to get free port: %v", err)
+	}
+
 	// Create a slow mock server that takes longer than the timeout
 	slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Sleep for 200ms - longer than our 100ms timeout
@@ -1288,7 +1336,7 @@ func TestHTTPTransport_ContextCancellation(t *testing.T) {
 
 	config := &transport.Config{
 		ServerID:   0,
-		Address:    "localhost:8000",
+		Address:    fmt.Sprintf("localhost:%d", localPorts[0]),
 		RPCTimeout: 100, // 100ms timeout
 	}
 
