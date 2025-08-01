@@ -1,5 +1,13 @@
 # Development Guidelines for Raft Repository
 
+## ⚠️ ATTENTION CLAUDE: MUST READ FIRST ⚠️
+
+**BEFORE MAKING ANY CHANGES**:
+1. Read the "🚨 MANDATORY Commands to Run" section below
+2. Run those commands when making changes
+3. Run them again BEFORE committing
+4. Check for any test failures or compilation errors
+
 This document outlines the coding standards, patterns, and conventions used in this Raft implementation to ensure consistency and maintainability.
 
 ## Code Style Guidelines
@@ -353,25 +361,27 @@ go test ./integration/... -v
 4. **Thread Safety**: All public methods must be thread-safe
 5. **Error Context**: Always provide context in error messages
 
-## Commands to Run
+## 🚨 MANDATORY Commands to Run
 
-When making changes:
+**IMPORTANT**: Claude MUST run these commands when making changes and BEFORE committing:
 ```bash
-# IMPORTANT: Always ensure code compiles before committing
+# 1. COMPILE CHECK (MANDATORY - Never skip!)
 go build -o /dev/null ./...
 
-# Format code
+# 2. FORMAT CODE (MANDATORY)
 go fmt ./...
 
-# Run tests
+# 3. RUN TESTS WITH RACE DETECTOR (MANDATORY)
 go test -race ./...
 
-# Check for common issues
+# 4. CHECK FOR COMMON ISSUES (MANDATORY)
 go vet ./...
 
-# Run linter if available
+# 5. RUN LINTER (MANDATORY if available)
 golangci-lint run ./...
 ```
+
+**BEFORE COMMITTING**: Re-run all the above commands to ensure nothing is broken!
 
 ### Compilation Checks
 
