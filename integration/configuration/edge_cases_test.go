@@ -101,7 +101,7 @@ func TestConfigChangeRollback(t *testing.T) {
 		ElectionTimeoutMax: 300 * time.Millisecond,
 		HeartbeatInterval:  50 * time.Millisecond,
 	}
-	
+
 	// Create transport based on cluster type
 	var transport raft.Transport
 	switch reg := cluster.Registry.(type) {
@@ -112,12 +112,12 @@ func TestConfigChangeRollback(t *testing.T) {
 	default:
 		t.Fatalf("Unknown registry type: %T", cluster.Registry)
 	}
-	
+
 	newNode, err := raft.NewNode(config, transport, nil, raft.NewMockStateMachine())
 	if err != nil {
 		t.Fatalf("Failed to create new node: %v", err)
 	}
-	
+
 	// Register but don't start the node yet
 	switch reg := cluster.Registry.(type) {
 	case *helpers.PartitionRegistry:
@@ -125,7 +125,7 @@ func TestConfigChangeRollback(t *testing.T) {
 	case *helpers.NodeRegistry:
 		reg.Register(newNodeID, newNode.(raft.RPCHandler))
 	}
-	
+
 	// Partition the leader first
 	if err := cluster.PartitionNode(leaderID); err != nil {
 		t.Fatalf("Failed to partition leader: %v", err)
@@ -141,7 +141,7 @@ func TestConfigChangeRollback(t *testing.T) {
 
 	// Wait for new leader in majority
 	time.Sleep(1 * time.Second)
-	
+
 	var newLeaderID int = -1
 	for i := 0; i < 5; i++ {
 		if i == leaderID {
@@ -161,12 +161,12 @@ func TestConfigChangeRollback(t *testing.T) {
 	// Check configuration from new leader's perspective
 	newConfig := cluster.Nodes[newLeaderID].GetConfiguration()
 	t.Logf("New leader %d sees %d servers in configuration", newLeaderID, len(newConfig.Servers))
-	
+
 	// The partitioned leader's configuration change should not be visible to the new leader
 	if len(newConfig.Servers) != initialServerCount {
 		// This might happen if the configuration change was replicated before partition
 		t.Logf("Configuration has %d servers (initial: %d)", len(newConfig.Servers), initialServerCount)
-		
+
 		// Check if server 5 is in the configuration
 		hasServer5 := false
 		for _, srv := range newConfig.Servers {
@@ -175,7 +175,7 @@ func TestConfigChangeRollback(t *testing.T) {
 				break
 			}
 		}
-		
+
 		if hasServer5 {
 			t.Log("Server 5 was added to configuration (change may have replicated before partition)")
 		}
@@ -223,12 +223,12 @@ func TestConfigChangeWithNodeFailures(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RemoveServer failed: %v", err)
 	}
-	
+
 	t.Log("✓ RemoveServer command accepted")
-	
+
 	// Wait for configuration change to be committed
 	time.Sleep(500 * time.Millisecond)
-	
+
 	// Submit a dummy command to ensure configuration change is committed
 	_, _, isLeader := cluster.Nodes[leaderID].Submit("dummy-after-remove")
 	if !isLeader {
@@ -240,10 +240,10 @@ func TestConfigChangeWithNodeFailures(t *testing.T) {
 			}
 		}
 	}
-	
+
 	// Wait a bit more for propagation
 	time.Sleep(500 * time.Millisecond)
-	
+
 	// Verify configuration
 	config := cluster.Nodes[leaderID].GetConfiguration()
 	found := false
@@ -253,7 +253,7 @@ func TestConfigChangeWithNodeFailures(t *testing.T) {
 			break
 		}
 	}
-	
+
 	if found {
 		t.Errorf("Removed server %d still in configuration", followerToStop)
 		t.Logf("Current configuration:")
@@ -272,10 +272,10 @@ func TestConfigChangeWithNodeFailures(t *testing.T) {
 			t.Logf("AddServer for stopped node failed: %v (expected if configuration change is in progress)", err)
 		} else {
 			t.Log("AddServer for stopped node succeeded")
-			
+
 			// This might succeed but the node won't catch up until restarted
 			time.Sleep(500 * time.Millisecond)
-			
+
 			// Restart the node
 			ctx := context.Background()
 			config := &raft.Config{
@@ -286,7 +286,7 @@ func TestConfigChangeWithNodeFailures(t *testing.T) {
 				HeartbeatInterval:  50 * time.Millisecond,
 				Logger:             raft.NewTestLogger(t),
 			}
-			
+
 			transport := helpers.NewMultiNodeTransport(followerToStop, cluster.Registry.(*helpers.NodeRegistry))
 			node, err := raft.NewNode(config, transport, nil, raft.NewMockStateMachine())
 			if err == nil {
@@ -294,10 +294,10 @@ func TestConfigChangeWithNodeFailures(t *testing.T) {
 				cluster.Registry.(*helpers.NodeRegistry).Register(followerToStop, node.(raft.RPCHandler))
 				node.Start(ctx)
 				t.Logf("Restarted node %d", followerToStop)
-				
+
 				// Wait for node to catch up
 				time.Sleep(1 * time.Second)
-				
+
 				// Verify final configuration
 				finalConfig := cluster.Nodes[leaderID].GetConfiguration()
 				t.Logf("Final configuration has %d servers:", len(finalConfig.Servers))
@@ -332,10 +332,10 @@ func TestJointConsensusEdgeCases(t *testing.T) {
 			t.Logf("RemoveServer(self) failed: %v", err)
 		} else {
 			t.Log("Leader initiated its own removal")
-			
+
 			// Wait to see what happens
 			time.Sleep(2 * time.Second)
-			
+
 			// Check if a new leader was elected
 			newLeaderFound := false
 			for i, node := range cluster.Nodes {
@@ -349,7 +349,7 @@ func TestJointConsensusEdgeCases(t *testing.T) {
 					break
 				}
 			}
-			
+
 			if !newLeaderFound {
 				t.Error("No new leader elected after leader removed itself")
 			}
@@ -368,7 +368,7 @@ func TestMaximumClusterSize(t *testing.T) {
 	// Start with 3 nodes
 	initialSize := 3
 	maxSize := 9 // Typical max for Raft
-	
+
 	cluster := helpers.NewTestCluster(t, initialSize)
 
 	// Start cluster
@@ -385,10 +385,10 @@ func TestMaximumClusterSize(t *testing.T) {
 	// Try to grow cluster to maximum size
 	ctx := context.Background()
 	currentSize := initialSize
-	
+
 	for currentSize < maxSize {
 		newNodeID := currentSize
-		
+
 		// Create new node
 		config := &raft.Config{
 			ID:                 newNodeID,
@@ -398,19 +398,19 @@ func TestMaximumClusterSize(t *testing.T) {
 			HeartbeatInterval:  50 * time.Millisecond,
 			Logger:             raft.NewTestLogger(t),
 		}
-		
+
 		transport := helpers.NewMultiNodeTransport(newNodeID, cluster.Registry.(*helpers.NodeRegistry))
 		node, err := raft.NewNode(config, transport, nil, raft.NewMockStateMachine())
 		if err != nil {
 			t.Fatalf("Failed to create node %d: %v", newNodeID, err)
 		}
-		
+
 		// Register and start node
 		cluster.Registry.(*helpers.NodeRegistry).Register(newNodeID, node.(raft.RPCHandler))
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", newNodeID, err)
 		}
-		
+
 		// Add to cluster configuration
 		err = cluster.Nodes[leaderID].AddServer(newNodeID, fmt.Sprintf("server-%d", newNodeID), true)
 		if err != nil {
@@ -418,19 +418,19 @@ func TestMaximumClusterSize(t *testing.T) {
 			node.Stop()
 			break
 		}
-		
+
 		// Add to our tracking
 		cluster.Nodes = append(cluster.Nodes, node)
 		currentSize++
-		
+
 		t.Logf("Successfully grew cluster to size %d", currentSize)
-		
+
 		// Give time for configuration to propagate
 		time.Sleep(500 * time.Millisecond)
 	}
-	
+
 	t.Logf("✓ Cluster reached size %d", currentSize)
-	
+
 	// Verify cluster is still functional at this size
 	idx, _, isLeader := cluster.Nodes[leaderID].Submit("test-at-max-size")
 	if !isLeader {
@@ -462,16 +462,16 @@ func TestConfigChangeTimeout(t *testing.T) {
 
 	// Create a new node that will be very slow to respond
 	slowNodeID := 3
-	
+
 	// Don't actually start the node - just try to add it
 	err = cluster.Nodes[leaderID].AddServer(slowNodeID, "slow-server", true)
-	
+
 	// This should eventually timeout or fail
 	if err != nil {
 		t.Logf("✓ AddServer failed for non-existent node: %v", err)
 	} else {
 		t.Log("AddServer succeeded for non-existent node")
-		
+
 		// Check if configuration actually includes the node
 		config := cluster.Nodes[leaderID].GetConfiguration()
 		found := false
@@ -481,7 +481,7 @@ func TestConfigChangeTimeout(t *testing.T) {
 				break
 			}
 		}
-		
+
 		if found {
 			t.Error("Non-existent node added to configuration")
 		}

@@ -79,7 +79,7 @@ func (p *filePersistence) LoadState() (*raft.PersistentState, error) {
 func (p *filePersistence) SaveSnapshot(snapshot *raft.Snapshot) error {
 	persistenceStore.mu.Lock()
 	defer persistenceStore.mu.Unlock()
-	
+
 	if snapshot != nil {
 		// Deep copy snapshot
 		snapCopy := &raft.Snapshot{
@@ -96,7 +96,7 @@ func (p *filePersistence) SaveSnapshot(snapshot *raft.Snapshot) error {
 func (p *filePersistence) LoadSnapshot() (*raft.Snapshot, error) {
 	persistenceStore.mu.Lock()
 	defer persistenceStore.mu.Unlock()
-	
+
 	if snap, ok := persistenceStore.snaps[p.dataDir]; ok {
 		// Return a deep copy
 		snapCopy := &raft.Snapshot{
@@ -113,7 +113,7 @@ func (p *filePersistence) LoadSnapshot() (*raft.Snapshot, error) {
 func (p *filePersistence) HasSnapshot() bool {
 	persistenceStore.mu.Lock()
 	defer persistenceStore.mu.Unlock()
-	
+
 	_, ok := persistenceStore.snaps[p.dataDir]
 	return ok
 }
@@ -149,7 +149,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 		}
 
 		transport := helpers.NewMultiNodeTransport(i, registry)
-		
+
 		// Create persistence for each node
 		nodeDir := filepath.Join(tempDir, fmt.Sprintf("node-%d", i))
 		persistence := newFilePersistence(nodeDir)
@@ -188,7 +188,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 		if !isLeader {
 			t.Fatalf("Failed to submit command: not leader")
 		}
-		
+
 		helpers.WaitForCommitIndex(t, nodes, idx, time.Second)
 		committedCommands = append(committedCommands, cmd)
 	}
@@ -217,7 +217,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 		}
 
 		transport := helpers.NewMultiNodeTransport(i, newRegistry)
-		
+
 		// Use same persistence directory
 		nodeDir := filepath.Join(tempDir, fmt.Sprintf("node-%d", i))
 		persistence := newFilePersistence(nodeDir)
@@ -260,7 +260,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 	for i, node := range newNodes {
 		commitIndex := node.GetCommitIndex()
 		t.Logf("Node %d commit index after restart: %d", i, commitIndex)
-		
+
 		// Check log entries
 		for j, cmd := range committedCommands[:commitIndexBefore] {
 			entry := node.GetLogEntry(j + 1)
@@ -302,44 +302,44 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 
 	// Scenario 1: Leader crashes after accepting but before committing
 	t.Log("Scenario 1: Leader crash before commit")
-	
+
 	// Create cluster
 	cluster := createPersistentCluster(t, tempDir, 5)
-	
+
 	// Start nodes
 	ctx := context.Background()
 	startCluster(t, ctx, cluster)
-	
+
 	// Find leader
 	leaderID := helpers.WaitForLeader(t, cluster.nodes, 2*time.Second)
-	
+
 	// Submit command but crash leader immediately
 	cluster.nodes[leaderID].Submit("uncommitted-cmd")
 	cluster.nodes[leaderID].Stop()
 	t.Logf("Crashed leader %d after accepting command", leaderID)
-	
+
 	// Wait for new leader
 	time.Sleep(1 * time.Second)
-	
+
 	// Restart crashed node
 	restartNode(t, ctx, cluster, leaderID)
-	
+
 	// Verify cluster consistency
 	time.Sleep(2 * time.Second)
 	verifyClusterConsistency(t, cluster.nodes)
-	
+
 	// Stop cluster
 	stopCluster(cluster)
 
 	// Scenario 2: Multiple followers crash during replication
 	t.Log("\nScenario 2: Multiple followers crash during replication")
-	
+
 	// Create new cluster
 	cluster2 := createPersistentCluster(t, tempDir+"2", 5)
 	startCluster(t, ctx, cluster2)
-	
+
 	leaderID = helpers.WaitForLeader(t, cluster2.nodes, 2*time.Second)
-	
+
 	// Start submitting commands
 	go func() {
 		for i := 0; i < 10; i++ {
@@ -347,7 +347,7 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 			time.Sleep(50 * time.Millisecond)
 		}
 	}()
-	
+
 	// Crash followers during replication
 	time.Sleep(100 * time.Millisecond)
 	for i := 0; i < 5; i++ {
@@ -356,7 +356,7 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 			t.Logf("Crashed follower %d", i)
 		}
 	}
-	
+
 	// Wait and restart
 	time.Sleep(500 * time.Millisecond)
 	for i := 0; i < 5; i++ {
@@ -364,26 +364,26 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 			restartNode(t, ctx, cluster2, i)
 		}
 	}
-	
+
 	// Verify recovery
 	time.Sleep(2 * time.Second)
 	verifyClusterConsistency(t, cluster2.nodes)
-	
+
 	stopCluster(cluster2)
 
 	// Scenario 3: Rolling restarts
 	t.Log("\nScenario 3: Rolling restarts")
-	
+
 	cluster3 := createPersistentCluster(t, tempDir+"3", 5)
 	startCluster(t, ctx, cluster3)
-	
+
 	// Submit initial data
 	leaderID = helpers.WaitForLeader(t, cluster3.nodes, 2*time.Second)
 	for i := 0; i < 5; i++ {
 		idx, _, _ := cluster3.nodes[leaderID].Submit(fmt.Sprintf("rolling-%d", i))
 		helpers.WaitForCommitIndex(t, cluster3.nodes, idx, time.Second)
 	}
-	
+
 	// Rolling restart each node
 	for i := 0; i < 5; i++ {
 		t.Logf("Rolling restart of node %d", i)
@@ -392,17 +392,17 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 		restartNode(t, ctx, cluster3, i)
 		time.Sleep(500 * time.Millisecond)
 	}
-	
+
 	// Verify cluster still functional
 	newLeaderID := helpers.WaitForLeader(t, cluster3.nodes, 2*time.Second)
 	idx, _, isLeader := cluster3.nodes[newLeaderID].Submit("after-rolling-restart")
 	if !isLeader {
 		t.Fatalf("Failed to submit after rolling restart: not leader")
 	}
-	
+
 	helpers.WaitForCommitIndex(t, cluster3.nodes, idx, 2*time.Second)
 	t.Log("✓ Cluster survived rolling restarts")
-	
+
 	stopCluster(cluster3)
 }
 
@@ -423,59 +423,59 @@ func TestPersistenceWithSnapshots(t *testing.T) {
 
 	// Create cluster with snapshot support
 	cluster := createPersistentCluster(t, tempDir, 3)
-	
+
 	ctx := context.Background()
 	startCluster(t, ctx, cluster)
-	
+
 	// Find leader and submit many commands
 	leaderID := helpers.WaitForLeader(t, cluster.nodes, 2*time.Second)
-	
+
 	// Submit enough commands to trigger snapshot
 	for i := 0; i < 100; i++ {
 		idx, _, isLeader := cluster.nodes[leaderID].Submit(fmt.Sprintf("snap-cmd-%d", i))
 		if !isLeader {
 			continue
 		}
-		
+
 		if i%10 == 0 {
 			helpers.WaitForCommitIndex(t, cluster.nodes, idx, time.Second)
 		}
 	}
-	
+
 	// Force snapshot creation (in real implementation)
 	t.Log("Assuming snapshots were created...")
-	
+
 	// Stop all nodes
 	stopCluster(cluster)
-	
+
 	// Restart cluster
 	newCluster := createPersistentCluster(t, tempDir, 3)
 	startCluster(t, ctx, newCluster)
-	
+
 	// Verify nodes recovered from snapshot + log
 	time.Sleep(2 * time.Second)
-	
+
 	// Check that nodes have data
 	for i, node := range newCluster.nodes {
 		commitIndex := node.GetCommitIndex()
 		t.Logf("Node %d recovered with commit index: %d", i, commitIndex)
-		
+
 		// Should have recovered significant progress
 		if commitIndex < 50 {
 			t.Errorf("Node %d didn't recover enough state: commit index %d", i, commitIndex)
 		}
 	}
-	
+
 	// Verify cluster is functional
 	newLeaderID := helpers.WaitForLeader(t, newCluster.nodes, 2*time.Second)
 	idx, _, isLeader := newCluster.nodes[newLeaderID].Submit("after-snapshot-recovery")
 	if !isLeader {
 		t.Fatalf("Failed to submit after snapshot recovery: not leader")
 	}
-	
+
 	helpers.WaitForCommitIndex(t, newCluster.nodes, idx, 2*time.Second)
 	t.Log("✓ Cluster recovered from snapshots and is functional")
-	
+
 	stopCluster(newCluster)
 }
 
@@ -505,7 +505,7 @@ func createPersistentCluster(t *testing.T, tempDir string, size int) *persistent
 
 		transport := helpers.NewMultiNodeTransport(i, registry)
 		transports[i] = transport
-		
+
 		// Create persistence for each node
 		nodeDir := filepath.Join(tempDir, fmt.Sprintf("node-%d", i))
 		persistence := newFilePersistence(nodeDir)
@@ -554,7 +554,7 @@ func restartNode(t *testing.T, ctx context.Context, cluster *persistentCluster, 
 	}
 
 	transport := helpers.NewMultiNodeTransport(nodeID, cluster.registry)
-	
+
 	nodeDir := filepath.Join(cluster.tempDir, fmt.Sprintf("node-%d", nodeID))
 	persistence := newFilePersistence(nodeDir)
 

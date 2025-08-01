@@ -11,10 +11,10 @@ import (
 
 // TimingConfig holds timing parameters for tests
 type TimingConfig struct {
-	ElectionTimeout time.Duration
+	ElectionTimeout   time.Duration
 	HeartbeatInterval time.Duration
-	RequestTimeout time.Duration
-	WaitInterval time.Duration
+	RequestTimeout    time.Duration
+	WaitInterval      time.Duration
 }
 
 // DefaultTimingConfig returns default timing configuration for tests
@@ -80,7 +80,7 @@ func WaitForConditionWithProgress(t *testing.T, condition func() (bool, string),
 		case <-ctx.Done():
 			elapsed := time.Since(startTime)
 			_, finalProgress := condition()
-			t.Logf("Timeout waiting for %s after %v. Final status: %s (condition met: false)", 
+			t.Logf("Timeout waiting for %s after %v. Final status: %s (condition met: false)",
 				description, elapsed, finalProgress)
 			t.FailNow()
 			return
@@ -127,7 +127,7 @@ func WaitForCommitIndex(t *testing.T, nodes []raft.Node, targetIndex int, timeou
 		minIndex := int(^uint(0) >> 1) // MaxInt
 		maxIndex := 0
 		indices := make([]int, len(nodes))
-		
+
 		for i, node := range nodes {
 			index := node.GetCommitIndex()
 			indices[i] = index
@@ -138,11 +138,11 @@ func WaitForCommitIndex(t *testing.T, nodes []raft.Node, targetIndex int, timeou
 				maxIndex = index
 			}
 		}
-		
+
 		allReached := minIndex >= targetIndex
-		progress := fmt.Sprintf("commit indices: %v (min: %d, max: %d, target: %d)", 
+		progress := fmt.Sprintf("commit indices: %v (min: %d, max: %d, target: %d)",
 			indices, minIndex, maxIndex, targetIndex)
-		
+
 		return allReached, progress
 	}, timeout, "commit index")
 }
@@ -154,16 +154,16 @@ func WaitForServers(t *testing.T, nodes []raft.Node, expectedServers []int, time
 		for i, node := range nodes {
 			config := node.GetConfiguration()
 			if len(config.Servers) != len(expectedServers) {
-				return false, fmt.Sprintf("node %d has %d servers, expected %d", 
+				return false, fmt.Sprintf("node %d has %d servers, expected %d",
 					i, len(config.Servers), len(expectedServers))
 			}
-			
+
 			// Check if all expected servers are present
 			serverMap := make(map[int]bool)
 			for _, server := range config.Servers {
 				serverMap[server.ID] = true
 			}
-			
+
 			for _, expectedID := range expectedServers {
 				if !serverMap[expectedID] {
 					return false, fmt.Sprintf("node %d missing server %d", i, expectedID)

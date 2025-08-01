@@ -19,7 +19,7 @@ func TestHighLoadSingleClient(t *testing.T) {
 
 	// Create 5-node cluster
 	cluster := helpers.NewTestCluster(t, 5)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -43,7 +43,7 @@ func TestHighLoadSingleClient(t *testing.T) {
 		if err == nil {
 			successCount++
 		}
-		
+
 		// No delay - maximum throughput
 	}
 
@@ -55,7 +55,7 @@ func TestHighLoadSingleClient(t *testing.T) {
 
 	// Verify cluster is still healthy
 	cluster.WaitForStableCluster(2 * time.Second)
-	
+
 	// Wait for all commands to be committed
 	if successCount > 0 {
 		lastIndex := successCount
@@ -71,7 +71,7 @@ func TestHighLoadMultipleClients(t *testing.T) {
 
 	// Create 5-node cluster
 	cluster := helpers.NewTestCluster(t, 5)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -97,7 +97,7 @@ func TestHighLoadMultipleClients(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			
+
 			for i := 0; i < commandsPerClient; i++ {
 				cmd := fmt.Sprintf("client-%d-cmd-%d", id, i)
 				_, _, err := cluster.SubmitCommand(cmd)
@@ -118,9 +118,9 @@ func TestHighLoadMultipleClients(t *testing.T) {
 	finalErrors := atomic.LoadInt64(&errorCount)
 	throughput := float64(finalSuccess) / duration.Seconds()
 
-	t.Logf("Multiple clients: %d clients × %d commands = %d total", 
+	t.Logf("Multiple clients: %d clients × %d commands = %d total",
 		clientCount, commandsPerClient, totalCommands)
-	t.Logf("Results: %d successful, %d errors in %v", 
+	t.Logf("Results: %d successful, %d errors in %v",
 		finalSuccess, finalErrors, duration)
 	t.Logf("Throughput: %.2f commands/second", throughput)
 
@@ -136,7 +136,7 @@ func TestSustainedLoad(t *testing.T) {
 
 	// Create 3-node cluster
 	cluster := helpers.NewTestCluster(t, 3)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -154,7 +154,7 @@ func TestSustainedLoad(t *testing.T) {
 	done := make(chan struct{})
 	successCount := int64(0)
 	errorCount := int64(0)
-	
+
 	// Track throughput over time
 	throughputSamples := make([]float64, 0)
 	sampleMutex := sync.Mutex{}
@@ -164,7 +164,7 @@ func TestSustainedLoad(t *testing.T) {
 		commandNum := 0
 		lastSampleTime := time.Now()
 		lastSampleCount := int64(0)
-		
+
 		for {
 			select {
 			case <-done:
@@ -178,20 +178,20 @@ func TestSustainedLoad(t *testing.T) {
 					atomic.AddInt64(&errorCount, 1)
 				}
 				commandNum++
-				
+
 				// Sample throughput every second
 				if time.Since(lastSampleTime) >= time.Second {
 					currentCount := atomic.LoadInt64(&successCount)
 					throughput := float64(currentCount-lastSampleCount) / time.Since(lastSampleTime).Seconds()
-					
+
 					sampleMutex.Lock()
 					throughputSamples = append(throughputSamples, throughput)
 					sampleMutex.Unlock()
-					
+
 					lastSampleTime = time.Now()
 					lastSampleCount = currentCount
 				}
-				
+
 				// Small delay to avoid overwhelming the system
 				time.Sleep(time.Millisecond)
 			}
@@ -201,7 +201,7 @@ func TestSustainedLoad(t *testing.T) {
 	// Run for specified duration
 	time.Sleep(duration)
 	close(done)
-	
+
 	// Wait a bit for in-flight requests
 	time.Sleep(time.Second)
 
@@ -209,11 +209,11 @@ func TestSustainedLoad(t *testing.T) {
 	finalSuccess := atomic.LoadInt64(&successCount)
 	finalErrors := atomic.LoadInt64(&errorCount)
 	avgThroughput := float64(finalSuccess) / duration.Seconds()
-	
+
 	sampleMutex.Lock()
 	samples := throughputSamples
 	sampleMutex.Unlock()
-	
+
 	// Calculate throughput variance
 	var minThroughput, maxThroughput float64
 	if len(samples) > 0 {
@@ -246,7 +246,7 @@ func TestLoadWithNodeFailures(t *testing.T) {
 
 	// Create 5-node cluster
 	cluster := helpers.NewTestCluster(t, 5)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -263,7 +263,7 @@ func TestLoadWithNodeFailures(t *testing.T) {
 	done := make(chan struct{})
 	successCount := int64(0)
 	errorCount := int64(0)
-	
+
 	go func() {
 		commandNum := 0
 		for {
@@ -286,32 +286,32 @@ func TestLoadWithNodeFailures(t *testing.T) {
 
 	// Let it run for a bit
 	time.Sleep(2 * time.Second)
-	
+
 	// Stop a follower
 	followerID := (initialLeaderID + 1) % 5
 	t.Logf("Stopping follower node %d", followerID)
 	cluster.Nodes[followerID].Stop()
-	
+
 	// Continue load for a bit
 	time.Sleep(2 * time.Second)
-	
+
 	// Stop another follower
 	followerID2 := (initialLeaderID + 2) % 5
 	t.Logf("Stopping follower node %d", followerID2)
 	cluster.Nodes[followerID2].Stop()
-	
+
 	// Continue load - should still work with 3 nodes
 	time.Sleep(2 * time.Second)
-	
+
 	// Stop the load
 	close(done)
 	time.Sleep(500 * time.Millisecond)
 
 	finalSuccess := atomic.LoadInt64(&successCount)
 	finalErrors := atomic.LoadInt64(&errorCount)
-	
+
 	t.Logf("Load test with failures: %d successful, %d errors", finalSuccess, finalErrors)
-	
+
 	// Verify remaining nodes still have a leader
 	activeNodes := make([]raft.Node, 0)
 	for i, node := range cluster.Nodes {
@@ -319,7 +319,7 @@ func TestLoadWithNodeFailures(t *testing.T) {
 			activeNodes = append(activeNodes, node)
 		}
 	}
-	
+
 	helpers.WaitForLeader(t, activeNodes, 2*time.Second)
 	t.Log("Cluster maintained availability despite failures")
 }
@@ -332,7 +332,7 @@ func TestLoadWithNetworkPartitions(t *testing.T) {
 
 	// Create 5-node cluster with partitionable transport
 	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport())
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -350,7 +350,7 @@ func TestLoadWithNetworkPartitions(t *testing.T) {
 	successCount := int64(0)
 	errorCount := int64(0)
 	partitionErrors := int64(0)
-	
+
 	go func() {
 		commandNum := 0
 		for {
@@ -377,24 +377,24 @@ func TestLoadWithNetworkPartitions(t *testing.T) {
 	// Let it run normally for a bit
 	time.Sleep(2 * time.Second)
 	baselineSuccess := atomic.LoadInt64(&successCount)
-	
+
 	// Create a partition (3 nodes vs 2 nodes)
 	t.Log("Creating network partition")
 	cluster.CreatePartition([]int{0, 1, 2}, []int{3, 4})
-	
+
 	// Run under partition
 	time.Sleep(3 * time.Second)
 	partitionSuccess := atomic.LoadInt64(&successCount) - baselineSuccess
-	
+
 	// Heal partition
 	t.Log("Healing network partition")
 	cluster.HealPartition()
-	
+
 	// Run after healing
 	beforeHeal := atomic.LoadInt64(&successCount)
 	time.Sleep(2 * time.Second)
 	healedSuccess := atomic.LoadInt64(&successCount) - beforeHeal
-	
+
 	// Stop load
 	close(done)
 	time.Sleep(500 * time.Millisecond)
@@ -402,14 +402,14 @@ func TestLoadWithNetworkPartitions(t *testing.T) {
 	finalSuccess := atomic.LoadInt64(&successCount)
 	finalErrors := atomic.LoadInt64(&errorCount)
 	finalPartitionErrors := atomic.LoadInt64(&partitionErrors)
-	
+
 	t.Logf("Load test with network partitions:")
-	t.Logf("  Total: %d successful, %d errors (%d partition-related)", 
+	t.Logf("  Total: %d successful, %d errors (%d partition-related)",
 		finalSuccess, finalErrors, finalPartitionErrors)
 	t.Logf("  Before partition: %d commands", baselineSuccess)
 	t.Logf("  During partition: %d commands", partitionSuccess)
 	t.Logf("  After healing: %d commands", healedSuccess)
-	
+
 	// Verify cluster recovered
 	cluster.WaitForStableCluster(2 * time.Second)
 }

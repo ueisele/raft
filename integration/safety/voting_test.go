@@ -89,7 +89,7 @@ func testNewVotingServerSafety(t *testing.T) {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
 	}
-	
+
 	// Ensure cleanup
 	defer func() {
 		for _, node := range nodes {
@@ -151,7 +151,7 @@ func testNewVotingServerSafety(t *testing.T) {
 	// - Node 0: isolated, might still think it's leader
 	// - Node 1 or 2: new leader
 	// - A newly added server could disrupt this if it votes immediately
-	
+
 	// This test demonstrates the concept rather than testing implementation
 	t.Log("✓ Demonstration complete: Immediate voting can disrupt cluster safety")
 }
@@ -250,7 +250,7 @@ func testImmediateVotingDanger(t *testing.T) {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
 	}
-	
+
 	// Ensure cleanup
 	defer func() {
 		for _, node := range nodes {

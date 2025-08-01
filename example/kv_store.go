@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ueisele/raft"
+	"github.com/ueisele/raft/persistence"
 	jsonPersistence "github.com/ueisele/raft/persistence/json"
 	"github.com/ueisele/raft/transport"
 	httpTransport "github.com/ueisele/raft/transport/http"
@@ -196,7 +197,7 @@ func main() {
 
 	// Create peer discovery based on mode
 	var discovery transport.PeerDiscovery
-	
+
 	if *cloudMode != "" {
 		// Cloud-based discovery
 		log.Printf("Using cloud discovery: provider=%s, service=%s", *cloudMode, *serviceName)
@@ -218,24 +219,24 @@ func main() {
 		Address:    fmt.Sprintf("localhost:%d", *httpPort),
 		RPCTimeout: 5000, // 5 seconds
 	}
-	
+
 	// You can also use the builder pattern:
 	// httpTransport, err := httpTransport.NewBuilder(*nodeID, transportConfig.Address).
 	//     WithDiscovery(discovery).
 	//     WithTimeout(5 * time.Second).
 	//     Build()
-	
+
 	httpTrans, err := httpTransport.NewHTTPTransport(transportConfig, discovery)
 	if err != nil {
 		log.Fatalf("Failed to create transport: %v", err)
 	}
 
 	// Create persistence
-	persistenceConfig := &raft.PersistenceConfig{
+	persistenceConfig := &persistence.Config{
 		DataDir:  *dataDir,
 		ServerID: *nodeID,
 	}
-	persistence, err := jsonPersistence.NewJSONPersistence(persistenceConfig)
+	jsonPersist, err := jsonPersistence.NewJSONPersistence(persistenceConfig)
 	if err != nil {
 		log.Fatalf("Failed to create persistence: %v", err)
 	}
@@ -252,13 +253,12 @@ func main() {
 	}
 
 	// Create Raft node
-	node, err := raft.NewNode(config, httpTrans, persistence, kvStore)
+	node, err := raft.NewNode(config, httpTrans, jsonPersist, kvStore)
 	if err != nil {
 		log.Fatalf("Failed to create Raft node: %v", err)
 	}
 
-	// Set RPC handler for the transport
-	httpTrans.SetRPCHandler(node)
+	// Transport RPC handler is already set in raft.NewNode
 
 	// Start transport
 	if err := httpTrans.Start(); err != nil {
@@ -274,7 +274,7 @@ func main() {
 	log.Printf("Raft node %d started on %s", *nodeID, httpTrans.GetAddress())
 
 	// Setup HTTP API for client interaction
-	setupHTTPAPI(node, kvStore, *httpPort+1000)
+	setupHTTPAPI(node, kvStore, *httpPort+1000, *nodeID)
 
 	// Example: Dynamic peer updates (useful for cloud environments)
 	if *cloudMode != "" {
@@ -295,7 +295,7 @@ func main() {
 	// Example usage after cluster is ready
 	go func() {
 		time.Sleep(5 * time.Second)
-		
+
 		// Only submit commands if we're the leader
 		if node.IsLeader() {
 			// Set a value
@@ -304,7 +304,7 @@ func main() {
 				"key":   "example",
 				"value": "Hello from Raft!",
 			}
-			
+
 			index, term, isLeader := node.Submit(setCmd)
 			if isLeader {
 				log.Printf("Example command submitted: index=%d, term=%d", index, term)
@@ -323,7 +323,7 @@ func main() {
 }
 
 // setupHTTPAPI creates a simple HTTP API for client interaction
-func setupHTTPAPI(node raft.Node, kvStore *KVStore, port int) {
+func setupHTTPAPI(node raft.Node, kvStore *KVStore, port int, nodeID int) {
 	mux := http.NewServeMux()
 
 	// GET /kv/{key} - Get a value
@@ -381,14 +381,25 @@ func setupHTTPAPI(node raft.Node, kvStore *KVStore, port int) {
 	// GET /status - Get node status
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		term, isLeader := node.GetState()
+
+		// Get configuration details
+		config := node.GetConfiguration()
+		var servers []map[string]interface{}
+		for _, server := range config.Servers {
+			servers = append(servers, map[string]interface{}{
+				"id":     server.ID,
+				"voting": server.Voting,
+			})
+		}
+
 		status := map[string]interface{}{
-			"nodeId":       node.GetConfiguration().ID,
+			"nodeId":       nodeID,
 			"term":         term,
 			"isLeader":     isLeader,
 			"leaderID":     node.GetLeader(),
 			"commitIndex":  node.GetCommitIndex(),
 			"lastLogIndex": node.GetLogLength() - 1,
-			"peers":        node.GetConfiguration().Peers,
+			"servers":      servers,
 		}
 		json.NewEncoder(w).Encode(status)
 	})

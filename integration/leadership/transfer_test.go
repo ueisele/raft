@@ -43,7 +43,7 @@ func TestLeadershipTransfer(t *testing.T) {
 
 	// Choose target for leadership transfer
 	targetNode := (initialLeader + 1) % 3
-	t.Logf("Attempting to transfer leadership from node %d to node %d", 
+	t.Logf("Attempting to transfer leadership from node %d to node %d",
 		initialLeader, targetNode)
 
 	// In a real implementation, this would be done through a TransferLeadership RPC
@@ -81,7 +81,7 @@ func TestLeadershipTransfer(t *testing.T) {
 
 	// Verify new leader can handle requests
 	activeNodes := []raft.Node{cluster.Nodes[(initialLeader+1)%3], cluster.Nodes[(initialLeader+2)%3]}
-	
+
 	idx, _, isLeader := cluster.Nodes[newLeader].Submit("after-transfer")
 	if !isLeader {
 		t.Fatalf("New leader failed to accept command: not leader")
@@ -132,7 +132,7 @@ func TestGracefulLeadershipHandoff(t *testing.T) {
 
 				cmd := fmt.Sprintf("continuous-cmd-%d", count)
 				_, _, err := cluster.SubmitCommand(cmd)
-				
+
 				mu.Lock()
 				if err != nil {
 					errorCount++
@@ -174,7 +174,7 @@ func TestGracefulLeadershipHandoff(t *testing.T) {
 	mu.Unlock()
 
 	t.Logf("Total commands: %d, errors: %d", finalCount, finalErrors)
-	
+
 	// Error rate should be low (some errors during transition are expected)
 	errorRate := float64(finalErrors) / float64(finalCount+finalErrors)
 	if errorRate > 0.2 {
@@ -231,7 +231,7 @@ func TestLeadershipTransferToSpecificNode(t *testing.T) {
 	// Choose the most up-to-date follower as target
 	targetNode := -1
 	highestIndex := 0
-	
+
 	for i, node := range cluster.Nodes {
 		if i == currentLeader {
 			continue
@@ -260,7 +260,7 @@ func TestLeadershipTransferToSpecificNode(t *testing.T) {
 
 	// Check if target became leader (not guaranteed without proper implementation)
 	targetTerm, targetIsLeader := cluster.Nodes[targetNode].GetState()
-	
+
 	if targetIsLeader {
 		t.Logf("✓ Target node %d became leader (term %d)", targetNode, targetTerm)
 	} else {
@@ -307,7 +307,7 @@ func TestLeadershipTransferDuringLoad(t *testing.T) {
 	}
 
 	results := make(chan Result, 1000)
-	
+
 	// Multiple client goroutines
 	var wg sync.WaitGroup
 	for client := 0; client < 5; client++ {
@@ -315,7 +315,7 @@ func TestLeadershipTransferDuringLoad(t *testing.T) {
 		go func(clientID int) {
 			defer wg.Done()
 			cmdIndex := 0
-			
+
 			for {
 				select {
 				case <-ctx.Done():
@@ -323,14 +323,14 @@ func TestLeadershipTransferDuringLoad(t *testing.T) {
 				default:
 					cmd := fmt.Sprintf("client-%d-cmd-%d", clientID, cmdIndex)
 					idx, _, err := cluster.SubmitCommand(cmd)
-					
+
 					results <- Result{
 						success: err == nil,
 						index:   idx,
 						err:     err,
 						time:    time.Now(),
 					}
-					
+
 					cmdIndex++
 					time.Sleep(10 * time.Millisecond)
 				}
@@ -344,7 +344,7 @@ func TestLeadershipTransferDuringLoad(t *testing.T) {
 	// Initiate leadership transfer
 	transferTime := time.Now()
 	t.Logf("Initiating leadership transfer at %v", transferTime)
-	
+
 	cluster.Nodes[initialLeader].Stop()
 
 	// Continue load during transfer
@@ -422,7 +422,7 @@ func TestPreventedLeadershipTransfer(t *testing.T) {
 
 	// Scenario 1: Transfer should not happen if target is not up-to-date
 	// (In a real implementation)
-	
+
 	// Submit many commands
 	for i := 0; i < 20; i++ {
 		cluster.SubmitCommand(fmt.Sprintf("cmd-%d", i))
@@ -433,11 +433,11 @@ func TestPreventedLeadershipTransfer(t *testing.T) {
 
 	// Get commit indices
 	leaderCommit := cluster.Nodes[leaderID].GetCommitIndex()
-	
+
 	// Find most behind follower
 	mostBehindNode := -1
 	lowestCommit := leaderCommit
-	
+
 	for i, node := range cluster.Nodes {
 		if i == leaderID {
 			continue
@@ -468,10 +468,10 @@ func TestPreventedLeadershipTransfer(t *testing.T) {
 	}
 
 	t.Log("Stopped all followers - no suitable transfer target")
-	
+
 	// Leader should remain leader (can't transfer with no followers)
 	time.Sleep(500 * time.Millisecond)
-	
+
 	_, stillLeader := cluster.Nodes[leaderID].GetState()
 	if stillLeader {
 		t.Log("✓ Leader remained when no suitable transfer target")

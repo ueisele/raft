@@ -13,7 +13,7 @@ import (
 func TestLinearizableReads(t *testing.T) {
 	// Create 5-node cluster
 	cluster := helpers.NewTestCluster(t, 5)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -63,7 +63,7 @@ func TestLinearizableReads(t *testing.T) {
 func TestIdempotentOperations(t *testing.T) {
 	// Create 3-node cluster
 	cluster := helpers.NewTestCluster(t, 3)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -79,14 +79,14 @@ func TestIdempotentOperations(t *testing.T) {
 	// Submit the same command multiple times
 	cmd := "SET key1 value1"
 	indices := make([]int, 3)
-	
+
 	for i := 0; i < 3; i++ {
 		index, _, err := cluster.SubmitCommand(cmd)
 		if err != nil {
 			t.Fatalf("Failed to submit command %d: %v", i, err)
 		}
 		indices[i] = index
-		
+
 		// Small delay between submissions
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -94,7 +94,7 @@ func TestIdempotentOperations(t *testing.T) {
 	// Each submission should get a different index (not truly idempotent in basic Raft)
 	for i := 1; i < 3; i++ {
 		if indices[i] == indices[i-1] {
-			t.Errorf("Expected different indices for repeated commands, got %d and %d", 
+			t.Errorf("Expected different indices for repeated commands, got %d and %d",
 				indices[i-1], indices[i])
 		}
 	}
@@ -106,7 +106,7 @@ func TestIdempotentOperations(t *testing.T) {
 func TestClientTimeouts(t *testing.T) {
 	// Create 5-node cluster with partitionable transport
 	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport())
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -126,7 +126,7 @@ func TestClientTimeouts(t *testing.T) {
 
 	// Wait for new leader to be elected among non-partitioned nodes
 	time.Sleep(500 * time.Millisecond)
-	
+
 	// Find new leader among non-partitioned nodes
 	newLeaderFound := false
 	var newLeaderID int
@@ -140,11 +140,11 @@ func TestClientTimeouts(t *testing.T) {
 			}
 		}
 	}
-	
+
 	if !newLeaderFound {
 		t.Skip("No new leader elected among non-partitioned nodes, skipping timeout test")
 	}
-	
+
 	t.Logf("New leader %d elected while old leader %d is partitioned", newLeaderID, leaderID)
 
 	// Try to submit command directly to partitioned node - it might still think it's leader
@@ -161,7 +161,7 @@ func TestClientTimeouts(t *testing.T) {
 
 	// Heal partition
 	cluster.HealPartition()
-	
+
 	// Give some time for the cluster to stabilize
 	time.Sleep(500 * time.Millisecond)
 
@@ -182,7 +182,7 @@ func TestClientTimeouts(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to submit command after healing: %v", err)
 	}
-	
+
 	t.Log("✓ Client timeout handling test completed successfully")
 }
 
@@ -190,7 +190,7 @@ func TestClientTimeouts(t *testing.T) {
 func TestClientRedirection(t *testing.T) {
 	// Create 5-node cluster
 	cluster := helpers.NewTestCluster(t, 5)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -215,7 +215,7 @@ func TestClientRedirection(t *testing.T) {
 
 	// In a real implementation, the follower would redirect to leader
 	// For now, we verify that follower correctly identifies it's not leader
-	t.Logf("Follower %d correctly identified it's not leader (leader is %d)", 
+	t.Logf("Follower %d correctly identified it's not leader (leader is %d)",
 		followerID, leaderID)
 
 	// Submit to actual leader should work
@@ -231,7 +231,7 @@ func TestClientRedirection(t *testing.T) {
 func TestClientRetries(t *testing.T) {
 	// Create 3-node cluster
 	cluster := helpers.NewTestCluster(t, 3)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -258,7 +258,7 @@ func TestClientRetries(t *testing.T) {
 	retryCount := 0
 	maxRetries := 10
 	var lastErr error
-	
+
 	for retryCount < maxRetries {
 		// Try to submit command
 		_, _, err := cluster.SubmitCommand(fmt.Sprintf("retry-cmd-%d", retryCount))
@@ -266,10 +266,10 @@ func TestClientRetries(t *testing.T) {
 			t.Logf("Command succeeded after %d retries", retryCount)
 			break
 		}
-		
+
 		lastErr = err
 		retryCount++
-		
+
 		// Exponential backoff
 		backoff := time.Duration(retryCount*100) * time.Millisecond
 		if backoff > time.Second {
@@ -294,7 +294,7 @@ func TestClientRetries(t *testing.T) {
 	if newLeaderID == -1 {
 		t.Error("No new leader elected after retries")
 	} else {
-		t.Logf("New leader %d elected, command succeeded after %d retries", 
+		t.Logf("New leader %d elected, command succeeded after %d retries",
 			newLeaderID, retryCount)
 	}
 
@@ -305,7 +305,7 @@ func TestClientRetries(t *testing.T) {
 	}
 
 	if finalIndex <= successIndex {
-		t.Errorf("Final index %d should be greater than initial index %d", 
+		t.Errorf("Final index %d should be greater than initial index %d",
 			finalIndex, successIndex)
 	}
 }

@@ -516,7 +516,7 @@ func TestHTTPTransport_HandleRequestVote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
 	}
-	
+
 	handler := &MockRPCHandler{
 		requestVoteFunc: func(args *raft.RequestVoteArgs, reply *raft.RequestVoteReply) error {
 			if args.Term != 5 || args.CandidateID != 2 {
@@ -542,7 +542,7 @@ func TestHTTPTransport_HandleRequestVote(t *testing.T) {
 		Term:        5,
 		CandidateID: 2,
 	}
-	
+
 	body, _ := json.Marshal(args)
 	resp, err := http.Post("http://"+transport.GetAddress()+"/raft/requestvote", "application/json", bytes.NewBuffer(body))
 	if err != nil {
@@ -577,7 +577,7 @@ func TestHTTPTransport_HandleAppendEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
 	}
-	
+
 	handler := &MockRPCHandler{
 		appendEntriesFunc: func(args *raft.AppendEntriesArgs, reply *raft.AppendEntriesReply) error {
 			if args.Term != 5 || args.LeaderID != 2 {
@@ -603,7 +603,7 @@ func TestHTTPTransport_HandleAppendEntries(t *testing.T) {
 		Term:     5,
 		LeaderID: 2,
 	}
-	
+
 	body, _ := json.Marshal(args)
 	resp, err := http.Post("http://"+transport.GetAddress()+"/raft/appendentries", "application/json", bytes.NewBuffer(body))
 	if err != nil {
@@ -638,7 +638,7 @@ func TestHTTPTransport_HandleInstallSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
 	}
-	
+
 	handler := &MockRPCHandler{
 		installSnapshotFunc: func(args *raft.InstallSnapshotArgs, reply *raft.InstallSnapshotReply) error {
 			if args.Term != 5 || args.LeaderID != 2 {
@@ -664,7 +664,7 @@ func TestHTTPTransport_HandleInstallSnapshot(t *testing.T) {
 		LeaderID: 2,
 		Data:     []byte("test"),
 	}
-	
+
 	body, _ := json.Marshal(args)
 	resp, err := http.Post("http://"+transport.GetAddress()+"/raft/installsnapshot", "application/json", bytes.NewBuffer(body))
 	if err != nil {
@@ -700,7 +700,7 @@ func TestHTTPTransport_HandleInvalidMethod(t *testing.T) {
 		t.Fatalf("failed to create transport: %v", err)
 	}
 	transport.SetRPCHandler(&MockRPCHandler{})
-	
+
 	if err := transport.Start(); err != nil {
 		t.Fatalf("failed to start transport: %v", err)
 	}
@@ -735,7 +735,7 @@ func TestHTTPTransport_HandleInvalidJSON(t *testing.T) {
 		t.Fatalf("failed to create transport: %v", err)
 	}
 	transport.SetRPCHandler(&MockRPCHandler{})
-	
+
 	if err := transport.Start(); err != nil {
 		t.Fatalf("failed to start transport: %v", err)
 	}
@@ -769,7 +769,7 @@ func TestHTTPTransport_HandleRPCError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
 	}
-	
+
 	handler := &MockRPCHandler{
 		requestVoteFunc: func(args *raft.RequestVoteArgs, reply *raft.RequestVoteReply) error {
 			return fmt.Errorf("handler error")
@@ -809,7 +809,7 @@ func TestHTTPTransport_WithStaticDiscovery(t *testing.T) {
 			if r.URL.Path == "/raft/requestvote" {
 				var args raft.RequestVoteArgs
 				json.NewDecoder(r.Body).Decode(&args)
-				
+
 				reply := raft.RequestVoteReply{
 					Term:        args.Term,
 					VoteGranted: true,
@@ -833,7 +833,7 @@ func TestHTTPTransport_WithStaticDiscovery(t *testing.T) {
 		Address:    peers[0],
 		RPCTimeout: 500,
 	}
-	
+
 	httpTrans, err := httpTransport.NewHTTPTransportWithStaticPeers(config, peers)
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
@@ -845,13 +845,13 @@ func TestHTTPTransport_WithStaticDiscovery(t *testing.T) {
 			Term:        1,
 			CandidateID: 0,
 		}
-		
+
 		reply, err := httpTrans.SendRequestVote(peerID, args)
 		if err != nil {
 			t.Errorf("failed to send request to peer %d: %v", peerID, err)
 			continue
 		}
-		
+
 		if !reply.VoteGranted {
 			t.Errorf("expected vote to be granted by peer %d", peerID)
 		}
@@ -878,7 +878,7 @@ func TestHTTPTransport_DynamicDiscoveryUpdate(t *testing.T) {
 		Address:    "localhost:8000",
 		RPCTimeout: 500,
 	}
-	
+
 	httpTrans, err := httpTransport.NewHTTPTransport(config, discovery)
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
@@ -1193,7 +1193,7 @@ func TestHTTPTransport_NetworkError(t *testing.T) {
 
 	args := &raft.RequestVoteArgs{Term: 5}
 	_, err = httpTrans.SendRequestVote(2, args)
-	
+
 	if err == nil {
 		t.Error("expected error for network failure")
 	}
@@ -1233,7 +1233,7 @@ func TestHTTPTransport_Timeout(t *testing.T) {
 
 	args := &raft.RequestVoteArgs{Term: 5}
 	_, err = httpTrans.SendRequestVote(2, args)
-	
+
 	if err == nil {
 		t.Error("expected timeout error")
 	}
@@ -1245,8 +1245,8 @@ func TestHTTPTransport_Timeout(t *testing.T) {
 
 	// Check that it's a timeout error
 	errStr := err.Error()
-	if !strings.Contains(errStr, "context deadline exceeded") && 
-	   !strings.Contains(errStr, "Client.Timeout exceeded") {
+	if !strings.Contains(errStr, "context deadline exceeded") &&
+		!strings.Contains(errStr, "Client.Timeout exceeded") {
 		t.Errorf("expected timeout error, got %v", err)
 	}
 }
@@ -1272,7 +1272,7 @@ func TestHTTPTransport_ContextCancellation(t *testing.T) {
 	discovery := transport.NewStaticPeerDiscovery(map[int]string{
 		1: addr,
 	})
-	
+
 	httpTrans, err := httpTransport.NewHTTPTransport(config, discovery)
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
@@ -1281,11 +1281,11 @@ func TestHTTPTransport_ContextCancellation(t *testing.T) {
 	// Test that RPC times out properly
 	args := &raft.RequestVoteArgs{Term: 1}
 	_, err = httpTrans.SendRequestVote(1, args)
-	
+
 	if err == nil {
 		t.Error("expected timeout error when server is slow")
 	}
-	
+
 	// Verify it's a timeout error
 	if !strings.Contains(err.Error(), "context deadline exceeded") {
 		t.Errorf("expected context deadline exceeded error, got: %v", err)

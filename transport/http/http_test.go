@@ -111,7 +111,7 @@ func TestHTTPTransport_RequiresDiscovery(t *testing.T) {
 	if transport != nil {
 		t.Error("expected nil transport when error is returned")
 	}
-	
+
 	expectedError := "discovery cannot be nil"
 	if err.Error() != expectedError {
 		t.Errorf("expected error %q, got %q", expectedError, err.Error())
@@ -131,13 +131,13 @@ func TestHTTPTransport_StartWithoutHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
 	}
-	
+
 	// Start should fail without handler
 	err = transport.Start()
 	if err == nil {
 		t.Error("expected Start() to fail without handler")
 	}
-	
+
 	expectedError := "RPC handler not set"
 	if err.Error() != expectedError {
 		t.Errorf("expected error %q, got %q", expectedError, err.Error())
@@ -157,17 +157,17 @@ func TestHTTPTransport_StartWithBothRequired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
 	}
-	
+
 	// Set handler
 	handler := &testRPCHandler{}
 	transport.SetRPCHandler(handler)
-	
+
 	// Start should succeed
 	err = transport.Start()
 	if err != nil {
 		t.Errorf("expected Start() to succeed, got error: %v", err)
 	}
-	
+
 	// Clean up
 	transport.Stop()
 }
@@ -188,7 +188,7 @@ func TestHTTPTransport_DefaultAddressResolution(t *testing.T) {
 		100: "localhost:8100",
 	}
 	discovery := &mockDiscovery{addresses: peers}
-	
+
 	transport, err := NewHTTPTransport(config, discovery)
 	if err != nil {
 		t.Fatalf("failed to create transport: %v", err)
@@ -210,7 +210,7 @@ func TestHTTPTransport_DefaultAddressResolution(t *testing.T) {
 		// The actual behavior is tested in integration tests where real connections are made
 		_ = expectedAddr
 	}
-	
+
 	// Verify transport was created successfully
 	_ = transport
 }
@@ -232,15 +232,15 @@ func TestHTTPTransport_DiscoveryError(t *testing.T) {
 
 	// Test that getServerAddress properly returns the error
 	addr, err := httpTransport.getServerAddress(1)
-	
+
 	if err == nil {
 		t.Error("expected error when discovery fails")
 	}
-	
+
 	if addr != "" {
 		t.Errorf("expected empty address when error occurs, got %q", addr)
 	}
-	
+
 	// Check that error contains both server ID and original error
 	errStr := err.Error()
 	if errStr != "failed to get address for server 1: peer not found" {
@@ -265,15 +265,15 @@ func TestHTTPTransport_DiscoveryTimeout(t *testing.T) {
 
 	// Test that timeout is properly propagated
 	addr, err := httpTransport.getServerAddress(1)
-	
+
 	if err == nil {
 		t.Error("expected error when discovery times out")
 	}
-	
+
 	if addr != "" {
 		t.Errorf("expected empty address when timeout occurs, got %q", addr)
 	}
-	
+
 	// Check that the timeout error is wrapped properly
 	if err.Error() != "failed to get address for server 1: context deadline exceeded" {
 		t.Errorf("unexpected error message: %v", err)
@@ -289,7 +289,7 @@ func TestNewHTTPTransportWithDiscovery_ValidatesNilDiscovery(t *testing.T) {
 	}
 
 	// Try to create with nil discovery
-	transport, err := NewHTTPTransportWithDiscovery(config, nil)
+	transport, err := NewHTTPTransport(config, nil)
 	if err == nil {
 		t.Error("expected NewHTTPTransportWithDiscovery to fail with nil discovery")
 	}
@@ -308,7 +308,7 @@ func TestHTTPTransport_WithBuilder(t *testing.T) {
 		WithDiscovery(discovery).
 		WithTimeout(1000 * 1000000). // 1 second in nanoseconds
 		Build()
-	
+
 	if err != nil {
 		t.Fatalf("failed to build transport: %v", err)
 	}
@@ -334,7 +334,7 @@ func TestHTTPTransport_NilDiscoveryError(t *testing.T) {
 		Address:    "localhost:8000",
 		RPCTimeout: 100,
 	}
-	
+
 	_, err := NewHTTPTransport(config, nil)
 	if err == nil {
 		t.Error("expected error when creating transport with nil discovery")

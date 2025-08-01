@@ -11,32 +11,32 @@ import (
 // for adding new servers. It implements automatic promotion from non-voting
 // to voting members after they have caught up with the log.
 //
-// Limitation: The promotion tracking state is not replicated across nodes. 
-// If leadership changes after adding a non-voting server, the new leader's 
+// Limitation: The promotion tracking state is not replicated across nodes.
+// If leadership changes after adding a non-voting server, the new leader's
 // SafeConfigurationManager won't know about pending promotions. In such cases,
 // the server will remain non-voting until manually promoted.
 type SafeConfigurationManager struct {
 	*ConfigurationManager
 	mu sync.RWMutex
-	
+
 	// Dependencies
 	replicationManager *ReplicationManager
 	logManager         *LogManager
 	logger             Logger
-	isLeader           func() bool // Function to check if node is leader
+	isLeader           func() bool  // Function to check if node is leader
 	submitConfigChange func() error // Function to submit configuration changes
-	
+
 	// Tracking server catch-up progress
 	serverProgress map[int]*ServerProgress
-	
+
 	// Configuration for automatic promotion
 	promotionThreshold   float64       // Percentage of log caught up (e.g., 0.95 for 95%)
 	promotionCheckPeriod time.Duration // How often to check for promotion
 	minCatchUpEntries    int           // Minimum entries to replicate before promotion
-	
+
 	// Metrics collection
 	metrics ConfigMetrics
-	
+
 	// Context for cancellation
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -99,27 +99,27 @@ func NewSafeConfigurationManager(
 	if options == nil {
 		options = DefaultSafeConfigOptions()
 	}
-	
+
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	scm := &SafeConfigurationManager{
 		ConfigurationManager: base,
 		replicationManager:   replicationManager,
-		logManager:          logManager,
-		logger:              logger,
-		serverProgress:      make(map[int]*ServerProgress),
-		promotionThreshold:  options.PromotionThreshold,
+		logManager:           logManager,
+		logger:               logger,
+		serverProgress:       make(map[int]*ServerProgress),
+		promotionThreshold:   options.PromotionThreshold,
 		promotionCheckPeriod: options.PromotionCheckPeriod,
-		minCatchUpEntries:   options.MinCatchUpEntries,
-		metrics:             options.Metrics,
-		ctx:                 ctx,
-		cancel:              cancel,
+		minCatchUpEntries:    options.MinCatchUpEntries,
+		metrics:              options.Metrics,
+		ctx:                  ctx,
+		cancel:               cancel,
 	}
-	
+
 	// Start the promotion monitor
 	scm.wg.Add(1)
 	go scm.promotionMonitor()
-	
+
 	return scm
 }
 
@@ -133,12 +133,12 @@ func (scm *SafeConfigurationManager) Stop() {
 func (scm *SafeConfigurationManager) AddServerSafely(serverID int, address string) error {
 	scm.mu.Lock()
 	defer scm.mu.Unlock()
-	
+
 	// Safety check 1: Verify we're the leader
 	if !scm.checkIsLeader() {
 		return fmt.Errorf("only leader can add servers")
 	}
-	
+
 	// Safety check 2: Check if server already exists
 	config := scm.GetConfiguration()
 	for _, server := range config.Servers {
@@ -146,31 +146,31 @@ func (scm *SafeConfigurationManager) AddServerSafely(serverID int, address strin
 			return fmt.Errorf("server %d already exists in configuration", serverID)
 		}
 	}
-	
+
 	// Safety check 3: Get current log state for tracking
 	currentLogIndex := scm.logManager.GetLastLogIndex()
 	commitIndex := scm.logManager.GetCommitIndex()
-	
+
 	// Log the addition
 	if scm.logger != nil {
-		scm.logger.Info("Adding server %d as non-voting member (log index: %d, commit: %d)", 
+		scm.logger.Info("Adding server %d as non-voting member (log index: %d, commit: %d)",
 			serverID, currentLogIndex, commitIndex)
 	}
-	
+
 	// Always add as non-voting first
 	err := scm.ConfigurationManager.StartAddServer(ServerConfig{
 		ID:      serverID,
 		Address: address,
 		Voting:  false, // ALWAYS start as non-voting
 	})
-	
+
 	if err != nil {
 		if scm.metrics != nil {
 			scm.metrics.RecordConfigurationError(err)
 		}
 		return fmt.Errorf("failed to add non-voting server: %w", err)
 	}
-	
+
 	// Submit the configuration change
 	if scm.submitConfigChange != nil {
 		if err := scm.submitConfigChange(); err != nil {
@@ -181,7 +181,7 @@ func (scm *SafeConfigurationManager) AddServerSafely(serverID int, address strin
 			return fmt.Errorf("failed to submit configuration change: %w", err)
 		}
 	}
-	
+
 	// Track the server's catch-up progress
 	scm.serverProgress[serverID] = &ServerProgress{
 		ServerID:        serverID,
@@ -191,12 +191,12 @@ func (scm *SafeConfigurationManager) AddServerSafely(serverID int, address strin
 		TargetLogIndex:  currentLogIndex,
 		CurrentIndex:    0,
 	}
-	
+
 	// Record metrics
 	if scm.metrics != nil {
 		scm.metrics.RecordServerAdded(serverID, false)
 	}
-	
+
 	return nil
 }
 
@@ -206,7 +206,7 @@ func (scm *SafeConfigurationManager) AddVotingServerUnsafe(serverID int, address
 	if scm.logger != nil {
 		scm.logger.Warn("Adding server %d as VOTING member immediately - this is UNSAFE and not recommended!", serverID)
 	}
-	
+
 	// Safety check: Warn if the new server would affect quorum significantly
 	config := scm.GetConfiguration()
 	votingCount := 0
@@ -215,15 +215,15 @@ func (scm *SafeConfigurationManager) AddVotingServerUnsafe(serverID int, address
 			votingCount++
 		}
 	}
-	
-	newMajority := (votingCount + 2) / 2 + 1 // After adding new voting server
+
+	newMajority := (votingCount+2)/2 + 1 // After adding new voting server
 	if newMajority > votingCount {
 		if scm.logger != nil {
-			scm.logger.Warn("WARNING: Adding voting server increases majority from %d to %d - cluster may lose availability!", 
+			scm.logger.Warn("WARNING: Adding voting server increases majority from %d to %d - cluster may lose availability!",
 				(votingCount/2)+1, newMajority)
 		}
 	}
-	
+
 	return scm.ConfigurationManager.StartAddServer(ServerConfig{
 		ID:      serverID,
 		Address: address,
@@ -234,10 +234,10 @@ func (scm *SafeConfigurationManager) AddVotingServerUnsafe(serverID int, address
 // promotionMonitor runs in the background and promotes servers when ready
 func (scm *SafeConfigurationManager) promotionMonitor() {
 	defer scm.wg.Done()
-	
+
 	ticker := time.NewTicker(scm.promotionCheckPeriod)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-scm.ctx.Done():
@@ -252,7 +252,7 @@ func (scm *SafeConfigurationManager) promotionMonitor() {
 func (scm *SafeConfigurationManager) checkAndPromoteServers() {
 	scm.mu.Lock()
 	defer scm.mu.Unlock()
-	
+
 	// Only leader can promote servers
 	if !scm.checkIsLeader() {
 		if scm.logger != nil {
@@ -260,14 +260,14 @@ func (scm *SafeConfigurationManager) checkAndPromoteServers() {
 		}
 		return
 	}
-	
+
 	// Get current configuration
 	config := scm.GetConfiguration()
-	
+
 	if scm.logger != nil {
 		scm.logger.Debug("Checking %d servers for promotion", len(config.Servers))
 	}
-	
+
 	// Check each non-voting server
 	for _, server := range config.Servers {
 		if !server.Voting {
@@ -286,21 +286,21 @@ func (scm *SafeConfigurationManager) checkServerForPromotion(serverID int) {
 		// Not tracking this server
 		return
 	}
-	
+
 	// Skip if promotion already pending
 	if progress.PromotionPending {
 		return
 	}
-	
+
 	// Get current replication state
 	matchIndex := scm.replicationManager.GetMatchIndex(serverID)
 	lastLogIndex := scm.logManager.GetLastLogIndex()
 	commitIndex := scm.logManager.GetCommitIndex()
-	
+
 	// Update progress
 	progress.CurrentIndex = matchIndex
 	progress.LastChecked = time.Now()
-	
+
 	// Calculate catch-up progress
 	var catchUpProgress float64
 	if lastLogIndex > 0 {
@@ -308,32 +308,32 @@ func (scm *SafeConfigurationManager) checkServerForPromotion(serverID int) {
 	} else {
 		catchUpProgress = 1.0 // Empty log means fully caught up
 	}
-	
+
 	// Record metrics
 	if scm.metrics != nil {
 		scm.metrics.RecordCatchUpProgress(serverID, catchUpProgress)
 	}
-	
+
 	// Check promotion criteria
 	entriesReplicated := matchIndex - progress.InitialLogIndex
 	caughtUpToCommit := matchIndex >= commitIndex
 	sufficientProgress := catchUpProgress >= scm.promotionThreshold
 	sufficientEntries := entriesReplicated >= scm.minCatchUpEntries
-	
+
 	if scm.logger != nil {
 		scm.logger.Debug("Server %d catch-up: progress=%.2f%%, match=%d, commit=%d, entries=%d",
 			serverID, catchUpProgress*100, matchIndex, commitIndex, entriesReplicated)
 	}
-	
+
 	// Promote if all criteria are met
 	if caughtUpToCommit && sufficientProgress && sufficientEntries {
 		if scm.logger != nil {
 			scm.logger.Info("Server %d ready for promotion: caught up to index %d (%.2f%% of log)",
 				serverID, matchIndex, catchUpProgress*100)
 		}
-		
+
 		progress.PromotionPending = true
-		
+
 		// Schedule promotion (do it asynchronously to avoid holding lock)
 		go scm.promoteServer(serverID)
 	}
@@ -343,7 +343,7 @@ func (scm *SafeConfigurationManager) checkServerForPromotion(serverID int) {
 func (scm *SafeConfigurationManager) promoteServer(serverID int) {
 	// Start a configuration change to promote the server
 	scm.mu.Lock()
-	
+
 	// Find the server in current config
 	config := scm.GetConfiguration()
 	var serverToPromote *ServerConfig
@@ -354,7 +354,7 @@ func (scm *SafeConfigurationManager) promoteServer(serverID int) {
 			break
 		}
 	}
-	
+
 	if serverToPromote == nil {
 		if scm.logger != nil {
 			scm.logger.Warn("Server %d not found or already voting", serverID)
@@ -362,28 +362,28 @@ func (scm *SafeConfigurationManager) promoteServer(serverID int) {
 		scm.mu.Unlock()
 		return
 	}
-	
+
 	// Create a configuration change to promote to voting
 	if scm.logger != nil {
 		scm.logger.Info("Server %d is ready for promotion to voting member", serverID)
 	}
-	
+
 	// Get the server's address from current configuration
 	serverAddress := serverToPromote.Address
-	
+
 	// Record metrics before starting configuration change
 	var startTime time.Time
 	if progress, exists := scm.serverProgress[serverID]; exists {
 		startTime = progress.StartTime
 	}
-	
+
 	scm.mu.Unlock()
-	
+
 	// To promote a non-voting server to voting, we need to:
 	// 1. Remove the non-voting server
 	// 2. Add it back as a voting server
 	// This ensures proper configuration change tracking
-	
+
 	// First, remove the non-voting server
 	err := scm.ConfigurationManager.StartRemoveServer(serverID)
 	if err != nil {
@@ -395,7 +395,7 @@ func (scm *SafeConfigurationManager) promoteServer(serverID int) {
 		}
 		return
 	}
-	
+
 	// Submit the removal
 	if scm.submitConfigChange != nil {
 		if err := scm.submitConfigChange(); err != nil {
@@ -406,10 +406,10 @@ func (scm *SafeConfigurationManager) promoteServer(serverID int) {
 			return
 		}
 	}
-	
+
 	// Wait a bit for the removal to be processed
 	time.Sleep(100 * time.Millisecond)
-	
+
 	// Now add it back as a voting server
 	err = scm.ConfigurationManager.StartAddServer(ServerConfig{
 		ID:      serverID,
@@ -425,7 +425,7 @@ func (scm *SafeConfigurationManager) promoteServer(serverID int) {
 		}
 		return
 	}
-	
+
 	// Submit the addition
 	if scm.submitConfigChange != nil {
 		if err := scm.submitConfigChange(); err != nil {
@@ -436,19 +436,19 @@ func (scm *SafeConfigurationManager) promoteServer(serverID int) {
 			return
 		}
 	}
-	
+
 	// Success - update metrics and clean up tracking
 	scm.mu.Lock()
 	defer scm.mu.Unlock()
-	
+
 	if scm.metrics != nil && !startTime.IsZero() {
 		duration := time.Since(startTime)
 		scm.metrics.RecordServerPromoted(serverID, duration)
 	}
-	
+
 	// Clean up tracking
 	delete(scm.serverProgress, serverID)
-	
+
 	if scm.logger != nil {
 		scm.logger.Info("Server %d successfully promoted to voting member", serverID)
 	}
@@ -458,7 +458,7 @@ func (scm *SafeConfigurationManager) promoteServer(serverID int) {
 func (scm *SafeConfigurationManager) GetServerProgress(serverID int) *ServerProgress {
 	scm.mu.RLock()
 	defer scm.mu.RUnlock()
-	
+
 	if progress, exists := scm.serverProgress[serverID]; exists {
 		// Return a copy
 		p := *progress
@@ -471,7 +471,7 @@ func (scm *SafeConfigurationManager) GetServerProgress(serverID int) *ServerProg
 func (scm *SafeConfigurationManager) GetAllServerProgress() map[int]*ServerProgress {
 	scm.mu.RLock()
 	defer scm.mu.RUnlock()
-	
+
 	result := make(map[int]*ServerProgress)
 	for id, progress := range scm.serverProgress {
 		p := *progress

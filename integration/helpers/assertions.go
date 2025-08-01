@@ -12,18 +12,18 @@ func AssertLeaderCount(t *testing.T, nodes []raft.Node) int {
 	t.Helper()
 	leaderCount := 0
 	leaderID := -1
-	
+
 	for i, node := range nodes {
 		if node.IsLeader() {
 			leaderCount++
 			leaderID = i
 		}
 	}
-	
+
 	if leaderCount != 1 {
 		t.Errorf("Expected exactly 1 leader, found %d", leaderCount)
 	}
-	
+
 	return leaderID
 }
 
@@ -43,7 +43,7 @@ func AssertSameTerm(t *testing.T, nodes []raft.Node) int {
 	if len(nodes) == 0 {
 		return 0
 	}
-	
+
 	expectedTerm := nodes[0].GetCurrentTerm()
 	for i, node := range nodes {
 		term := node.GetCurrentTerm()
@@ -51,7 +51,7 @@ func AssertSameTerm(t *testing.T, nodes []raft.Node) int {
 			t.Errorf("Node %d has term %d, expected %d", i, term, expectedTerm)
 		}
 	}
-	
+
 	return expectedTerm
 }
 
@@ -81,17 +81,17 @@ func AssertConfiguration(t *testing.T, nodes []raft.Node, expectedServers []int)
 	for i, node := range nodes {
 		config := node.GetConfiguration()
 		if len(config.Servers) != len(expectedServers) {
-			t.Errorf("Node %d has %d servers, expected %d", 
+			t.Errorf("Node %d has %d servers, expected %d",
 				i, len(config.Servers), len(expectedServers))
 			continue
 		}
-		
+
 		// Check server IDs
 		serverMap := make(map[int]bool)
 		for _, server := range config.Servers {
 			serverMap[server.ID] = true
 		}
-		
+
 		for _, expectedID := range expectedServers {
 			if !serverMap[expectedID] {
 				t.Errorf("Node %d missing server %d in configuration", i, expectedID)
@@ -103,7 +103,7 @@ func AssertConfiguration(t *testing.T, nodes []raft.Node, expectedServers []int)
 // AssertStateMachineContent verifies state machine content
 func AssertStateMachineContent(t *testing.T, sm raft.StateMachine, key string, expectedValue interface{}) {
 	t.Helper()
-	
+
 	// Try to cast to MockStateMachine to check content
 	if mockSM, ok := sm.(*raft.MockStateMachine); ok {
 		data := mockSM.GetData()
@@ -133,17 +133,17 @@ func AssertConsistentlyTrue(t *testing.T, condition func() bool, message string)
 func AssertElectionSafety(t *testing.T, nodes []raft.Node) {
 	t.Helper()
 	leadersByTerm := make(map[int][]int)
-	
+
 	for i, node := range nodes {
 		if node.IsLeader() {
 			term := node.GetCurrentTerm()
 			leadersByTerm[term] = append(leadersByTerm[term], i)
 		}
 	}
-	
+
 	for term, leaders := range leadersByTerm {
 		if len(leaders) > 1 {
-			t.Errorf("Term %d has %d leaders: %v (violates election safety)", 
+			t.Errorf("Term %d has %d leaders: %v (violates election safety)",
 				term, len(leaders), leaders)
 		}
 	}
@@ -155,29 +155,29 @@ func AssertLogConsistency(t *testing.T, nodes []raft.Node, upToIndex int) {
 	if len(nodes) < 2 {
 		return
 	}
-	
+
 	// Use first node as reference
 	referenceNode := nodes[0]
-	
+
 	for i := 1; i <= upToIndex; i++ {
 		referenceEntry := referenceNode.GetLogEntry(i)
 		if referenceEntry == nil {
 			t.Errorf("Reference node missing log entry at index %d", i)
 			continue
 		}
-		
+
 		for j := 1; j < len(nodes); j++ {
 			entry := nodes[j].GetLogEntry(i)
 			if entry == nil {
 				t.Errorf("Node %d missing log entry at index %d", j, i)
 				continue
 			}
-			
+
 			if entry.Term != referenceEntry.Term {
 				t.Errorf("Log inconsistency at index %d: node 0 has term %d, node %d has term %d",
 					i, referenceEntry.Term, j, entry.Term)
 			}
-			
+
 			if !reflect.DeepEqual(entry.Command, referenceEntry.Command) {
 				t.Errorf("Log inconsistency at index %d: commands differ between node 0 and node %d",
 					i, j)

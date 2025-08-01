@@ -13,7 +13,7 @@ import (
 func TestLeaderElection(t *testing.T) {
 	// Create a 3-node cluster
 	cluster := helpers.NewTestCluster(t, 3)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -50,7 +50,7 @@ func TestLeaderElection(t *testing.T) {
 func TestLeaderFailover(t *testing.T) {
 	// Create a 5-node cluster for better fault tolerance
 	cluster := helpers.NewTestCluster(t, 5)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -71,7 +71,7 @@ func TestLeaderFailover(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
-		
+
 		// Wait for command to be committed
 		if err := cluster.WaitForCommitIndex(idx, time.Second); err != nil {
 			t.Fatalf("Command not committed: %v", err)
@@ -103,7 +103,7 @@ func TestLeaderFailover(t *testing.T) {
 					leaderCount++
 				}
 			}
-			
+
 			if leaderCount == 1 {
 				// New leader elected
 				goto elected
@@ -133,6 +133,6 @@ elected:
 			activeNodes = append(activeNodes, node)
 		}
 	}
-	
+
 	helpers.WaitForCommitIndex(t, activeNodes, idx, 2*time.Second)
 }

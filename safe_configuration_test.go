@@ -7,13 +7,13 @@ import (
 // TestCatchUpProgressCalculation tests the progress calculation logic
 func TestCatchUpProgressCalculation(t *testing.T) {
 	tests := []struct {
-		name              string
-		matchIndex        int
-		lastLogIndex      int
-		commitIndex       int
-		minEntries        int
-		threshold         float64
-		expectPromotion   bool
+		name            string
+		matchIndex      int
+		lastLogIndex    int
+		commitIndex     int
+		minEntries      int
+		threshold       float64
+		expectPromotion bool
 	}{
 		{
 			name:            "Empty log",
@@ -70,7 +70,7 @@ func TestCatchUpProgressCalculation(t *testing.T) {
 			expectPromotion: false,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Calculate progress
@@ -80,15 +80,15 @@ func TestCatchUpProgressCalculation(t *testing.T) {
 			} else {
 				progress = 1.0
 			}
-			
+
 			// Check promotion criteria
 			entriesReplicated := tt.matchIndex
 			caughtUpToCommit := tt.matchIndex >= tt.commitIndex
 			sufficientProgress := progress >= tt.threshold
 			sufficientEntries := entriesReplicated >= tt.minEntries
-			
+
 			shouldPromote := caughtUpToCommit && sufficientProgress && sufficientEntries
-			
+
 			if shouldPromote != tt.expectPromotion {
 				t.Errorf("Expected promotion=%v, got %v (progress=%.2f, caught up=%v, sufficient=%v, entries=%v)",
 					tt.expectPromotion, shouldPromote, progress, caughtUpToCommit, sufficientProgress, sufficientEntries)

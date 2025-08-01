@@ -171,7 +171,7 @@ func TestRapidPartitionChanges(t *testing.T) {
 	}
 
 	// Wait for initial leader
-	_, err := cluster.WaitForLeader(2*time.Second)
+	_, err := cluster.WaitForLeader(2 * time.Second)
 	if err != nil {
 		t.Fatalf("No initial leader elected: %v", err)
 	}
@@ -185,11 +185,11 @@ func TestRapidPartitionChanges(t *testing.T) {
 	}
 
 	events := []PartitionEvent{}
-	
+
 	recordEvent := func(desc string) {
 		leaderCount := 0
 		maxTerm := 0
-		
+
 		for _, node := range cluster.Nodes {
 			term, isLeader := node.GetState()
 			if isLeader {
@@ -199,14 +199,14 @@ func TestRapidPartitionChanges(t *testing.T) {
 				maxTerm = term
 			}
 		}
-		
+
 		events = append(events, PartitionEvent{
 			time:        time.Now(),
 			description: desc,
 			leaderCount: leaderCount,
 			maxTerm:     maxTerm,
 		})
-		
+
 		t.Logf("%s - Leaders: %d, Max Term: %d", desc, leaderCount, maxTerm)
 	}
 
@@ -272,12 +272,12 @@ func TestRapidPartitionChanges(t *testing.T) {
 		t.Logf("\nApplying partition: %s", pattern.name)
 		pattern.partition()
 		recordEvent(fmt.Sprintf("After %s", pattern.name))
-		
+
 		time.Sleep(pattern.duration)
-		
+
 		cluster.HealPartition()
 		recordEvent("After heal")
-		
+
 		// Brief stabilization period
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -332,7 +332,7 @@ func TestPartitionDuringConfigChange(t *testing.T) {
 	}
 
 	// Wait for leader
-	leaderID, err := cluster.WaitForLeader(2*time.Second)
+	leaderID, err := cluster.WaitForLeader(2 * time.Second)
 	if err != nil {
 		t.Fatalf("No leader elected: %v", err)
 	}
@@ -350,10 +350,10 @@ func TestPartitionDuringConfigChange(t *testing.T) {
 
 	// Start adding a new server (simulated)
 	// In real implementation, this would be AddServer RPC
-	
+
 	// Partition during the configuration change
 	// This tests the safety of configuration changes under partition
-	
+
 	// Create partition: leader + 1 node vs other node
 	isolatedNode := (leaderID + 2) % 3
 	if err := cluster.PartitionNode(isolatedNode); err != nil {
@@ -398,7 +398,7 @@ func TestPartitionDuringConfigChange(t *testing.T) {
 				minCommit = commit
 			}
 		}
-		return minCommit == maxCommitIndex, 
+		return minCommit == maxCommitIndex,
 			fmt.Sprintf("min commit %d, max commit %d", minCommit, maxCommitIndex)
 	}, 2*time.Second, "commit index convergence")
 
@@ -416,7 +416,7 @@ func TestCascadingPartitions(t *testing.T) {
 	}
 
 	// Wait for initial leader
-	_, err := cluster.WaitForLeader(2*time.Second)
+	_, err := cluster.WaitForLeader(2 * time.Second)
 	if err != nil {
 		t.Fatalf("No initial leader elected: %v", err)
 	}
@@ -441,9 +441,9 @@ func TestCascadingPartitions(t *testing.T) {
 	cluster.PartitionNode(0)
 	cluster.PartitionNode(1)
 	t.Log("Phase 1: Partitioned nodes 0 and 1 (5 nodes remaining)")
-	
+
 	time.Sleep(500 * time.Millisecond)
-	
+
 	// Should still have a leader among the 5 nodes
 	leaderFound := false
 	for i := 2; i < 7; i++ {
@@ -454,7 +454,7 @@ func TestCascadingPartitions(t *testing.T) {
 			break
 		}
 	}
-	
+
 	if !leaderFound {
 		t.Error("No leader after partitioning 2 nodes")
 	}
@@ -463,9 +463,9 @@ func TestCascadingPartitions(t *testing.T) {
 	cluster.PartitionNode(2)
 	cluster.PartitionNode(3)
 	t.Log("Phase 2: Partitioned nodes 2 and 3 (3 nodes remaining)")
-	
+
 	time.Sleep(500 * time.Millisecond)
-	
+
 	// Should still have a leader among the 3 nodes (4, 5, 6)
 	leaderFound = false
 	for i := 4; i < 7; i++ {
@@ -480,9 +480,9 @@ func TestCascadingPartitions(t *testing.T) {
 	// Phase 3: Partition node 4 (leaving only 2 nodes: 5 and 6)
 	cluster.PartitionNode(4)
 	t.Log("Phase 3: Partitioned node 4 (2 nodes remaining - no quorum)")
-	
+
 	time.Sleep(500 * time.Millisecond)
-	
+
 	// Should have no leader (only 2 out of 7 nodes)
 	leaderCount := 0
 	for i := 5; i < 7; i++ {
@@ -491,7 +491,7 @@ func TestCascadingPartitions(t *testing.T) {
 			leaderCount++
 		}
 	}
-	
+
 	if leaderCount > 0 {
 		t.Error("Leader elected with minority (2/7 nodes)")
 	} else {
@@ -500,21 +500,21 @@ func TestCascadingPartitions(t *testing.T) {
 
 	// Heal partitions in reverse order
 	t.Log("\nHealing partitions in reverse order...")
-	
+
 	// Heal node 4 first (now have 3 nodes: 4, 5, 6)
 	cluster.HealPartition()
 	time.Sleep(500 * time.Millisecond)
-	
+
 	// Continue healing
 	cluster.HealPartition()
 	time.Sleep(1 * time.Second)
-	
+
 	// Verify cluster recovered
-	finalLeader, err := cluster.WaitForLeader(3*time.Second)
+	finalLeader, err := cluster.WaitForLeader(3 * time.Second)
 	if err != nil {
 		t.Fatalf("Cluster did not recover after healing: %v", err)
 	}
-	
+
 	t.Logf("✓ Cluster recovered with leader at node %d", finalLeader)
 
 	// Verify functionality
@@ -522,7 +522,7 @@ func TestCascadingPartitions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to submit after cascade: %v", err)
 	}
-	
+
 	if err := cluster.WaitForCommitIndex(idx, 2*time.Second); err != nil {
 		t.Fatalf("Command not committed after cascade: %v", err)
 	}

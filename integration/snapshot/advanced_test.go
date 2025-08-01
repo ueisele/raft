@@ -108,7 +108,7 @@ func TestSnapshotDuringLeadershipChange(t *testing.T) {
 
 	// Wait for new leader
 	time.Sleep(500 * time.Millisecond)
-	
+
 	var newLeader int = -1
 	for i, node := range cluster.Nodes {
 		if i != initialLeader {
@@ -132,7 +132,7 @@ func TestSnapshotDuringLeadershipChange(t *testing.T) {
 		if !isLeader {
 			t.Fatalf("New leader lost leadership")
 		}
-		
+
 		// Wait for commit on active nodes
 		activeNodes := make([]raft.Node, 0)
 		for j, node := range cluster.Nodes {
@@ -252,7 +252,7 @@ func TestConcurrentSnapshotAndReplication(t *testing.T) {
 		defer wg.Done()
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
-		
+
 		for {
 			select {
 			case <-done:
@@ -320,7 +320,7 @@ func TestSnapshotInstallationRaceConditions(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		
+
 		// Wait for commit on majority nodes
 		majorityNodes := []raft.Node{cluster.Nodes[0], cluster.Nodes[1], cluster.Nodes[2]}
 		helpers.WaitForCommitIndex(t, majorityNodes, idx, time.Second)
@@ -462,7 +462,7 @@ func TestPersistenceWithRapidSnapshots(t *testing.T) {
 	if !isLeader {
 		t.Fatal("Node lost leadership")
 	}
-	
+
 	helpers.WaitForCommitIndex(t, []raft.Node{node}, idx, time.Second)
 	t.Log("Node still functional after rapid command submission")
 }
@@ -471,7 +471,7 @@ func TestPersistenceWithRapidSnapshots(t *testing.T) {
 func TestSnapshotTransmissionFailure(t *testing.T) {
 	// This test would require a custom transport that can simulate failures
 	// For now, we'll use partition/heal to simulate transmission issues
-	
+
 	cluster := helpers.NewTestCluster(t, 3, helpers.WithPartitionableTransport())
 
 	if err := cluster.Start(); err != nil {
@@ -516,14 +516,14 @@ func TestSnapshotTransmissionFailure(t *testing.T) {
 
 	// Finally heal
 	cluster.HealPartition()
-	
+
 	// Wait for follower to catch up
 	time.Sleep(2 * time.Second)
 
 	// Verify follower caught up
 	leaderCommit := cluster.Nodes[leaderID].GetCommitIndex()
 	followerCommit := cluster.Nodes[followerID].GetCommitIndex()
-	
+
 	if followerCommit < leaderCommit-5 {
 		t.Errorf("Follower didn't catch up: %d vs leader %d", followerCommit, leaderCommit)
 	}

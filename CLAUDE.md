@@ -258,6 +258,9 @@ go test ./integration/... -v
 
 When making changes:
 ```bash
+# IMPORTANT: Always ensure code compiles before committing
+go build ./...
+
 # Format code
 go fmt ./...
 
@@ -270,6 +273,15 @@ go vet ./...
 # Run linter if available
 golangci-lint run
 ```
+
+### Compilation Checks
+
+**CRITICAL**: Always ensure all code compiles before committing changes. This includes:
+- Main packages (`go build ./...`)
+- Test files (`go test -c ./...`)
+- Example code (`go build ./example/...`)
+
+Never leave the codebase in a state where it doesn't compile.
 
 ## References
 

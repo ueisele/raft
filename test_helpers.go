@@ -11,18 +11,18 @@ import (
 
 // MockTransport is a general-purpose transport mock for testing
 type MockTransport struct {
-	mu                       sync.Mutex
-	serverID                 int
-	requestVoteHandler       func(serverID int, args *RequestVoteArgs) (*RequestVoteReply, error)
-	appendEntriesHandler     func(serverID int, args *AppendEntriesArgs) (*AppendEntriesReply, error)
-	installSnapshotHandler   func(serverID int, args *InstallSnapshotArgs) (*InstallSnapshotReply, error)
-	rpcHandler               RPCHandler
-	started                  bool
-	
+	mu                     sync.Mutex
+	serverID               int
+	requestVoteHandler     func(serverID int, args *RequestVoteArgs) (*RequestVoteReply, error)
+	appendEntriesHandler   func(serverID int, args *AppendEntriesArgs) (*AppendEntriesReply, error)
+	installSnapshotHandler func(serverID int, args *InstallSnapshotArgs) (*InstallSnapshotReply, error)
+	rpcHandler             RPCHandler
+	started                bool
+
 	// Track calls
-	requestVoteCalls       []RequestVoteCall
-	appendEntriesCalls     []AppendEntriesCall
-	installSnapshotCalls   []InstallSnapshotCall
+	requestVoteCalls     []RequestVoteCall
+	appendEntriesCalls   []AppendEntriesCall
+	installSnapshotCalls []InstallSnapshotCall
 }
 
 type RequestVoteCall struct {
@@ -54,11 +54,11 @@ func (t *MockTransport) SendRequestVote(serverID int, args *RequestVoteArgs) (*R
 	t.requestVoteCalls = append(t.requestVoteCalls, RequestVoteCall{ServerID: serverID, Args: args})
 	handler := t.requestVoteHandler
 	t.mu.Unlock()
-	
+
 	if handler != nil {
 		return handler(serverID, args)
 	}
-	
+
 	return &RequestVoteReply{
 		Term:        args.Term,
 		VoteGranted: false,
@@ -70,11 +70,11 @@ func (t *MockTransport) SendAppendEntries(serverID int, args *AppendEntriesArgs)
 	t.appendEntriesCalls = append(t.appendEntriesCalls, AppendEntriesCall{ServerID: serverID, Args: args})
 	handler := t.appendEntriesHandler
 	t.mu.Unlock()
-	
+
 	if handler != nil {
 		return handler(serverID, args)
 	}
-	
+
 	return &AppendEntriesReply{
 		Term:    args.Term,
 		Success: false,
@@ -86,11 +86,11 @@ func (t *MockTransport) SendInstallSnapshot(serverID int, args *InstallSnapshotA
 	t.installSnapshotCalls = append(t.installSnapshotCalls, InstallSnapshotCall{ServerID: serverID, Args: args})
 	handler := t.installSnapshotHandler
 	t.mu.Unlock()
-	
+
 	if handler != nil {
 		return handler(serverID, args)
 	}
-	
+
 	return &InstallSnapshotReply{
 		Term: args.Term,
 	}, nil
@@ -241,15 +241,15 @@ func (l *SafeTestLogger) Error(format string, args ...interface{}) {
 
 // MockPersistence is a general-purpose persistence mock for testing
 type MockPersistence struct {
-	mu              sync.Mutex
-	state           *PersistentState
-	snapshot        *Snapshot
-	saveStateCount  int
-	loadStateCount  int
-	saveSnapCount   int
-	loadSnapCount   int
-	failNextSave    bool
-	failNextLoad    bool
+	mu             sync.Mutex
+	state          *PersistentState
+	snapshot       *Snapshot
+	saveStateCount int
+	loadStateCount int
+	saveSnapCount  int
+	loadSnapCount  int
+	failNextSave   bool
+	failNextLoad   bool
 }
 
 func NewMockPersistence() *MockPersistence {
@@ -259,14 +259,14 @@ func NewMockPersistence() *MockPersistence {
 func (m *MockPersistence) SaveState(state *PersistentState) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.saveStateCount++
-	
+
 	if m.failNextSave {
 		m.failNextSave = false
 		return fmt.Errorf("mock save failure")
 	}
-	
+
 	// Deep copy the state
 	if state != nil {
 		m.state = &PersistentState{
@@ -279,25 +279,25 @@ func (m *MockPersistence) SaveState(state *PersistentState) error {
 			copy(m.state.Log, state.Log)
 		}
 	}
-	
+
 	return nil
 }
 
 func (m *MockPersistence) LoadState() (*PersistentState, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.loadStateCount++
-	
+
 	if m.failNextLoad {
 		m.failNextLoad = false
 		return nil, fmt.Errorf("mock load failure")
 	}
-	
+
 	if m.state == nil {
 		return nil, nil
 	}
-	
+
 	// Deep copy the state
 	result := &PersistentState{
 		CurrentTerm: m.state.CurrentTerm,
@@ -308,21 +308,21 @@ func (m *MockPersistence) LoadState() (*PersistentState, error) {
 		result.Log = make([]LogEntry, len(m.state.Log))
 		copy(result.Log, m.state.Log)
 	}
-	
+
 	return result, nil
 }
 
 func (m *MockPersistence) SaveSnapshot(snapshot *Snapshot) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.saveSnapCount++
-	
+
 	if m.failNextSave {
 		m.failNextSave = false
 		return fmt.Errorf("mock snapshot save failure")
 	}
-	
+
 	if snapshot != nil {
 		m.snapshot = &Snapshot{
 			LastIncludedIndex: snapshot.LastIncludedIndex,
@@ -331,32 +331,32 @@ func (m *MockPersistence) SaveSnapshot(snapshot *Snapshot) error {
 		}
 		copy(m.snapshot.Data, snapshot.Data)
 	}
-	
+
 	return nil
 }
 
 func (m *MockPersistence) LoadSnapshot() (*Snapshot, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.loadSnapCount++
-	
+
 	if m.failNextLoad {
 		m.failNextLoad = false
 		return nil, fmt.Errorf("mock snapshot load failure")
 	}
-	
+
 	if m.snapshot == nil {
 		return nil, nil
 	}
-	
+
 	result := &Snapshot{
 		LastIncludedIndex: m.snapshot.LastIncludedIndex,
 		LastIncludedTerm:  m.snapshot.LastIncludedTerm,
 		Data:              make([]byte, len(m.snapshot.Data)),
 	}
 	copy(result.Data, m.snapshot.Data)
-	
+
 	return result, nil
 }
 
@@ -393,13 +393,13 @@ func (m *MockPersistence) FailNextLoad() {
 
 // MockStateMachine is a test implementation of StateMachine
 type MockStateMachine struct {
-	mu                sync.RWMutex
-	state             map[string]interface{}
-	applyCount        int
-	lastAppliedIndex  int
-	lastAppliedTerm   int
-	applyDelay        time.Duration
-	failNextApply     bool
+	mu                 sync.RWMutex
+	state              map[string]interface{}
+	applyCount         int
+	lastAppliedIndex   int
+	lastAppliedTerm    int
+	applyDelay         time.Duration
+	failNextApply      bool
 	captureAppliedCmds []interface{}
 }
 
@@ -413,19 +413,19 @@ func NewMockStateMachine() *MockStateMachine {
 func (m *MockStateMachine) Apply(entry LogEntry) interface{} {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	if m.applyDelay > 0 {
 		time.Sleep(m.applyDelay)
 	}
-	
+
 	m.applyCount++
 	m.captureAppliedCmds = append(m.captureAppliedCmds, entry.Command)
-	
+
 	if m.failNextApply {
 		m.failNextApply = false
 		return fmt.Errorf("mock apply failure")
 	}
-	
+
 	// Simple key-value store simulation
 	if cmd, ok := entry.Command.(string); ok {
 		parts := strings.SplitN(cmd, " ", 3)
@@ -451,19 +451,19 @@ func (m *MockStateMachine) Apply(entry LogEntry) interface{} {
 			}
 		}
 	}
-	
+
 	// Store any command type
 	if key, ok := entry.Command.(string); ok {
 		m.state[key] = entry.Command
 	}
-	
+
 	return entry.Command
 }
 
 func (m *MockStateMachine) Snapshot() ([]byte, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	// Simple snapshot: just count of entries
 	return []byte(fmt.Sprintf("entries:%d", len(m.state))), nil
 }
@@ -471,7 +471,7 @@ func (m *MockStateMachine) Snapshot() ([]byte, error) {
 func (m *MockStateMachine) Restore(data []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.state = make(map[string]interface{})
 	// For simplicity, we just clear the state
 	return nil
@@ -481,7 +481,7 @@ func (m *MockStateMachine) Restore(data []byte) error {
 func (m *MockStateMachine) GetData() map[string]interface{} {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	// Return a copy to avoid external modifications
 	result := make(map[string]interface{})
 	for k, v := range m.state {
@@ -592,6 +592,7 @@ func (t *multiNodeTransport) GetAddress() string {
 
 // For backward compatibility
 type testLogger = TestLogger
+
 func newTestLogger(t *testing.T) *testLogger {
 	return NewTestLogger(t)
 }
@@ -851,7 +852,7 @@ type testStateMachine struct {
 func (s *testStateMachine) Apply(entry LogEntry) interface{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	if cmd, ok := entry.Command.(string); ok {
 		parts := strings.Split(cmd, "=")
 		if len(parts) == 2 && parts[0] == "SET" {
@@ -865,7 +866,7 @@ func (s *testStateMachine) Apply(entry LogEntry) interface{} {
 func (s *testStateMachine) Snapshot() ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	// Simple snapshot: just count entries
 	return []byte(fmt.Sprintf("entries:%d", len(s.data))), nil
 }
@@ -873,7 +874,7 @@ func (s *testStateMachine) Snapshot() ([]byte, error) {
 func (s *testStateMachine) Restore(data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	s.data = make(map[string]string)
 	// Simple restore: just clear data
 	return nil

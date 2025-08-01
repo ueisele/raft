@@ -15,7 +15,7 @@ import (
 func TestCommitIndexBoundsWithConfigChange(t *testing.T) {
 	// Start with a 5-node cluster
 	cluster := helpers.NewTestCluster(t, 5)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -36,7 +36,7 @@ func TestCommitIndexBoundsWithConfigChange(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
-		
+
 		// Wait for replication
 		helpers.WaitForCommitIndex(t, cluster.Nodes, index, time.Second)
 	}
@@ -64,7 +64,7 @@ func TestCommitIndexBoundsWithConfigChange(t *testing.T) {
 				}
 			}
 		}
-		
+
 		// Wait for configuration to be committed
 		time.Sleep(500 * time.Millisecond)
 	}
@@ -122,9 +122,9 @@ func TestCommitIndexBoundsWithConfigChange(t *testing.T) {
 // TestMatchIndexBoundsAfterConfigChange verifies that matchIndex array
 // is properly bounded when accessed after removing servers
 func TestMatchIndexBoundsAfterConfigChange(t *testing.T) {
-	// Create a 3-node cluster  
+	// Create a 3-node cluster
 	cluster := helpers.NewTestCluster(t, 3)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)

@@ -19,7 +19,7 @@ func TestBasicConfigurationChange(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		// Initial configuration only includes nodes 0, 1, 2
 		initialPeers := []int{0, 1, 2}
-		
+
 		config := &raft.Config{
 			ID:                 i,
 			Peers:              initialPeers,
@@ -126,13 +126,13 @@ func TestBasicConfigurationChange(t *testing.T) {
 				allSynced = false
 			}
 		}
-		
+
 		if !allSynced {
 			// Submit a command to trigger replication
 			leader.Submit(fmt.Sprintf("sync"))
 			leaderCommitIndex = leader.GetCommitIndex()
 		}
-		
+
 		return allSynced, fmt.Sprintf("commit indices: %v (leader: %d)", statuses, leaderCommitIndex)
 	}, 5*time.Second, "all nodes synchronization")
 	t.Log("All nodes synchronized")
@@ -147,12 +147,12 @@ func TestBasicConfigurationChange(t *testing.T) {
 	// Wait for configuration change to be applied
 	helpers.WaitForConditionWithProgress(t, func() (bool, string) {
 		config := leader.GetConfiguration()
-		
+
 		if len(config.Servers) != 3 {
 			// Submit a dummy command to trigger replication
 			leader.Submit(fmt.Sprintf("remove-helper"))
 		}
-		
+
 		return len(config.Servers) == 3, fmt.Sprintf("waiting for config to have 3 servers after removal, currently has %d", len(config.Servers))
 	}, 5*time.Second, "configuration propagation after remove")
 	t.Log("Configuration change applied successfully")

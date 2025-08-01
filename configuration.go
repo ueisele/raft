@@ -144,14 +144,14 @@ func (cm *ConfigurationManager) StartAddServer(server ServerConfig) error {
 		if cm.pendingConfig.Type == ConfigChangeAddServer && cm.pendingConfig.Server.ID == server.ID {
 			return fmt.Errorf("server %d already being added", server.ID)
 		}
-		
+
 		// Check if server exists in the pending new configuration
 		for _, s := range cm.pendingConfig.NewConfig.Servers {
 			if s.ID == server.ID {
 				return fmt.Errorf("server %d already exists in pending configuration", server.ID)
 			}
 		}
-		
+
 		return fmt.Errorf("configuration change already in progress")
 	}
 
@@ -272,7 +272,7 @@ func (cm *ConfigurationManager) ApplyCommittedConfiguration(config *ClusterConfi
 	// Update the configuration
 	cm.currentConfig = config
 	cm.currentConfig.Index = index
-	
+
 	// Clear any pending configuration since we're applying a committed one
 	cm.pendingConfig = nil
 }

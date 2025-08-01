@@ -141,11 +141,11 @@ func NewTestCluster(t *testing.T, size int, opts ...ClusterOption) *TestCluster 
 			ElectionTimeoutMax: config.electionTimeoutMax,
 			HeartbeatInterval:  config.heartbeatInterval,
 		}
-		
+
 		if config.logger != nil {
 			nodeConfig.Logger = config.logger
 		}
-		
+
 		if config.maxLogSize > 0 {
 			nodeConfig.MaxLogSize = config.maxLogSize
 		}
@@ -253,7 +253,7 @@ func (c *TestCluster) PartitionNode(nodeID int) error {
 		return fmt.Errorf("node %d does not have partitionable transport", nodeID)
 	}
 	transport.BlockAll()
-	
+
 	// Also block this node from all other nodes
 	for i, t := range c.Transports {
 		if i != nodeID {
@@ -284,7 +284,7 @@ func (c *TestCluster) CreatePartition(group1, group2 []int) {
 			}
 		}
 	}
-	
+
 	// Block communication from group2 to group1
 	for _, id2 := range group2 {
 		if pt, ok := c.Transports[id2].(*PartitionableTransport); ok {
@@ -321,12 +321,12 @@ func (c *TestCluster) SubmitCommand(command interface{}) (int, int, error) {
 	if leader == nil {
 		return 0, -1, fmt.Errorf("no leader available")
 	}
-	
+
 	index, term, isLeader := leader.Submit(command)
 	if !isLeader {
 		return 0, -1, fmt.Errorf("node %d is no longer leader", leaderID)
 	}
-	
+
 	return index, term, nil
 }
 

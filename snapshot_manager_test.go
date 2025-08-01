@@ -66,7 +66,7 @@ func TestLargeSnapshot(t *testing.T) {
 func TestSnapshotManagerBasics(t *testing.T) {
 	sm := NewMockStateMachine()
 	persistence := NewMockPersistence()
-	
+
 	// Apply some entries
 	for i := 0; i < 10; i++ {
 		entry := LogEntry{
@@ -76,42 +76,42 @@ func TestSnapshotManagerBasics(t *testing.T) {
 		}
 		sm.Apply(entry)
 	}
-	
+
 	// Create snapshot
 	data, err := sm.Snapshot()
 	if err != nil {
 		t.Fatalf("Failed to create snapshot: %v", err)
 	}
-	
+
 	// Save snapshot
 	snapshot := &Snapshot{
 		LastIncludedIndex: 10,
 		LastIncludedTerm:  1,
 		Data:              data,
 	}
-	
+
 	err = persistence.SaveSnapshot(snapshot)
 	if err != nil {
 		t.Fatalf("Failed to save snapshot: %v", err)
 	}
-	
+
 	// Load snapshot
 	loaded, err := persistence.LoadSnapshot()
 	if err != nil {
 		t.Fatalf("Failed to load snapshot: %v", err)
 	}
-	
+
 	if loaded == nil {
 		t.Fatal("Loaded snapshot is nil")
 	}
-	
+
 	if loaded.LastIncludedIndex != snapshot.LastIncludedIndex {
-		t.Errorf("Snapshot index mismatch: expected %d, got %d", 
+		t.Errorf("Snapshot index mismatch: expected %d, got %d",
 			snapshot.LastIncludedIndex, loaded.LastIncludedIndex)
 	}
-	
+
 	if loaded.LastIncludedTerm != snapshot.LastIncludedTerm {
-		t.Errorf("Snapshot term mismatch: expected %d, got %d", 
+		t.Errorf("Snapshot term mismatch: expected %d, got %d",
 			snapshot.LastIncludedTerm, loaded.LastIncludedTerm)
 	}
 }

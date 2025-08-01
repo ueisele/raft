@@ -16,10 +16,10 @@ func TestStaticPeerDiscovery(t *testing.T) {
 	discovery := NewStaticPeerDiscovery(peers)
 
 	tests := []struct {
-		name       string
-		serverID   int
-		wantAddr   string
-		wantErr    bool
+		name     string
+		serverID int
+		wantAddr string
+		wantErr  bool
 	}{
 		{
 			name:     "existing peer 1",
@@ -120,7 +120,7 @@ func TestStaticPeerDiscovery_EmptyAddress(t *testing.T) {
 
 func TestStaticPeerDiscovery_RefreshPeers(t *testing.T) {
 	discovery := NewStaticPeerDiscovery(map[int]string{})
-	
+
 	ctx := context.Background()
 	err := discovery.RefreshPeers(ctx)
 	if err != nil {
@@ -130,7 +130,7 @@ func TestStaticPeerDiscovery_RefreshPeers(t *testing.T) {
 
 func TestStaticPeerDiscovery_Close(t *testing.T) {
 	discovery := NewStaticPeerDiscovery(map[int]string{})
-	
+
 	err := discovery.Close()
 	if err != nil {
 		t.Errorf("Close() should not return error for static discovery: %v", err)
@@ -145,21 +145,21 @@ func TestStaticPeerDiscovery_GetPeers(t *testing.T) {
 	discovery := NewStaticPeerDiscovery(peers)
 
 	gotPeers := discovery.GetPeers()
-	
+
 	// Verify we got a copy, not the original map
 	if len(gotPeers) != len(peers) {
 		t.Errorf("GetPeers() returned %d peers, want %d", len(gotPeers), len(peers))
 	}
-	
+
 	for id, addr := range peers {
 		if gotPeers[id] != addr {
 			t.Errorf("GetPeers()[%d] = %v, want %v", id, gotPeers[id], addr)
 		}
 	}
-	
+
 	// Modify returned map should not affect internal state
 	gotPeers[1] = "modified"
-	
+
 	ctx := context.Background()
 	addr, _ := discovery.GetPeerAddress(ctx, 1)
 	if addr != "node1:8001" {
@@ -191,7 +191,7 @@ func TestStaticPeerDiscovery_ConcurrentAccess(t *testing.T) {
 
 	// Run concurrent reads and writes
 	done := make(chan bool)
-	
+
 	// Reader goroutines
 	for i := 0; i < 10; i++ {
 		go func(id int) {

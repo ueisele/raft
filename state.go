@@ -24,7 +24,7 @@ type StateManager struct {
 	electionTimeoutMin time.Duration
 	electionTimeoutMax time.Duration
 	heartbeatInterval  time.Duration
-	config            *Config
+	config             *Config
 
 	// Random source for election timeouts
 	rand *rand.Rand
@@ -190,12 +190,12 @@ func (sm *StateManager) ResetElectionTimer() {
 func (sm *StateManager) ForceElectionTimeout() {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	
+
 	// Stop the current timer
 	if sm.electionTimer != nil {
 		sm.electionTimer.Stop()
 	}
-	
+
 	// Set a very short timeout to trigger election quickly
 	sm.electionTimer = time.NewTimer(50 * time.Millisecond)
 }
@@ -324,7 +324,7 @@ func (sm *StateManager) resetElectionTimer() {
 		timeout = sm.electionTimeoutMin
 	}
 	sm.electionTimer = time.NewTimer(timeout)
-	
+
 	if sm.config != nil && sm.config.Logger != nil {
 		sm.config.Logger.Debug("Node %d reset election timer: %v", sm.serverID, timeout)
 	}

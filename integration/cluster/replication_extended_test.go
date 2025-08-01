@@ -84,7 +84,7 @@ func TestLogReplicationWithFailures(t *testing.T) {
 		if !isLeader {
 			// Leader might have changed
 			atomic.AddInt32(&totalFailed, 1)
-			
+
 			// Find new leader
 			for j, node := range nodes {
 				_, isLeader := node.GetState()
@@ -122,7 +122,7 @@ func TestLogReplicationWithFailures(t *testing.T) {
 	t.Logf("  Submitted: %d", atomic.LoadInt32(&totalSubmitted))
 	t.Logf("  Committed: %d", atomic.LoadInt32(&totalCommitted))
 	t.Logf("  Failed: %d", atomic.LoadInt32(&totalFailed))
-	
+
 	// Check transport failure stats
 	totalAttempts := 0
 	totalFailures := 0
@@ -130,10 +130,10 @@ func TestLogReplicationWithFailures(t *testing.T) {
 		totalAttempts += int(atomic.LoadInt64(&transport.attempts))
 		totalFailures += int(atomic.LoadInt64(&transport.failures))
 	}
-	
+
 	if totalAttempts > 0 {
 		failureRate := float64(totalFailures) / float64(totalAttempts)
-		t.Logf("  Network failure rate: %.2f%% (%d/%d)", 
+		t.Logf("  Network failure rate: %.2f%% (%d/%d)",
 			failureRate*100, totalFailures, totalAttempts)
 	}
 
@@ -165,7 +165,7 @@ func TestReplicationPerformance(t *testing.T) {
 	// Measure throughput
 	numCommands := 1000
 	commandSize := 100 // bytes per command
-	
+
 	// Generate commands
 	commands := make([]string, numCommands)
 	for i := 0; i < numCommands; i++ {
@@ -179,16 +179,16 @@ func TestReplicationPerformance(t *testing.T) {
 
 	// Submit commands and measure time
 	start := time.Now()
-	
+
 	for i, cmd := range commands {
 		_, _, isLeader := cluster.Nodes[leaderID].Submit(cmd)
 		if !isLeader {
 			t.Logf("Failed to submit command %d: not leader", i)
 		}
 	}
-	
+
 	submitDuration := time.Since(start)
-	
+
 	// Wait for all to be committed
 	lastCommitIndex := cluster.Nodes[leaderID].GetCommitIndex()
 	helpers.WaitForConditionWithProgress(t, func() (bool, string) {
@@ -202,14 +202,14 @@ func TestReplicationPerformance(t *testing.T) {
 		}
 		return allCaughtUp, fmt.Sprintf("commit index: %d", currentCommit)
 	}, 10*time.Second, "full replication")
-	
+
 	totalDuration := time.Since(start)
-	
+
 	// Calculate metrics
 	throughputSubmit := float64(numCommands) / submitDuration.Seconds()
 	throughputTotal := float64(numCommands) / totalDuration.Seconds()
 	dataRate := float64(numCommands*commandSize) / totalDuration.Seconds() / 1024 // KB/s
-	
+
 	t.Logf("Replication performance:")
 	t.Logf("  Commands: %d × %d bytes", numCommands, commandSize)
 	t.Logf("  Submit time: %v (%.0f cmd/s)", submitDuration, throughputSubmit)
@@ -239,20 +239,20 @@ func TestReplicationPatterns(t *testing.T) {
 			for i := 0; i < 20; i++ {
 				cluster.Nodes[leaderID].Submit(fmt.Sprintf("burst-%d-cmd-%d", burst, i))
 			}
-			
+
 			// Quiet period
 			time.Sleep(200 * time.Millisecond)
 		}
-		
+
 		// Wait for replication
 		time.Sleep(1 * time.Second)
-		
+
 		// Check all nodes caught up
 		commitIndices := make([]int, len(cluster.Nodes))
 		for i, node := range cluster.Nodes {
 			commitIndices[i] = node.GetCommitIndex()
 		}
-		
+
 		minCommit := commitIndices[0]
 		maxCommit := commitIndices[0]
 		for _, ci := range commitIndices {
@@ -263,9 +263,9 @@ func TestReplicationPatterns(t *testing.T) {
 				maxCommit = ci
 			}
 		}
-		
+
 		t.Logf("Bursty traffic: commit indices range [%d, %d]", minCommit, maxCommit)
-		
+
 		if maxCommit-minCommit > 10 {
 			t.Errorf("Large divergence in commit indices: %d", maxCommit-minCommit)
 		}
@@ -274,12 +274,12 @@ func TestReplicationPatterns(t *testing.T) {
 	t.Run("SteadyStream", func(t *testing.T) {
 		// Simulate steady stream of commands
 		ctx, cancel := context.WithCancel(context.Background())
-		
+
 		var submitted int32
 		go func() {
 			ticker := time.NewTicker(10 * time.Millisecond)
 			defer ticker.Stop()
-			
+
 			for {
 				select {
 				case <-ctx.Done():
@@ -290,46 +290,46 @@ func TestReplicationPatterns(t *testing.T) {
 				}
 			}
 		}()
-		
+
 		// Run for a period
 		time.Sleep(2 * time.Second)
 		cancel()
-		
+
 		totalSubmitted := atomic.LoadInt32(&submitted)
-		
+
 		// Wait for replication to complete
 		time.Sleep(1 * time.Second)
-		
+
 		// Check commit progress
 		avgCommit := 0
 		for _, node := range cluster.Nodes {
 			avgCommit += node.GetCommitIndex()
 		}
 		avgCommit /= len(cluster.Nodes)
-		
+
 		t.Logf("Steady stream: submitted %d, avg commit index %d", totalSubmitted, avgCommit)
 	})
 
 	t.Run("LargeEntries", func(t *testing.T) {
 		// Test replication of large entries
 		sizes := []int{1024, 10240, 102400} // 1KB, 10KB, 100KB
-		
+
 		for _, size := range sizes {
 			// Create large command
 			data := make([]byte, size)
 			for i := range data {
 				data[i] = byte(rand.Intn(256))
 			}
-			
+
 			largeCmd := fmt.Sprintf("large-%d-%s", size, string(data))
-			
+
 			start := time.Now()
 			idx, _, isLeader := cluster.Nodes[leaderID].Submit(largeCmd)
 			if !isLeader {
 				t.Logf("Failed to submit %d byte command: not leader", size)
 				continue
 			}
-			
+
 			// Wait for replication
 			if err := cluster.WaitForCommitIndex(idx, 5*time.Second); err != nil {
 				t.Logf("Large entry (%d bytes) failed to replicate: %v", size, err)
@@ -410,7 +410,7 @@ func TestReplicationWithSlowFollowers(t *testing.T) {
 		// Check commit progress periodically
 		if i%5 == 4 {
 			time.Sleep(200 * time.Millisecond)
-			
+
 			for j, node := range nodes {
 				commit := node.GetCommitIndex()
 				lag := idx - commit
@@ -482,7 +482,7 @@ func (t *failureTransport) shouldFail() bool {
 
 func (t *failureTransport) SendRequestVote(serverID int, args *raft.RequestVoteArgs) (*raft.RequestVoteReply, error) {
 	atomic.AddInt64(&t.attempts, 1)
-	
+
 	if t.shouldFail() {
 		atomic.AddInt64(&t.failures, 1)
 		return nil, fmt.Errorf("simulated network failure")
@@ -503,7 +503,7 @@ func (t *failureTransport) SendRequestVote(serverID int, args *raft.RequestVoteA
 
 func (t *failureTransport) SendAppendEntries(serverID int, args *raft.AppendEntriesArgs) (*raft.AppendEntriesReply, error) {
 	atomic.AddInt64(&t.attempts, 1)
-	
+
 	if t.shouldFail() {
 		atomic.AddInt64(&t.failures, 1)
 		return nil, fmt.Errorf("simulated network failure")
@@ -524,7 +524,7 @@ func (t *failureTransport) SendAppendEntries(serverID int, args *raft.AppendEntr
 
 func (t *failureTransport) SendInstallSnapshot(serverID int, args *raft.InstallSnapshotArgs) (*raft.InstallSnapshotReply, error) {
 	atomic.AddInt64(&t.attempts, 1)
-	
+
 	if t.shouldFail() {
 		atomic.AddInt64(&t.failures, 1)
 		return nil, fmt.Errorf("simulated network failure")

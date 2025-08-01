@@ -69,15 +69,6 @@ func (b *Builder) Build() (*HTTPTransport, error) {
 	return trans, nil
 }
 
-// NewHTTPTransportWithDiscovery is now an alias for NewHTTPTransport
-// Deprecated: Use NewHTTPTransport directly
-func NewHTTPTransportWithDiscovery(
-	config *transport.Config,
-	discovery transport.PeerDiscovery,
-) (*HTTPTransport, error) {
-	return NewHTTPTransport(config, discovery)
-}
-
 // NewHTTPTransportWithStaticPeers creates a transport with static peer configuration
 // This is a convenience method for the common case of static configuration
 func NewHTTPTransportWithStaticPeers(

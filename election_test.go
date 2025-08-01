@@ -18,21 +18,21 @@ func newElectionTestTransport(serverID int) *electionTestTransport {
 		responses:     make(map[int]*RequestVoteReply),
 		errors:        make(map[int]error),
 	}
-	
+
 	// Set up request vote handler
 	mt.SetRequestVoteHandler(func(sid int, args *RequestVoteArgs) (*RequestVoteReply, error) {
 		if err, ok := mt.errors[sid]; ok {
 			return nil, err
 		}
-		
+
 		if reply, ok := mt.responses[sid]; ok {
 			return reply, nil
 		}
-		
+
 		// Default response - vote not granted
 		return &RequestVoteReply{Term: args.Term, VoteGranted: false}, nil
 	})
-	
+
 	return mt
 }
 

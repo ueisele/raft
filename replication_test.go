@@ -3,7 +3,6 @@ package raft
 import (
 	"testing"
 	"time"
-
 	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
@@ -27,7 +26,7 @@ func newReplicationTestTransport(serverID int) *replicationTestTransport {
 		snapshotResponses: make(map[int]*InstallSnapshotReply),
 		snapshotErrors:    make(map[int]error),
 	}
-	
+
 	// Set up append entries handler
 	rt.SetAppendEntriesHandler(func(sid int, args *AppendEntriesArgs) (*AppendEntriesReply, error) {
 		// This handler is called when the transport sends append entries
@@ -40,7 +39,7 @@ func newReplicationTestTransport(serverID int) *replicationTestTransport {
 		// Default response
 		return &AppendEntriesReply{Term: args.Term, Success: false}, nil
 	})
-	
+
 	// Set up install snapshot handler
 	rt.SetInstallSnapshotHandler(func(sid int, args *InstallSnapshotArgs) (*InstallSnapshotReply, error) {
 		if err, ok := rt.snapshotErrors[sid]; ok {
@@ -51,7 +50,7 @@ func newReplicationTestTransport(serverID int) *replicationTestTransport {
 		}
 		return &InstallSnapshotReply{Term: args.Term}, nil
 	})
-	
+
 	return rt
 }
 
@@ -59,8 +58,8 @@ func newReplicationTestTransport(serverID int) *replicationTestTransport {
 func TestReplicationManagerHeartbeat(t *testing.T) {
 	// Create dependencies
 	config := &Config{
-		ID:                 0,  // Server ID 0
-		Peers:              []int{0, 1, 2},  // Peers include self
+		ID:                 0,              // Server ID 0
+		Peers:              []int{0, 1, 2}, // Peers include self
 		ElectionTimeoutMin: 100 * time.Millisecond,
 		ElectionTimeoutMax: 200 * time.Millisecond,
 		HeartbeatInterval:  50 * time.Millisecond,
@@ -73,11 +72,11 @@ func TestReplicationManagerHeartbeat(t *testing.T) {
 	state.BecomeCandidate()
 	// Make node the leader
 	state.BecomeLeader()
-	
+
 	// Verify state is correct
 	currentState, currentTerm := state.GetState()
 	t.Logf("State: %v, Term: %d", currentState, currentTerm)
-	
+
 	// Verify we're actually a leader
 	if currentState != Leader {
 		t.Fatalf("Expected to be Leader, but state is %v", currentState)
@@ -87,20 +86,20 @@ func TestReplicationManagerHeartbeat(t *testing.T) {
 	sm := NewMockStateMachine()
 	applyNotify := make(chan struct{}, 1)
 	rm := NewReplicationManager(0, []int{0, 1, 2}, state, log, transport, config, sm, nil, applyNotify)
-	
+
 	// Initialize leader state - this is important!
 	rm.BecomeLeader()
-	
+
 	// Clear any calls from BecomeLeader
 	transport.ClearCalls()
 
 	// Set up successful responses (for peers 1 and 2)
 	transport.appendResponses[1] = &AppendEntriesReply{Term: 1, Success: true}
 	transport.appendResponses[2] = &AppendEntriesReply{Term: 1, Success: true}
-	
+
 	// Log peers before sending
 	t.Logf("Peers: %v, ServerID: %d", rm.peers, rm.serverID)
-	
+
 	// Check if transport has been called before
 	initialCalls := transport.GetAppendEntriesCalls()
 	t.Logf("Initial append entries calls: %d", len(initialCalls))
@@ -127,14 +126,14 @@ func TestReplicationManagerHeartbeat(t *testing.T) {
 	if len(calls) < 2 {
 		t.Errorf("Expected at least 2 heartbeat calls, got %d", len(calls))
 	}
-	
+
 	// Count unique servers that received heartbeats
 	serversContacted := make(map[int]bool)
 	for i, call := range calls {
 		t.Logf("Call %d: to server %d", i, call.ServerID)
 		serversContacted[call.ServerID] = true
 	}
-	
+
 	// Should have contacted both peers (1 and 2)
 	if len(serversContacted) != 2 {
 		t.Errorf("Expected to contact 2 different servers, contacted %d", len(serversContacted))
@@ -190,14 +189,14 @@ func TestReplicationManagerReplicate(t *testing.T) {
 
 	// Initialize leader state (this sets nextIndex properly)
 	rm.BecomeLeader()
-	
+
 	// Clear any calls from BecomeLeader
 	transport.ClearCalls()
-	
+
 	// Now simulate that peers have different states
 	rm.matchIndex[2] = 1 // Follower 2 has replicated up to index 1
 	rm.nextIndex[2] = 2  // Next index to send to follower 2
-	rm.matchIndex[3] = 0 // Follower 3 has no entries  
+	rm.matchIndex[3] = 0 // Follower 3 has no entries
 	rm.nextIndex[3] = 1  // Next index to send to follower 3
 
 	// Set up responses
@@ -216,7 +215,7 @@ func TestReplicationManagerReplicate(t *testing.T) {
 	if len(transport.GetAppendEntriesCalls()) == 0 {
 		t.Fatal("Expected at least 1 replication call, got 0")
 	}
-	
+
 	// For now, just verify that whatever calls we got are correct
 	// Due to async nature and inflightRPCs, we might not get all peers in one Replicate() call
 
@@ -258,9 +257,9 @@ func TestReplicationManagerCommitAdvancement(t *testing.T) {
 	transport := newReplicationTestTransport(1)
 
 	// Add entries with current term
-	state.BecomeCandidate()  // Term 1
-	state.BecomeCandidate()  // Term 2
-	state.BecomeLeader()     // Still Term 2
+	state.BecomeCandidate() // Term 1
+	state.BecomeCandidate() // Term 2
+	state.BecomeLeader()    // Still Term 2
 	log.AppendEntries(0, 0, []LogEntry{
 		{Term: 2, Index: 1, Command: "cmd1"},
 		{Term: 2, Index: 2, Command: "cmd2"},
@@ -272,7 +271,7 @@ func TestReplicationManagerCommitAdvancement(t *testing.T) {
 	applyNotify := make(chan struct{}, 1)
 	rm := NewReplicationManager(1, []int{1, 2, 3}, state, log, transport, config, sm, nil, applyNotify)
 
-	// Initialize leader state  
+	// Initialize leader state
 	rm.BecomeLeader()
 
 	// Simulate successful replication
@@ -287,7 +286,7 @@ func TestReplicationManagerCommitAdvancement(t *testing.T) {
 	// Debug state before advancing
 	t.Logf("Current term: %d", state.GetTerm())
 	t.Logf("Match indices: %v", rm.matchIndex)
-	
+
 	// Advance commit index
 	rm.advanceCommitIndex()
 
@@ -467,4 +466,3 @@ func TestReplicationManagerSnapshot(t *testing.T) {
 	// Note: HandleInstallSnapshot is not a method on ReplicationManager
 	// It's handled by the main node. Skipping this test.
 }
-

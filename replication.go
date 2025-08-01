@@ -28,10 +28,10 @@ type ReplicationManager struct {
 	// Tracking successful replication
 	lastContact  map[int]time.Time
 	inflightRPCs map[int]bool
-	
+
 	// Notification channel for apply loop
-	applyNotify  chan<- struct{}
-	
+	applyNotify chan<- struct{}
+
 	// Function to get voting members count (set by node)
 	getVotingMembersCount func() int
 }
@@ -94,7 +94,7 @@ func (rm *ReplicationManager) Replicate() {
 			go rm.replicateToPeer(peer)
 		}
 	}
-	
+
 	// For single-node cluster, immediately advance commit index
 	if len(rm.peers) == 1 {
 		rm.advanceCommitIndex()
@@ -105,12 +105,12 @@ func (rm *ReplicationManager) Replicate() {
 func (rm *ReplicationManager) SendHeartbeats() {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	
+
 	if rm.config.Logger != nil {
 		rm.config.Logger.Debug("Leader %d sending heartbeats", rm.serverID)
 	}
 	rm.sendHeartbeats()
-	
+
 	// Check if we can still reach a majority
 	rm.checkQuorum()
 }
@@ -208,7 +208,7 @@ func (rm *ReplicationManager) replicateToPeer(peer int) {
 		if prevEntry == nil {
 			// Entry might be in snapshot, need to send InstallSnapshot
 			if rm.config.Logger != nil {
-				rm.config.Logger.Debug("prevEntry is nil for peer %d at index %d (nextIndex=%d)", 
+				rm.config.Logger.Debug("prevEntry is nil for peer %d at index %d (nextIndex=%d)",
 					peer, prevIndex, nextIndex)
 			}
 			rm.mu.Unlock()
@@ -304,7 +304,7 @@ func (rm *ReplicationManager) advanceCommitIndex() {
 	currentCommitIndex := rm.logManager.GetCommitIndex()
 
 	if rm.config.Logger != nil {
-		rm.config.Logger.Debug("Attempting to advance commit index: current=%d, lastIndex=%d, currentTerm=%d", 
+		rm.config.Logger.Debug("Attempting to advance commit index: current=%d, lastIndex=%d, currentTerm=%d",
 			currentCommitIndex, lastIndex, currentTerm)
 	}
 
@@ -316,7 +316,7 @@ func (rm *ReplicationManager) advanceCommitIndex() {
 			}
 			continue
 		}
-		
+
 		if entry.Term != currentTerm {
 			// Only commit entries from current term (Section 5.4.2)
 			if rm.config.Logger != nil {
@@ -341,10 +341,10 @@ func (rm *ReplicationManager) advanceCommitIndex() {
 		votingMembers := rm.getVotingMembersCount()
 		majority := votingMembers/2 + 1
 		if rm.config.Logger != nil {
-			rm.config.Logger.Debug("Entry %d: replicated on %d/%d servers (need %d for majority, %d voting members) [%s]", 
+			rm.config.Logger.Debug("Entry %d: replicated on %d/%d servers (need %d for majority, %d voting members) [%s]",
 				n, count, len(rm.peers), majority, votingMembers, matchDetails)
 		}
-		
+
 		if count >= majority {
 			rm.logManager.SetCommitIndex(n)
 
@@ -380,18 +380,18 @@ func (rm *ReplicationManager) sendHeartbeats() {
 // sendSnapshot sends InstallSnapshot RPC to a peer
 func (rm *ReplicationManager) sendSnapshot(peer int) {
 	rm.mu.Lock()
-	
+
 	// Mark RPC as in flight
 	rm.inflightRPCs[peer] = true
 	rm.mu.Unlock()
-	
+
 	// Get the latest snapshot
 	snapshot, err := rm.snapshotProvider.GetLatestSnapshot()
 	if err != nil {
 		rm.mu.Lock()
 		delete(rm.inflightRPCs, peer)
 		rm.mu.Unlock()
-		
+
 		if rm.config.Logger != nil {
 			rm.config.Logger.Warn("Failed to get snapshot for peer %d: %v", peer, err)
 		}
@@ -401,21 +401,21 @@ func (rm *ReplicationManager) sendSnapshot(peer int) {
 		rm.mu.Unlock()
 		return
 	}
-	
+
 	// Send snapshot in chunks
 	const chunkSize = 32 * 1024 // 32KB chunks
 	offset := 0
-	
+
 	for offset < len(snapshot.Data) {
 		// Calculate chunk size
 		end := offset + chunkSize
 		if end > len(snapshot.Data) {
 			end = len(snapshot.Data)
 		}
-		
+
 		chunk := snapshot.Data[offset:end]
 		done := end == len(snapshot.Data)
-		
+
 		// Prepare InstallSnapshot RPC
 		args := &InstallSnapshotArgs{
 			Term:              rm.state.GetCurrentTerm(),
@@ -426,20 +426,20 @@ func (rm *ReplicationManager) sendSnapshot(peer int) {
 			Data:              chunk,
 			Done:              done,
 		}
-		
+
 		// Send the chunk
 		reply, err := rm.transport.SendInstallSnapshot(peer, args)
 		if err != nil {
 			rm.mu.Lock()
 			delete(rm.inflightRPCs, peer)
 			rm.mu.Unlock()
-			
+
 			if rm.config.Logger != nil {
 				rm.config.Logger.Warn("Failed to send snapshot chunk to peer %d: %v", peer, err)
 			}
 			return
 		}
-		
+
 		// Check reply term
 		if reply.Term > rm.state.GetCurrentTerm() {
 			rm.state.SetTerm(reply.Term)
@@ -448,11 +448,11 @@ func (rm *ReplicationManager) sendSnapshot(peer int) {
 			rm.mu.Unlock()
 			return
 		}
-		
+
 		// Move to next chunk
 		offset = end
 	}
-	
+
 	// Snapshot sent successfully, update state
 	rm.mu.Lock()
 	delete(rm.inflightRPCs, peer)
@@ -460,12 +460,12 @@ func (rm *ReplicationManager) sendSnapshot(peer int) {
 	rm.matchIndex[peer] = snapshot.LastIncludedIndex
 	rm.lastContact[peer] = time.Now()
 	rm.mu.Unlock()
-	
+
 	if rm.config.Logger != nil {
-		rm.config.Logger.Info("Successfully sent snapshot to peer %d (lastIncludedIndex=%d)", 
+		rm.config.Logger.Info("Successfully sent snapshot to peer %d (lastIncludedIndex=%d)",
 			peer, snapshot.LastIncludedIndex)
 	}
-	
+
 	// Record metrics
 	if rm.config.Metrics != nil {
 		rm.config.Metrics.RecordSnapshot(len(snapshot.Data), 0)
@@ -504,13 +504,13 @@ type ReplicationStatus struct {
 func (rm *ReplicationManager) StopReplication() {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	
+
 	// Reset all peer indices
 	for peer := range rm.nextIndex {
 		rm.nextIndex[peer] = 1
 		rm.matchIndex[peer] = 0
 	}
-	
+
 	// Clear last contact times and inflight RPCs
 	rm.lastContact = make(map[int]time.Time)
 	rm.inflightRPCs = make(map[int]bool)
@@ -520,9 +520,9 @@ func (rm *ReplicationManager) StopReplication() {
 func (rm *ReplicationManager) UpdatePeers(peers []int) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	
+
 	rm.peers = peers
-	
+
 	// Initialize state for any new peers
 	for _, peer := range peers {
 		if peer == rm.serverID {
@@ -537,13 +537,13 @@ func (rm *ReplicationManager) UpdatePeers(peers []int) {
 			rm.inflightRPCs[peer] = false
 		}
 	}
-	
+
 	// Remove state for peers that are no longer in the configuration
 	peerSet := make(map[int]bool)
 	for _, peer := range peers {
 		peerSet[peer] = true
 	}
-	
+
 	for peer := range rm.nextIndex {
 		if !peerSet[peer] || peer == rm.serverID {
 			delete(rm.nextIndex, peer)
@@ -565,26 +565,26 @@ func (rm *ReplicationManager) SetVotingMembersCountFunc(f func() int) {
 func (rm *ReplicationManager) checkQuorum() {
 	// Count how many nodes we can reach (including ourselves)
 	reachableCount := 1 // Start with 1 for ourselves
-	
+
 	// Use a reasonable timeout for considering a node reachable
 	// Should be less than election timeout to prevent split-brain
 	reachableTimeout := 3 * rm.config.HeartbeatInterval
 	now := time.Now()
-	
+
 	for peer, lastContact := range rm.lastContact {
 		if peer != rm.serverID && now.Sub(lastContact) < reachableTimeout {
 			reachableCount++
 		}
 	}
-	
+
 	// Get the total number of voting members
 	totalVotingMembers := rm.getVotingMembersCount()
 	majorityNeeded := (totalVotingMembers / 2) + 1
-	
+
 	// If we can't reach a majority, step down
 	if reachableCount < majorityNeeded {
 		if rm.config.Logger != nil {
-			rm.config.Logger.Warn("Leader %d cannot reach majority (%d/%d), stepping down", 
+			rm.config.Logger.Warn("Leader %d cannot reach majority (%d/%d), stepping down",
 				rm.serverID, reachableCount, totalVotingMembers)
 		}
 		// Step down by incrementing term and becoming follower
@@ -598,7 +598,7 @@ func (rm *ReplicationManager) checkQuorum() {
 func (rm *ReplicationManager) GetMatchIndex(serverID int) int {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
-	
+
 	if matchIndex, exists := rm.matchIndex[serverID]; exists {
 		return matchIndex
 	}

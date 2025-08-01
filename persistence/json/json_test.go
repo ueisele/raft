@@ -62,7 +62,7 @@ func TestGetFilenamesUnit(t *testing.T) {
 
 func TestPersistenceErrorWrapping(t *testing.T) {
 	baseErr := errors.New("base error")
-	
+
 	tests := []struct {
 		name string
 		err  error
@@ -254,7 +254,7 @@ func TestSnapshotWrapperSerialization(t *testing.T) {
 func TestEmptyLogHandlingLogic(t *testing.T) {
 	// Test the logic for handling empty logs (should add dummy entry)
 	emptyLog := []raft.LogEntry{}
-	
+
 	// Simulate the logic from LoadState
 	if len(emptyLog) == 0 {
 		emptyLog = []raft.LogEntry{{Term: 0, Index: 0}}

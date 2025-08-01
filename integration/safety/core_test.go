@@ -111,7 +111,7 @@ func TestLogMatching(t *testing.T) {
 	for i := 1; i <= numCommands; i++ {
 		var referenceTerm int
 		var referenceCmd string
-		
+
 		// Get reference from first node
 		entry := cluster.Nodes[0].GetLogEntry(i)
 		if entry != nil {
@@ -167,7 +167,7 @@ func TestLeaderCompleteness(t *testing.T) {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
 		committedEntries[idx] = cmd
-		
+
 		// Wait for commit
 		if err := cluster.WaitForCommitIndex(idx, time.Second); err != nil {
 			t.Fatalf("Command not committed: %v", err)
@@ -217,10 +217,10 @@ func TestLeaderCompleteness(t *testing.T) {
 			t.Errorf("New leader missing committed entry at index %d", idx)
 			continue
 		}
-		
+
 		cmd, _ := entry.Command.(string)
 		if cmd != expectedCmd {
-			t.Errorf("New leader has different entry at index %d: got %s, want %s", 
+			t.Errorf("New leader has different entry at index %d: got %s, want %s",
 				idx, cmd, expectedCmd)
 		}
 	}
@@ -259,7 +259,7 @@ func TestStateMachineSafety(t *testing.T) {
 	// Submit a series of commands
 	commands := []string{
 		"set x 1",
-		"set y 2", 
+		"set y 2",
 		"set z 3",
 		"increment x",
 		"increment y",

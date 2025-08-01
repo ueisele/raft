@@ -14,7 +14,7 @@ import (
 func TestConcurrentClients(t *testing.T) {
 	// Create 5-node cluster
 	cluster := helpers.NewTestCluster(t, 5)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -31,17 +31,17 @@ func TestConcurrentClients(t *testing.T) {
 	clientCount := 20
 	operationsPerClient := 50
 	var wg sync.WaitGroup
-	
+
 	successCount := int64(0)
 	errorCount := int64(0)
-	
+
 	startTime := time.Now()
 
 	for clientID := 0; clientID < clientCount; clientID++ {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			
+
 			for op := 0; op < operationsPerClient; op++ {
 				// Mix of read and write operations
 				var cmd string
@@ -50,7 +50,7 @@ func TestConcurrentClients(t *testing.T) {
 				} else {
 					cmd = fmt.Sprintf("SET client-%d-key-%d value-%d", id, op, op)
 				}
-				
+
 				_, _, err := cluster.SubmitCommand(cmd)
 				if err != nil {
 					atomic.AddInt64(&errorCount, 1)
@@ -69,7 +69,7 @@ func TestConcurrentClients(t *testing.T) {
 	finalErrors := atomic.LoadInt64(&errorCount)
 
 	t.Logf("Concurrent clients test:")
-	t.Logf("  %d clients × %d ops = %d total operations", 
+	t.Logf("  %d clients × %d ops = %d total operations",
 		clientCount, operationsPerClient, totalOps)
 	t.Logf("  Results: %d successful, %d errors", finalSuccess, finalErrors)
 	t.Logf("  Duration: %v", duration)
@@ -86,7 +86,7 @@ func TestConcurrentClients(t *testing.T) {
 func TestConcurrentReadsAndWrites(t *testing.T) {
 	// Create 3-node cluster
 	cluster := helpers.NewTestCluster(t, 3)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -110,7 +110,7 @@ func TestConcurrentReadsAndWrites(t *testing.T) {
 	writerCount := 5
 	readerCount := 10
 	opsPerWorker := 20
-	
+
 	var wg sync.WaitGroup
 	writeSuccess := int64(0)
 	readSuccess := int64(0)
@@ -120,7 +120,7 @@ func TestConcurrentReadsAndWrites(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			
+
 			for j := 0; j < opsPerWorker; j++ {
 				cmd := fmt.Sprintf("INCREMENT %s", sharedKey)
 				_, _, err := cluster.SubmitCommand(cmd)
@@ -137,7 +137,7 @@ func TestConcurrentReadsAndWrites(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			
+
 			for j := 0; j < opsPerWorker; j++ {
 				cmd := fmt.Sprintf("GET %s", sharedKey)
 				_, _, err := cluster.SubmitCommand(cmd)
@@ -155,9 +155,9 @@ func TestConcurrentReadsAndWrites(t *testing.T) {
 	finalReads := atomic.LoadInt64(&readSuccess)
 
 	t.Logf("Concurrent reads and writes:")
-	t.Logf("  Writers: %d × %d = %d writes (%d successful)", 
+	t.Logf("  Writers: %d × %d = %d writes (%d successful)",
 		writerCount, opsPerWorker, writerCount*opsPerWorker, finalWrites)
-	t.Logf("  Readers: %d × %d = %d reads (%d successful)", 
+	t.Logf("  Readers: %d × %d = %d reads (%d successful)",
 		readerCount, opsPerWorker, readerCount*opsPerWorker, finalReads)
 }
 
@@ -165,7 +165,7 @@ func TestConcurrentReadsAndWrites(t *testing.T) {
 func TestClientConnectionStress(t *testing.T) {
 	// Create 5-node cluster
 	cluster := helpers.NewTestCluster(t, 5)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -187,7 +187,7 @@ func TestClientConnectionStress(t *testing.T) {
 		wg.Add(1)
 		go func(connID int) {
 			defer wg.Done()
-			
+
 			// Each "connection" submits a few commands then disconnects
 			for j := 0; j < 3; j++ {
 				cmd := fmt.Sprintf("conn-%d-cmd-%d", connID, j)
@@ -196,11 +196,11 @@ func TestClientConnectionStress(t *testing.T) {
 					atomic.AddInt64(&successCount, 1)
 				}
 			}
-			
+
 			// Simulate connection close/reconnect delay
 			time.Sleep(50 * time.Millisecond)
 		}(i)
-		
+
 		// Stagger connection starts
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -215,7 +215,7 @@ func TestClientConnectionStress(t *testing.T) {
 	t.Logf("  Successful operations: %d/%d", finalSuccess, expectedOps)
 
 	if finalSuccess < expectedOps*8/10 {
-		t.Errorf("Too many failed operations: only %d/%d succeeded", 
+		t.Errorf("Too many failed operations: only %d/%d succeeded",
 			finalSuccess, expectedOps)
 	}
 }
@@ -224,7 +224,7 @@ func TestClientConnectionStress(t *testing.T) {
 func TestConcurrentConfigurationChanges(t *testing.T) {
 	// Create initial 3-node cluster
 	cluster := helpers.NewTestCluster(t, 3)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -270,7 +270,7 @@ func TestConcurrentConfigurationChanges(t *testing.T) {
 	// Add a new server (would be node 3 in a real scenario)
 	// Note: This is simulated as actual server addition requires more setup
 	t.Log("Simulating configuration change")
-	
+
 	// Submit configuration command
 	_, _, isLeader := leader.Submit("ADD_SERVER 3")
 	if !isLeader {
@@ -303,7 +303,7 @@ func TestConcurrentConfigurationChanges(t *testing.T) {
 func TestConcurrentLeaderFailure(t *testing.T) {
 	// Create 5-node cluster
 	cluster := helpers.NewTestCluster(t, 5)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -320,7 +320,7 @@ func TestConcurrentLeaderFailure(t *testing.T) {
 	clientCount := 10
 	done := make(chan struct{})
 	var wg sync.WaitGroup
-	
+
 	successBeforeFailure := int64(0)
 	successAfterFailure := int64(0)
 	errorsDuringFailure := int64(0)
@@ -330,7 +330,7 @@ func TestConcurrentLeaderFailure(t *testing.T) {
 		wg.Add(1)
 		go func(clientID int) {
 			defer wg.Done()
-			
+
 			opNum := 0
 			for {
 				select {
@@ -339,7 +339,7 @@ func TestConcurrentLeaderFailure(t *testing.T) {
 				default:
 					cmd := fmt.Sprintf("client-%d-op-%d", clientID, opNum)
 					_, _, err := cluster.SubmitCommand(cmd)
-					
+
 					if atomic.LoadInt64(&leaderFailed) == 0 {
 						if err == nil {
 							atomic.AddInt64(&successBeforeFailure, 1)
@@ -351,7 +351,7 @@ func TestConcurrentLeaderFailure(t *testing.T) {
 							atomic.AddInt64(&errorsDuringFailure, 1)
 						}
 					}
-					
+
 					opNum++
 					time.Sleep(10 * time.Millisecond)
 				}
@@ -376,7 +376,7 @@ func TestConcurrentLeaderFailure(t *testing.T) {
 
 	t.Logf("Concurrent operations during leader failure:")
 	t.Logf("  Before failure: %d successful", atomic.LoadInt64(&successBeforeFailure))
-	t.Logf("  During/after failure: %d successful, %d errors", 
+	t.Logf("  During/after failure: %d successful, %d errors",
 		atomic.LoadInt64(&successAfterFailure), atomic.LoadInt64(&errorsDuringFailure))
 
 	// Verify new leader was elected

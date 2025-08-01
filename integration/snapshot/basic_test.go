@@ -14,7 +14,7 @@ import (
 func TestSnapshotCreation(t *testing.T) {
 	// Create a single node cluster
 	cluster := helpers.NewTestCluster(t, 1, helpers.WithMaxLogSize(10)) // Trigger snapshot after 10 entries
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -46,7 +46,7 @@ func TestSnapshotCreation(t *testing.T) {
 
 	// Wait for entries to be applied first
 	cluster.WaitForCommitIndex(15, time.Second)
-	
+
 	// Get commit index to verify entries are committed
 	commitIndex := node.GetCommitIndex()
 	t.Logf("Commit index: %d", commitIndex)
@@ -74,7 +74,7 @@ func TestSnapshotCreation(t *testing.T) {
 	if logLength != 15 {
 		t.Errorf("Log index should still be 15 after snapshot. Got: %d", logLength)
 	}
-	
+
 	// The actual truncation happens internally - we can't directly verify it
 	// but the snapshot at index 11 means entries 1-11 are now in the snapshot
 }
@@ -92,7 +92,7 @@ func TestSnapshotInstallation(t *testing.T) {
 	}
 
 	// Wait for leader election
-	_, err := cluster.WaitForLeader(2*time.Second)
+	_, err := cluster.WaitForLeader(2 * time.Second)
 	if err != nil {
 		t.Fatalf("No leader elected: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestSnapshotInstallation(t *testing.T) {
 			t.Logf("Failed to submit command %d: %v", i, err)
 		}
 	}
-	
+
 	// Give some time for commands to be processed
 	time.Sleep(2 * time.Second)
 
@@ -156,7 +156,7 @@ func TestSnapshotInstallation(t *testing.T) {
 func TestSnapshotWithConcurrentWrites(t *testing.T) {
 	// Create a 3-node cluster
 	cluster := helpers.NewTestCluster(t, 3, helpers.WithMaxLogSize(20)) // Small log size to trigger multiple snapshots
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -234,7 +234,7 @@ func TestSnapshotWithConcurrentWrites(t *testing.T) {
 	}
 
 	if snapshotCount == 0 && successfulCommands > 30 {
-		t.Errorf("No snapshots were created despite %d concurrent writes (threshold: %d)", 
+		t.Errorf("No snapshots were created despite %d concurrent writes (threshold: %d)",
 			successfulCommands, 20)
 	} else if snapshotCount > 0 {
 		t.Logf("Created %d snapshots with concurrent writes", snapshotCount)
@@ -255,13 +255,13 @@ func TestSnapshotWithConcurrentWrites(t *testing.T) {
 		}
 		return maxCommit-minCommit <= 20
 	}, 3*time.Second, "nodes converge after concurrent writes")
-	
+
 	// Custom consistency check for concurrent writes
 	// Allow more tolerance since nodes may be at different stages
 	commitIndices = make([]int, 3)
 	minCommit := int(^uint(0) >> 1) // Max int
 	maxCommit := 0
-	
+
 	for i, node := range cluster.Nodes {
 		commitIndices[i] = node.GetCommitIndex()
 		if commitIndices[i] < minCommit {
@@ -271,12 +271,12 @@ func TestSnapshotWithConcurrentWrites(t *testing.T) {
 			maxCommit = commitIndices[i]
 		}
 	}
-	
+
 	// Allow up to 20 entries difference during concurrent writes
-	if maxCommit - minCommit > 20 {
+	if maxCommit-minCommit > 20 {
 		t.Errorf("Nodes diverged too much. Min commit: %d, Max commit: %d", minCommit, maxCommit)
 	} else {
-		t.Logf("Final commit indices - Min: %d, Max: %d (difference: %d)", 
+		t.Logf("Final commit indices - Min: %d, Max: %d (difference: %d)",
 			minCommit, maxCommit, maxCommit-minCommit)
 	}
 }
@@ -285,7 +285,7 @@ func TestSnapshotWithConcurrentWrites(t *testing.T) {
 func TestSnapshotFailure(t *testing.T) {
 	// Test snapshot persistence failure handling
 	cluster := helpers.NewTestCluster(t, 1, helpers.WithMaxLogSize(5))
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)

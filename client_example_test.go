@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"testing"
 	"time"
-
 	// "github.com/ueisele/raft/test" - removed to avoid import cycle
 )
 
@@ -48,7 +47,7 @@ func TestExampleClientInteraction(t *testing.T) {
 			}
 			return false, fmt.Sprintf("waiting for commit, current index %d, need %d", commitIndex, index)
 		}, 5*time.Second, "command commit")
-		
+
 		t.Logf("Command committed! CommitIndex=%d", leader.GetCommitIndex())
 	})
 
@@ -149,12 +148,12 @@ func (c *RaftClient) SubmitAndWait(cmd interface{}, timeout time.Duration) error
 // setupTestCluster creates a test cluster
 func setupTestCluster(t *testing.T, size int) ([]Node, func()) {
 	nodes := make([]Node, size)
-	
+
 	// Create transports that can communicate
 	registry := &nodeRegistry{
 		nodes: make(map[int]RPCHandler),
 	}
-	
+
 	// Create all nodes
 	for i := 0; i < size; i++ {
 		config := &Config{
@@ -164,29 +163,29 @@ func setupTestCluster(t *testing.T, size int) ([]Node, func()) {
 			ElectionTimeoutMax: 300 * time.Millisecond,
 			HeartbeatInterval:  50 * time.Millisecond,
 		}
-		
+
 		transport := &multiNodeTransport{
 			id:       i,
 			registry: registry,
 		}
-		
+
 		stateMachine := &testStateMachine{
 			data: make(map[string]string),
 		}
-		
+
 		node, err := NewNode(config, transport, nil, stateMachine)
 		if err != nil {
 			t.Fatalf("Failed to create node %d: %v", i, err)
 		}
-		
+
 		nodes[i] = node
 	}
-	
+
 	// Register all nodes with their transports
 	for i, node := range nodes {
 		registry.nodes[i] = node.(RPCHandler)
 	}
-	
+
 	// Start all nodes
 	ctx := context.Background()
 	for i, node := range nodes {
@@ -194,16 +193,16 @@ func setupTestCluster(t *testing.T, size int) ([]Node, func()) {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
 	}
-	
+
 	// Wait for leader election
 	waitForLeader(t, nodes)
-	
+
 	cleanup := func() {
 		for _, node := range nodes {
 			node.Stop()
 		}
 	}
-	
+
 	return nodes, cleanup
 }
 
@@ -228,15 +227,15 @@ func waitForLeader(t *testing.T, nodes []Node) {
 				leaderCount++
 			}
 		}
-		
+
 		if leaderCount == 1 {
 			return true, "single leader elected"
 		}
-		
+
 		if leaderCount > 1 {
 			t.Fatalf("Multiple leaders detected: %d", leaderCount)
 		}
-		
+
 		return false, fmt.Sprintf("%d leaders", leaderCount)
 	}, timing.ElectionTimeout, "leader election")
 }

@@ -48,7 +48,7 @@ func TestLeaderCommitIndexPreservation(t *testing.T) {
 
 	// Wait for new leader
 	time.Sleep(500 * time.Millisecond)
-	
+
 	var newLeader int = -1
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
@@ -80,7 +80,7 @@ func TestLeaderCommitIndexPreservation(t *testing.T) {
 	// New leader's commit index should not go backwards
 	newLeaderCommitIndex := cluster.Nodes[newLeader].GetCommitIndex()
 	if newLeaderCommitIndex < commitIndexBefore {
-		t.Errorf("New leader's commit index went backwards: %d < %d", 
+		t.Errorf("New leader's commit index went backwards: %d < %d",
 			newLeaderCommitIndex, commitIndexBefore)
 	}
 
@@ -97,13 +97,13 @@ func TestLeaderCommitIndexPreservation(t *testing.T) {
 			activeNodes = append(activeNodes, node)
 		}
 	}
-	
+
 	helpers.WaitForCommitIndex(t, activeNodes, idx, 2*time.Second)
 
 	// Final commit index should be higher than before
 	finalCommitIndex := cluster.Nodes[newLeader].GetCommitIndex()
 	if finalCommitIndex <= commitIndexBefore {
-		t.Errorf("Commit index did not advance: %d <= %d", 
+		t.Errorf("Commit index did not advance: %d <= %d",
 			finalCommitIndex, commitIndexBefore)
 	}
 
@@ -130,18 +130,18 @@ func TestLeaderHeartbeatStability(t *testing.T) {
 	// Monitor heartbeats for stability
 	heartbeatInterval := 50 * time.Millisecond
 	monitorDuration := 2 * time.Second
-	
+
 	// Track term changes
 	initialTerm, _ := cluster.Nodes[leaderID].GetState()
 	termChanges := 0
-	
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	go func() {
 		ticker := time.NewTicker(heartbeatInterval / 2)
 		defer ticker.Stop()
-		
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -230,12 +230,12 @@ func TestLeaderRecoveryAfterBriefPartition(t *testing.T) {
 
 	// Check if same leader maintained leadership
 	currentTerm, isLeader := cluster.Nodes[leaderID].GetState()
-	
+
 	if isLeader && currentTerm == initialTerm {
 		t.Log("✓ Leader maintained leadership after brief partition")
 	} else {
 		// It's also acceptable if a new leader was elected
-		t.Logf("Leadership changed: isLeader=%v, term %d -> %d", 
+		t.Logf("Leadership changed: isLeader=%v, term %d -> %d",
 			isLeader, initialTerm, currentTerm)
 	}
 
@@ -269,13 +269,13 @@ func TestMultipleLeaderTransitions(t *testing.T) {
 		time     time.Time
 	}
 	leaderHistory := []LeaderChange{}
-	
+
 	// Get initial leader
 	initialLeader, err := cluster.WaitForLeader(2 * time.Second)
 	if err != nil {
 		t.Fatalf("No initial leader elected: %v", err)
 	}
-	
+
 	initialTerm, _ := cluster.Nodes[initialLeader].GetState()
 	leaderHistory = append(leaderHistory, LeaderChange{
 		term:     initialTerm,
@@ -285,11 +285,11 @@ func TestMultipleLeaderTransitions(t *testing.T) {
 
 	// Force multiple leader transitions
 	stoppedNodes := make(map[int]bool)
-	
+
 	for transition := 0; transition < 3; transition++ {
 		// Submit some data with current leader
 		currentLeader := leaderHistory[len(leaderHistory)-1].leaderID
-		
+
 		for i := 0; i < 3; i++ {
 			cmd := fmt.Sprintf("transition-%d-cmd-%d", transition, i)
 			idx, _, isLeader := cluster.Nodes[currentLeader].Submit(cmd)
@@ -297,7 +297,7 @@ func TestMultipleLeaderTransitions(t *testing.T) {
 				t.Logf("Failed to submit command to leader %d: not leader", currentLeader)
 				break
 			}
-			
+
 			// Try to wait for commit (might fail if leader changes)
 			activeNodes := make([]raft.Node, 0)
 			for i, node := range cluster.Nodes {
@@ -305,7 +305,7 @@ func TestMultipleLeaderTransitions(t *testing.T) {
 					activeNodes = append(activeNodes, node)
 				}
 			}
-			
+
 			// Short timeout since leader might fail
 			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 			done := make(chan bool)
@@ -313,7 +313,7 @@ func TestMultipleLeaderTransitions(t *testing.T) {
 				helpers.WaitForCommitIndex(t, activeNodes, idx, 500*time.Millisecond)
 				done <- true
 			}()
-			
+
 			select {
 			case <-done:
 				// Command committed
@@ -323,19 +323,19 @@ func TestMultipleLeaderTransitions(t *testing.T) {
 			}
 			cancel()
 		}
-		
+
 		// Stop current leader
 		cluster.Nodes[currentLeader].Stop()
 		stoppedNodes[currentLeader] = true
 		t.Logf("Stopped leader %d", currentLeader)
-		
+
 		// Wait for new leader
 		time.Sleep(500 * time.Millisecond)
-		
+
 		newLeader := -1
 		newTerm := 0
 		deadline := time.Now().Add(3 * time.Second)
-		
+
 		for time.Now().Before(deadline) {
 			for i, node := range cluster.Nodes {
 				if stoppedNodes[i] {
@@ -353,19 +353,19 @@ func TestMultipleLeaderTransitions(t *testing.T) {
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
-		
+
 		if newLeader == -1 {
 			t.Logf("No new leader elected after transition %d", transition)
 			break
 		}
-		
+
 		leaderHistory = append(leaderHistory, LeaderChange{
 			term:     newTerm,
 			leaderID: newLeader,
 			time:     time.Now(),
 		})
-		
-		t.Logf("Transition %d: New leader is node %d (term %d)", 
+
+		t.Logf("Transition %d: New leader is node %d (term %d)",
 			transition, newLeader, newTerm)
 	}
 
@@ -374,7 +374,7 @@ func TestMultipleLeaderTransitions(t *testing.T) {
 	for i, change := range leaderHistory {
 		if i > 0 {
 			duration := change.time.Sub(leaderHistory[i-1].time)
-			t.Logf("  Term %d: Leader %d (transition took %v)", 
+			t.Logf("  Term %d: Leader %d (transition took %v)",
 				change.term, change.leaderID, duration)
 		} else {
 			t.Logf("  Term %d: Leader %d (initial)", change.term, change.leaderID)
@@ -384,7 +384,7 @@ func TestMultipleLeaderTransitions(t *testing.T) {
 	// Verify terms are strictly increasing
 	for i := 1; i < len(leaderHistory); i++ {
 		if leaderHistory[i].term <= leaderHistory[i-1].term {
-			t.Errorf("Terms not strictly increasing: %d -> %d", 
+			t.Errorf("Terms not strictly increasing: %d -> %d",
 				leaderHistory[i-1].term, leaderHistory[i].term)
 		}
 	}
@@ -433,17 +433,17 @@ func TestLeadershipWithHighLoad(t *testing.T) {
 	numClients := 20
 	commandsPerClient := 50
 	var wg sync.WaitGroup
-	
+
 	successCount := 0
 	var successMu sync.Mutex
-	
+
 	start := time.Now()
-	
+
 	for client := 0; client < numClients; client++ {
 		wg.Add(1)
 		go func(clientID int) {
 			defer wg.Done()
-			
+
 			for cmd := 0; cmd < commandsPerClient; cmd++ {
 				command := fmt.Sprintf("client-%d-cmd-%d", clientID, cmd)
 				_, _, err := cluster.SubmitCommand(command)
@@ -452,7 +452,7 @@ func TestLeadershipWithHighLoad(t *testing.T) {
 					successCount++
 					successMu.Unlock()
 				}
-				
+
 				// Small delay to prevent overwhelming
 				if cmd%10 == 0 {
 					time.Sleep(time.Millisecond)
@@ -460,19 +460,19 @@ func TestLeadershipWithHighLoad(t *testing.T) {
 			}
 		}(client)
 	}
-	
+
 	// Wait for all clients
 	wg.Wait()
 	duration := time.Since(start)
-	
+
 	// Check if leadership remained stable
 	finalTerm, isLeader := cluster.Nodes[leaderID].GetState()
-	
+
 	t.Logf("High load test completed in %v", duration)
 	t.Logf("Commands: %d/%d succeeded", successCount, numClients*commandsPerClient)
 	t.Logf("Initial leader still leader: %v", isLeader)
 	t.Logf("Term progression: %d -> %d", initialTerm, finalTerm)
-	
+
 	// Some leader changes under high load are acceptable
 	termIncreases := finalTerm - initialTerm
 	if termIncreases > 2 {
@@ -480,16 +480,16 @@ func TestLeadershipWithHighLoad(t *testing.T) {
 	} else {
 		t.Log("✓ Leadership relatively stable under high load")
 	}
-	
+
 	// Verify cluster still functional
 	idx, _, err := cluster.SubmitCommand("post-load-check")
 	if err != nil {
 		t.Fatalf("Failed to submit command after high load: %v", err)
 	}
-	
+
 	if err := cluster.WaitForCommitIndex(idx, 2*time.Second); err != nil {
 		t.Fatalf("Command not committed after high load: %v", err)
 	}
-	
+
 	t.Log("✓ Cluster functional after high load")
 }

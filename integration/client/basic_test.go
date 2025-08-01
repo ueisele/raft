@@ -15,7 +15,7 @@ import (
 func TestExampleClientInteraction(t *testing.T) {
 	// Setup a 3-node cluster
 	cluster := helpers.NewTestCluster(t, 3)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -56,7 +56,7 @@ func TestExampleClientInteraction(t *testing.T) {
 
 		// Wait for new leader
 		time.Sleep(500 * time.Millisecond)
-		
+
 		newLeaderID := -1
 		for i, node := range cluster.Nodes {
 			if i == leaderID {
@@ -98,7 +98,7 @@ func TestExampleClientInteraction(t *testing.T) {
 // TestClientRetryLogic demonstrates proper client retry patterns
 func TestClientRetryLogic(t *testing.T) {
 	cluster := helpers.NewTestCluster(t, 5)
-	
+
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestClientRetryLogic(t *testing.T) {
 // TestClientLinearizability demonstrates linearizable reads
 func TestClientLinearizability(t *testing.T) {
 	cluster := helpers.NewTestCluster(t, 3, helpers.WithPartitionableTransport())
-	
+
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
@@ -267,10 +267,10 @@ func TestClientLinearizability(t *testing.T) {
 
 		followerID := (leaderID + 1) % 3
 		followerCommit := cluster.Nodes[followerID].GetCommitIndex()
-		
+
 		if followerCommit < commitIndex {
 			t.Logf("Follower behind: commit=%d, need=%d", followerCommit, commitIndex)
-			
+
 			// Wait for follower to catch up
 			helpers.WaitForConditionWithProgress(t, func() (bool, string) {
 				fc := cluster.Nodes[followerID].GetCommitIndex()
@@ -304,7 +304,7 @@ func TestClientLinearizability(t *testing.T) {
 				connectedNodes = append(connectedNodes, node)
 			}
 		}
-		
+
 		helpers.WaitForCommitIndex(t, connectedNodes, idx, time.Second)
 
 		// Isolated follower has stale data
@@ -318,7 +318,7 @@ func TestClientLinearizability(t *testing.T) {
 
 		// Heal partition
 		cluster.HealPartition()
-		
+
 		// Wait for follower to catch up
 		helpers.WaitForConditionWithProgress(t, func() (bool, string) {
 			fc := cluster.Nodes[isolatedFollower].GetCommitIndex()
@@ -332,7 +332,7 @@ func TestClientLinearizability(t *testing.T) {
 // TestClientBatching demonstrates how clients can batch commands
 func TestClientBatching(t *testing.T) {
 	cluster := helpers.NewTestCluster(t, 3)
-	
+
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
@@ -355,12 +355,12 @@ func TestClientBatching(t *testing.T) {
 
 		// Submit batch concurrently
 		type result struct {
-			index int
+			index   int
 			success bool
 		}
 
 		results := make(chan result, len(batch))
-		
+
 		for _, cmd := range batch {
 			go func(command string) {
 				idx, _, isLeader := cluster.Nodes[leaderID].Submit(command)
@@ -425,11 +425,11 @@ func TestClientBatching(t *testing.T) {
 // TestClientSessionManagement demonstrates session-based client interactions
 func TestClientSessionManagement(t *testing.T) {
 	cluster := helpers.NewTestCluster(t, 5)
-	
+
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	
+
 	// Wait for leader election
 	_, err := cluster.WaitForLeader(2 * time.Second)
 	if err != nil {

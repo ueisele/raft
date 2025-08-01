@@ -444,7 +444,6 @@ func TestAtomicWrites(t *testing.T) {
 	}
 }
 
-
 func TestConcurrentAccess(t *testing.T) {
 	tempDir := t.TempDir()
 	p, err := jsonPersistence.NewJSONPersistence(&persistence.Config{

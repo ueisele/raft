@@ -22,7 +22,7 @@ func TestClusterHealing(t *testing.T) {
 	}
 
 	// Wait for initial leader
-	initialLeader, err := cluster.WaitForLeader(2*time.Second)
+	initialLeader, err := cluster.WaitForLeader(2 * time.Second)
 	if err != nil {
 		t.Fatalf("No initial leader elected: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestClusterHealing(t *testing.T) {
 
 	// Use the same transport type
 	transport := helpers.NewMultiNodeTransport(initialLeader, cluster.Registry.(*helpers.NodeRegistry))
-	
+
 	oldNode, err := raft.NewNode(oldConfig, transport, nil, raft.NewMockStateMachine())
 	if err != nil {
 		t.Fatalf("Failed to recreate old leader node: %v", err)
@@ -114,7 +114,7 @@ func TestClusterHealing(t *testing.T) {
 	// All should have same commit index
 	for i := 1; i < len(commitIndices); i++ {
 		if commitIndices[i] != commitIndices[0] {
-			t.Errorf("Node %d has different commit index: %d vs %d", 
+			t.Errorf("Node %d has different commit index: %d vs %d",
 				i, commitIndices[i], commitIndices[0])
 		}
 	}
@@ -136,20 +136,20 @@ func TestEventualConsistency(t *testing.T) {
 	}
 
 	// Wait for initial leader
-	_, err := cluster.WaitForLeader(2*time.Second)
+	_, err := cluster.WaitForLeader(2 * time.Second)
 	if err != nil {
 		t.Fatalf("No initial leader elected: %v", err)
 	}
 
 	// Create various disruptions and verify eventual consistency
-	
+
 	// Disruption 1: Temporary partition
 	t.Log("Disruption 1: Creating temporary partition")
-	
+
 	// Partition nodes 0 and 1 from the rest
 	cluster.PartitionNode(0)
 	cluster.PartitionNode(1)
-	
+
 	// Submit commands to majority partition
 	for i := 0; i < 5; i++ {
 		// Find leader in majority partition
@@ -161,7 +161,7 @@ func TestEventualConsistency(t *testing.T) {
 				break
 			}
 		}
-		
+
 		if leader != -1 {
 			_, _, isLeader := cluster.Nodes[leader].Submit(fmt.Sprintf("majority-%d", i))
 			if !isLeader {
@@ -169,14 +169,14 @@ func TestEventualConsistency(t *testing.T) {
 			}
 		}
 	}
-	
+
 	// Heal partition
 	cluster.HealPartition()
 	t.Log("Healed partition")
-	
+
 	// Wait for convergence
 	time.Sleep(2 * time.Second)
-	
+
 	// Verify all nodes converged
 	converged := true
 	var referenceCommit int
@@ -186,17 +186,17 @@ func TestEventualConsistency(t *testing.T) {
 			referenceCommit = commit
 		} else if commit != referenceCommit {
 			converged = false
-			t.Logf("Node %d commit index %d differs from reference %d", 
+			t.Logf("Node %d commit index %d differs from reference %d",
 				i, commit, referenceCommit)
 		}
 	}
-	
+
 	if converged {
 		t.Log("✓ All nodes converged after partition heal")
 	} else {
 		// Give more time
 		time.Sleep(2 * time.Second)
-		
+
 		// Check again
 		for i, node := range cluster.Nodes {
 			commit := node.GetCommitIndex()
@@ -206,7 +206,7 @@ func TestEventualConsistency(t *testing.T) {
 
 	// Disruption 2: Leader failures
 	t.Log("\nDisruption 2: Rapid leader failures")
-	
+
 	for round := 0; round < 3; round++ {
 		// Find and stop current leader
 		for i, node := range cluster.Nodes {
@@ -217,11 +217,11 @@ func TestEventualConsistency(t *testing.T) {
 				break
 			}
 		}
-		
+
 		// Wait for new leader
 		time.Sleep(500 * time.Millisecond)
 	}
-	
+
 	// Restart all stopped nodes
 	ctx := context.Background()
 	for i, node := range cluster.Nodes {
@@ -238,7 +238,7 @@ func TestEventualConsistency(t *testing.T) {
 						HeartbeatInterval:  50 * time.Millisecond,
 						Logger:             raft.NewTestLogger(t),
 					}
-					
+
 					// Create transport based on cluster type
 					var transport raft.Transport
 					switch reg := cluster.Registry.(type) {
@@ -259,16 +259,16 @@ func TestEventualConsistency(t *testing.T) {
 			node.GetState()
 		}()
 	}
-	
+
 	// Wait for stabilization
 	time.Sleep(3 * time.Second)
-	
+
 	// Final consistency check
 	finalCommits := make([]int, len(cluster.Nodes))
 	for i, node := range cluster.Nodes {
 		finalCommits[i] = node.GetCommitIndex()
 	}
-	
+
 	allEqual := true
 	for i := 1; i < len(finalCommits); i++ {
 		if finalCommits[i] != finalCommits[0] {
@@ -276,7 +276,7 @@ func TestEventualConsistency(t *testing.T) {
 			break
 		}
 	}
-	
+
 	if allEqual {
 		t.Logf("✓ Final consistency achieved: all nodes at commit index %d", finalCommits[0])
 	} else {
@@ -295,7 +295,7 @@ func TestHealingWithDivergentLogs(t *testing.T) {
 	}
 
 	// Wait for initial leader
-	_, err := cluster.WaitForLeader(2*time.Second)
+	_, err := cluster.WaitForLeader(2 * time.Second)
 	if err != nil {
 		t.Fatalf("No initial leader elected: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestHealingWithDivergentLogs(t *testing.T) {
 	t.Log("Created partition: [0,1] vs [2,3,4]")
 
 	// Each partition will elect its own leader and accept different commands
-	
+
 	// Submit to minority partition (won't commit)
 	var minorityLeader int = -1
 	for i := 0; i <= 1; i++ {
@@ -328,15 +328,15 @@ func TestHealingWithDivergentLogs(t *testing.T) {
 			break
 		}
 	}
-	
+
 	if minorityLeader == -1 {
 		// Try to force election in minority
 		time.Sleep(500 * time.Millisecond)
 	}
-	
+
 	// Wait for leader election in majority partition
 	time.Sleep(1 * time.Second)
-	
+
 	// Submit to majority partition
 	var majorityLeader int = -1
 	for attempts := 0; attempts < 10; attempts++ {
@@ -347,33 +347,33 @@ func TestHealingWithDivergentLogs(t *testing.T) {
 				break
 			}
 		}
-		
+
 		if majorityLeader != -1 {
 			break
 		}
-		
+
 		time.Sleep(200 * time.Millisecond)
 	}
-	
+
 	if majorityLeader == -1 {
 		t.Fatal("No leader in majority partition after waiting")
 	}
-	
+
 	t.Logf("Majority partition elected leader: %d", majorityLeader)
-	
+
 	// Submit different commands to each partition
 	for i := 0; i < 5; i++ {
 		// Majority partition commands (will commit)
 		cluster.Nodes[majorityLeader].Submit(fmt.Sprintf("majority-%d", i))
-		
+
 		// Minority partition commands (won't commit)
 		if minorityLeader != -1 {
 			cluster.Nodes[minorityLeader].Submit(fmt.Sprintf("minority-%d", i))
 		}
 	}
-	
+
 	time.Sleep(500 * time.Millisecond)
-	
+
 	// Log state before healing
 	t.Log("State before healing:")
 	for i, node := range cluster.Nodes {
@@ -381,17 +381,17 @@ func TestHealingWithDivergentLogs(t *testing.T) {
 		term, isLeader := node.GetState()
 		t.Logf("Node %d: commit=%d, term=%d, leader=%v", i, commit, term, isLeader)
 	}
-	
+
 	// Heal the partition
 	cluster.HealPartition()
 	t.Log("Healed partition - nodes will now reconcile")
-	
+
 	// Wait for reconciliation
 	time.Sleep(3 * time.Second)
-	
+
 	// Verify all nodes converged to majority's log
 	majorityCommit := cluster.Nodes[majorityLeader].GetCommitIndex()
-	
+
 	converged := true
 	for i, node := range cluster.Nodes {
 		commit := node.GetCommitIndex()
@@ -400,16 +400,16 @@ func TestHealingWithDivergentLogs(t *testing.T) {
 			t.Logf("Node %d still behind: commit=%d, expected>=%d", i, commit, majorityCommit)
 		}
 	}
-	
+
 	if converged {
 		t.Log("✓ All nodes converged after healing divergent logs")
-		
+
 		// Verify log consistency
 		helpers.AssertLogConsistency(t, cluster.Nodes, majorityCommit)
 	} else {
 		// Give more time
 		time.Sleep(2 * time.Second)
-		
+
 		// Final check
 		for i, node := range cluster.Nodes {
 			commit := node.GetCommitIndex()
@@ -429,7 +429,7 @@ func TestHealingUnderLoad(t *testing.T) {
 	}
 
 	// Wait for initial leader
-	_, err := cluster.WaitForLeader(2*time.Second)
+	_, err := cluster.WaitForLeader(2 * time.Second)
 	if err != nil {
 		t.Fatalf("No initial leader elected: %v", err)
 	}
@@ -447,7 +447,7 @@ func TestHealingUnderLoad(t *testing.T) {
 		go func(clientID int) {
 			ticker := time.NewTicker(20 * time.Millisecond)
 			defer ticker.Stop()
-			
+
 			cmdIndex := 0
 			for {
 				select {
@@ -456,7 +456,7 @@ func TestHealingUnderLoad(t *testing.T) {
 				case <-ticker.C:
 					cmd := fmt.Sprintf("client-%d-cmd-%d", clientID, cmdIndex)
 					_, _, err := cluster.SubmitCommand(cmd)
-					
+
 					mu.Lock()
 					if err != nil {
 						errCount++
@@ -464,7 +464,7 @@ func TestHealingUnderLoad(t *testing.T) {
 						cmdCount++
 					}
 					mu.Unlock()
-					
+
 					cmdIndex++
 				}
 			}
@@ -473,7 +473,7 @@ func TestHealingUnderLoad(t *testing.T) {
 
 	// Let load run
 	time.Sleep(500 * time.Millisecond)
-	
+
 	mu.Lock()
 	t.Logf("Commands before disruption: success=%d, errors=%d", cmdCount, errCount)
 	mu.Unlock()
@@ -482,40 +482,40 @@ func TestHealingUnderLoad(t *testing.T) {
 	t.Log("Creating partition under load")
 	cluster.PartitionNode(0)
 	cluster.PartitionNode(1)
-	
+
 	// Continue load during partition
 	time.Sleep(1 * time.Second)
-	
+
 	mu.Lock()
 	t.Logf("Commands during partition: success=%d, errors=%d", cmdCount, errCount)
 	mu.Unlock()
-	
+
 	// Heal partition while still under load
 	t.Log("Healing partition under load")
 	cluster.HealPartition()
-	
+
 	// Continue load during healing
 	time.Sleep(2 * time.Second)
-	
+
 	// Stop load
 	cancel()
-	
+
 	mu.Lock()
 	finalCmdCount := cmdCount
 	finalErrCount := errCount
 	mu.Unlock()
-	
+
 	t.Logf("Final: success=%d, errors=%d", finalCmdCount, finalErrCount)
-	
+
 	// Verify cluster healed properly
 	time.Sleep(1 * time.Second)
-	
+
 	// Check consistency
 	commitIndices := make([]int, len(cluster.Nodes))
 	for i, node := range cluster.Nodes {
 		commitIndices[i] = node.GetCommitIndex()
 	}
-	
+
 	minCommit := commitIndices[0]
 	maxCommit := commitIndices[0]
 	for _, commit := range commitIndices {
@@ -526,24 +526,24 @@ func TestHealingUnderLoad(t *testing.T) {
 			maxCommit = commit
 		}
 	}
-	
+
 	t.Logf("Commit indices after healing: min=%d, max=%d", minCommit, maxCommit)
-	
+
 	if maxCommit-minCommit <= 5 {
 		t.Log("✓ Cluster healed successfully under load")
 	} else {
 		t.Errorf("Large commit index divergence after healing: %d", maxCommit-minCommit)
 	}
-	
+
 	// Verify cluster is functional
 	idx, _, err := cluster.SubmitCommand("post-healing-test")
 	if err != nil {
 		t.Fatalf("Failed to submit after healing: %v", err)
 	}
-	
+
 	if err := cluster.WaitForCommitIndex(idx, 2*time.Second); err != nil {
 		t.Fatalf("Command not committed after healing: %v", err)
 	}
-	
+
 	t.Log("✓ Cluster fully functional after healing under load")
 }

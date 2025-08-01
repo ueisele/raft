@@ -17,7 +17,7 @@ import (
 func TestBasicMembershipChange(t *testing.T) {
 	// Create initial 3-node cluster
 	cluster := helpers.NewTestCluster(t, 3)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -46,7 +46,7 @@ func TestBasicMembershipChange(t *testing.T) {
 
 	// Test 1: Add a new server
 	t.Log("Test 1: Adding server 3")
-	
+
 	// Create new node
 	newConfig := &raft.Config{
 		ID:                 3,
@@ -104,13 +104,13 @@ func TestBasicMembershipChange(t *testing.T) {
 
 	// Test 2: Remove a server
 	t.Log("Test 2: Removing server 1")
-	
+
 	// Find current leader (might have changed)
 	leaderID, err = cluster.WaitForLeader(time.Second)
 	if err != nil {
 		t.Fatalf("No leader for removal: %v", err)
 	}
-	
+
 	// If leader is node 1, we need to remove a different node
 	nodeToRemove := 1
 	if leaderID == 1 {
@@ -121,9 +121,9 @@ func TestBasicMembershipChange(t *testing.T) {
 	// Remove server
 	leader = cluster.Nodes[leaderID]
 	if leaderID == 3 {
-		leader = newNode  // New node might be leader
+		leader = newNode // New node might be leader
 	}
-	
+
 	err = leader.RemoveServer(nodeToRemove)
 	if err != nil {
 		t.Fatalf("Failed to remove server: %v", err)
@@ -132,7 +132,7 @@ func TestBasicMembershipChange(t *testing.T) {
 	// Create list of remaining nodes
 	remainingNodes := make([]raft.Node, 0)
 	expectedServers := make([]int, 0)
-	
+
 	for i := 0; i < 3; i++ {
 		if i != nodeToRemove {
 			remainingNodes = append(remainingNodes, cluster.Nodes[i])
@@ -189,10 +189,10 @@ func TestConcurrentMembershipChanges(t *testing.T) {
 	// changes to be submitted as log entries. The blocking should happen at a
 	// higher level (e.g., checking uncommitted configuration changes in the log).
 	t.Skip("Test assumes blocking at configuration manager level, but implementation allows multiple pending entries")
-	
+
 	// Create 3-node cluster
 	cluster := helpers.NewTestCluster(t, 3)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -205,7 +205,7 @@ func TestConcurrentMembershipChanges(t *testing.T) {
 	}
 
 	leader := cluster.Nodes[leaderID]
-	
+
 	// Create new nodes first (but don't start them yet)
 	node3Config := &raft.Config{
 		ID:                 3,
@@ -214,7 +214,7 @@ func TestConcurrentMembershipChanges(t *testing.T) {
 		ElectionTimeoutMax: 300 * time.Millisecond,
 		HeartbeatInterval:  50 * time.Millisecond,
 	}
-	
+
 	node4Config := &raft.Config{
 		ID:                 4,
 		Peers:              []int{},
@@ -222,31 +222,31 @@ func TestConcurrentMembershipChanges(t *testing.T) {
 		ElectionTimeoutMax: 300 * time.Millisecond,
 		HeartbeatInterval:  50 * time.Millisecond,
 	}
-	
+
 	transport3 := helpers.NewMultiNodeTransport(3, cluster.Registry.(*helpers.NodeRegistry))
 	transport4 := helpers.NewMultiNodeTransport(4, cluster.Registry.(*helpers.NodeRegistry))
-	
+
 	node3, err := raft.NewNode(node3Config, transport3, nil, raft.NewMockStateMachine())
 	if err != nil {
 		t.Fatalf("Failed to create node 3: %v", err)
 	}
-	
+
 	node4, err := raft.NewNode(node4Config, transport4, nil, raft.NewMockStateMachine())
 	if err != nil {
 		t.Fatalf("Failed to create node 4: %v", err)
 	}
-	
+
 	// Register nodes with cluster
 	cluster.Registry.(*helpers.NodeRegistry).Register(3, node3.(raft.RPCHandler))
 	cluster.Registry.(*helpers.NodeRegistry).Register(4, node4.(raft.RPCHandler))
-	
+
 	// Start the nodes
 	ctx := context.Background()
 	if err := node3.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node 3: %v", err)
 	}
 	defer node3.Stop()
-	
+
 	if err := node4.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node 4: %v", err)
 	}
@@ -254,15 +254,15 @@ func TestConcurrentMembershipChanges(t *testing.T) {
 
 	// Try to add two servers concurrently
 	errChan := make(chan error, 2)
-	
+
 	go func() {
 		err := leader.AddServer(3, "server-3", true)
 		errChan <- err
 	}()
-	
+
 	// Small delay to ensure proper test of concurrent behavior
 	time.Sleep(10 * time.Millisecond)
-	
+
 	go func() {
 		err := leader.AddServer(4, "server-4", true)
 		errChan <- err
@@ -282,7 +282,7 @@ func TestConcurrentMembershipChanges(t *testing.T) {
 		t.Logf("  err1: %v", err1)
 		t.Logf("  err2: %v", err2)
 	}
-	
+
 	// Wait a bit for configuration to propagate
 	time.Sleep(500 * time.Millisecond)
 
@@ -312,7 +312,7 @@ func TestConcurrentMembershipChanges(t *testing.T) {
 func TestRemoveLeaderNode(t *testing.T) {
 	// Create 5-node cluster for better stability
 	cluster := helpers.NewTestCluster(t, 5)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)

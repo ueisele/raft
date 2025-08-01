@@ -161,18 +161,18 @@ func (t *DebugTransport) SendRequestVote(serverID int, args *raft.RequestVoteArg
 
 	reply := &raft.RequestVoteReply{}
 	err := handler.RequestVote(args, reply)
-	
+
 	if t.logger != nil && err == nil {
-		t.logger.Debug("Node %d received RequestVote reply from node %d: granted=%v, term=%d", 
+		t.logger.Debug("Node %d received RequestVote reply from node %d: granted=%v, term=%d",
 			t.id, serverID, reply.VoteGranted, reply.Term)
 	}
-	
+
 	return reply, err
 }
 
 func (t *DebugTransport) SendAppendEntries(serverID int, args *raft.AppendEntriesArgs) (*raft.AppendEntriesReply, error) {
 	if t.logger != nil {
-		t.logger.Debug("Node %d sending AppendEntries to node %d: term=%d, prevLogIndex=%d, entries=%d", 
+		t.logger.Debug("Node %d sending AppendEntries to node %d: term=%d, prevLogIndex=%d, entries=%d",
 			t.id, serverID, args.Term, args.PrevLogIndex, len(args.Entries))
 	}
 
@@ -186,18 +186,18 @@ func (t *DebugTransport) SendAppendEntries(serverID int, args *raft.AppendEntrie
 
 	reply := &raft.AppendEntriesReply{}
 	err := handler.AppendEntries(args, reply)
-	
+
 	if t.logger != nil && err == nil {
-		t.logger.Debug("Node %d received AppendEntries reply from node %d: success=%v, term=%d", 
+		t.logger.Debug("Node %d received AppendEntries reply from node %d: success=%v, term=%d",
 			t.id, serverID, reply.Success, reply.Term)
 	}
-	
+
 	return reply, err
 }
 
 func (t *DebugTransport) SendInstallSnapshot(serverID int, args *raft.InstallSnapshotArgs) (*raft.InstallSnapshotReply, error) {
 	if t.logger != nil {
-		t.logger.Debug("Node %d sending InstallSnapshot to node %d: term=%d, lastIndex=%d", 
+		t.logger.Debug("Node %d sending InstallSnapshot to node %d: term=%d, lastIndex=%d",
 			t.id, serverID, args.Term, args.LastIncludedIndex)
 	}
 
@@ -211,12 +211,12 @@ func (t *DebugTransport) SendInstallSnapshot(serverID int, args *raft.InstallSna
 
 	reply := &raft.InstallSnapshotReply{}
 	err := handler.InstallSnapshot(args, reply)
-	
+
 	if t.logger != nil && err == nil {
-		t.logger.Debug("Node %d received InstallSnapshot reply from node %d: term=%d", 
+		t.logger.Debug("Node %d received InstallSnapshot reply from node %d: term=%d",
 			t.id, serverID, reply.Term)
 	}
-	
+
 	return reply, err
 }
 

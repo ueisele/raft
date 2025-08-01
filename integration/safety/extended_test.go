@@ -93,7 +93,7 @@ func TestLeaderAppendOnly(t *testing.T) {
 			}
 
 			if prev[j].Term != curr[j].Term {
-				t.Errorf("Entry at index %d changed term from %d to %d", 
+				t.Errorf("Entry at index %d changed term from %d to %d",
 					j+1, prev[j].Term, curr[j].Term)
 			}
 
@@ -162,7 +162,7 @@ func TestConcurrentClientRequests(t *testing.T) {
 	t.Logf("Concurrent requests: %d succeeded, %d failed", successCount, errorCount)
 
 	if errorCount > numClients*numRequestsPerClient/10 {
-		t.Errorf("Too many errors: %d out of %d requests failed", 
+		t.Errorf("Too many errors: %d out of %d requests failed",
 			errorCount, numClients*numRequestsPerClient)
 	}
 
@@ -238,7 +238,7 @@ func TestLogReplicationUnderPartitions(t *testing.T) {
 
 	// Wait for new leader in majority
 	time.Sleep(500 * time.Millisecond)
-	
+
 	var newLeaderID int = -1
 	for _, nodeID := range majorityNodes {
 		_, isLeader := cluster.Nodes[nodeID].GetState()
@@ -263,7 +263,7 @@ func TestLogReplicationUnderPartitions(t *testing.T) {
 		if !isLeader {
 			t.Fatalf("Failed to submit to majority leader: not leader")
 		}
-		
+
 		// Wait for commit in majority nodes only
 		majorityNodesList := make([]raft.Node, len(majorityNodes))
 		for i, id := range majorityNodes {
@@ -375,7 +375,7 @@ func TestRapidLeadershipChanges(t *testing.T) {
 
 	// Verify safety properties held throughout
 	t.Logf("Total leader changes: %d", len(leaderChanges))
-	
+
 	// Check terms are monotonically increasing
 	for i := 1; i < len(leaderChanges); i++ {
 		if leaderChanges[i].term <= leaderChanges[i-1].term {
@@ -438,9 +438,9 @@ func TestCommitIndexMonotonicity(t *testing.T) {
 					if commitHistory[i] == nil {
 						commitHistory[i] = make([]int, 0)
 					}
-					
+
 					// Only append if changed
-					if len(commitHistory[i]) == 0 || 
+					if len(commitHistory[i]) == 0 ||
 						commitHistory[i][len(commitHistory[i])-1] != commitIndex {
 						commitHistory[i] = append(commitHistory[i], commitIndex)
 					}

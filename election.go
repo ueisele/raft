@@ -21,9 +21,9 @@ type ElectionManager struct {
 	// Election state
 	votesReceived   map[int]bool
 	electionStarted time.Time
-	
+
 	// Heartbeat tracking for vote denial optimization
-	lastHeartbeat   time.Time
+	lastHeartbeat time.Time
 }
 
 // NewElectionManager creates a new election manager
@@ -81,7 +81,7 @@ func (em *ElectionManager) StartElection() bool {
 	if em.config.Logger != nil {
 		em.config.Logger.Debug("Starting election with peers: %v", em.peers)
 	}
-	
+
 	for _, peerID := range em.peers {
 		if peerID == em.serverID {
 			continue
@@ -111,7 +111,7 @@ func (em *ElectionManager) StartElection() bool {
 	// Collect votes with timeout
 	timer := time.NewTimer(em.config.ElectionTimeoutMin)
 	defer timer.Stop()
-	
+
 	for i := 0; i < len(em.peers)-1; i++ {
 		select {
 		case result := <-resultChan:

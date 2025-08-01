@@ -46,7 +46,7 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 
 	// Create actual nodes to add
 	ctx := context.Background()
-	
+
 	// Create node 3
 	config3 := &raft.Config{
 		ID:                 3,
@@ -66,7 +66,7 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 		t.Fatalf("Failed to start node 3: %v", err)
 	}
 	defer node3.Stop()
-	
+
 	// Create node 4
 	config4 := &raft.Config{
 		ID:                 4,
@@ -147,10 +147,10 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 				hasNode4 = true
 			}
 		}
-		
+
 		t.Logf("Configuration state: hasNode3=%v, hasNode4=%v", hasNode3, hasNode4)
 		t.Logf("Full configuration: %+v", config)
-		
+
 		if hasNode3 && hasNode4 {
 			t.Log("Both config changes succeeded - implementation may be processing them sequentially very quickly")
 			t.Log("This is acceptable behavior as long as they were not truly concurrent")
@@ -206,7 +206,7 @@ func TestConfigChangeLeadershipTransfer(t *testing.T) {
 
 	// Wait for new leader
 	time.Sleep(1 * time.Second)
-	
+
 	// Check result
 	select {
 	case err := <-configErr:
@@ -353,7 +353,7 @@ func TestConcurrentOperations(t *testing.T) {
 		// Many clients submitting concurrently
 		numClients := 50
 		numOpsPerClient := 20
-		
+
 		var wg sync.WaitGroup
 		successCount := int64(0)
 		errorCount := int64(0)
@@ -363,11 +363,11 @@ func TestConcurrentOperations(t *testing.T) {
 			wg.Add(1)
 			go func(clientID int) {
 				defer wg.Done()
-				
+
 				for op := 0; op < numOpsPerClient; op++ {
 					cmd := fmt.Sprintf("client-%d-op-%d", clientID, op)
 					_, _, err := cluster.SubmitCommand(cmd)
-					
+
 					mu.Lock()
 					if err != nil {
 						errorCount++
@@ -375,7 +375,7 @@ func TestConcurrentOperations(t *testing.T) {
 						successCount++
 					}
 					mu.Unlock()
-					
+
 					// Small random delay
 					time.Sleep(time.Duration(clientID%10) * time.Millisecond)
 				}
@@ -385,7 +385,7 @@ func TestConcurrentOperations(t *testing.T) {
 		wg.Wait()
 
 		t.Logf("Concurrent submits: %d succeeded, %d failed", successCount, errorCount)
-		
+
 		successRate := float64(successCount) / float64(successCount+errorCount)
 		if successRate < 0.8 {
 			t.Errorf("Low success rate: %.2f%%", successRate*100)
@@ -399,7 +399,7 @@ func TestConcurrentOperations(t *testing.T) {
 		var wg sync.WaitGroup
 		writeCount := int64(0)
 		readCount := int64(0)
-		
+
 		// Writers
 		for i := 0; i < 10; i++ {
 			wg.Add(1)
@@ -430,7 +430,7 @@ func TestConcurrentOperations(t *testing.T) {
 		}
 
 		wg.Wait()
-		
+
 		t.Logf("✓ Completed %d writes and %d reads concurrently", writeCount, readCount)
 	})
 }
@@ -440,23 +440,23 @@ func TestExtremeTiming(t *testing.T) {
 	t.Run("VeryShortElectionTimeout", func(t *testing.T) {
 		// Create cluster with very short timeouts
 		cluster := helpers.NewTestCluster(t, 3)
-		
+
 		// Override timing for nodes
 		for i := 0; i < 3; i++ {
 			config := &raft.Config{
 				ID:                 i,
 				Peers:              []int{0, 1, 2},
-				ElectionTimeoutMin: 10 * time.Millisecond,  // Very short
-				ElectionTimeoutMax: 20 * time.Millisecond,  // Very short
-				HeartbeatInterval:  5 * time.Millisecond,   // Very short
+				ElectionTimeoutMin: 10 * time.Millisecond, // Very short
+				ElectionTimeoutMax: 20 * time.Millisecond, // Very short
+				HeartbeatInterval:  5 * time.Millisecond,  // Very short
 			}
-			
+
 			transport := helpers.NewMultiNodeTransport(i, cluster.Registry.(*helpers.NodeRegistry))
 			node, err := raft.NewNode(config, transport, nil, raft.NewMockStateMachine())
 			if err != nil {
 				t.Fatalf("Failed to create node: %v", err)
 			}
-			
+
 			cluster.Nodes[i] = node
 			cluster.Registry.(*helpers.NodeRegistry).Register(i, node.(raft.RPCHandler))
 		}
@@ -479,7 +479,7 @@ func TestExtremeTiming(t *testing.T) {
 
 		// Check for election thrashing
 		time.Sleep(2 * time.Second)
-		
+
 		termCounts := make(map[int]int)
 		for i, node := range cluster.Nodes {
 			term, _ := node.GetState()
@@ -495,7 +495,7 @@ func TestExtremeTiming(t *testing.T) {
 	t.Run("VeryLongHeartbeatInterval", func(t *testing.T) {
 		// Create cluster with very long heartbeat interval
 		cluster := helpers.NewTestCluster(t, 3)
-		
+
 		// Override timing
 		for i := 0; i < 3; i++ {
 			config := &raft.Config{
@@ -505,13 +505,13 @@ func TestExtremeTiming(t *testing.T) {
 				ElectionTimeoutMax: 3000 * time.Millisecond,
 				HeartbeatInterval:  1000 * time.Millisecond, // Very long
 			}
-			
+
 			transport := helpers.NewMultiNodeTransport(i, cluster.Registry.(*helpers.NodeRegistry))
 			node, err := raft.NewNode(config, transport, nil, raft.NewMockStateMachine())
 			if err != nil {
 				t.Fatalf("Failed to create node: %v", err)
 			}
-			
+
 			cluster.Nodes[i] = node
 			cluster.Registry.(*helpers.NodeRegistry).Register(i, node.(raft.RPCHandler))
 		}

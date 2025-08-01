@@ -68,7 +68,7 @@ func TestBasicNodeCreation(t *testing.T) {
 
 	// If we get here, node failed to become leader
 	term, isLeader := node.GetState()
-	t.Fatalf("Single node failed to become leader within %v. Final state: term=%d, isLeader=%v", 
+	t.Fatalf("Single node failed to become leader within %v. Final state: term=%d, isLeader=%v",
 		timeout, term, isLeader)
 }
 

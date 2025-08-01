@@ -11,35 +11,35 @@ import (
 func applyConfigDefaults(config *Config) *Config {
 	// Create a copy to avoid modifying the original
 	cfg := *config
-	
+
 	// Apply defaults for any zero values
 	if cfg.MaxLogSize == 0 {
 		// Default to 10,000 entries before snapshot
 		// This balances memory usage with snapshot frequency
 		cfg.MaxLogSize = 10000
 	}
-	
+
 	if cfg.ElectionTimeoutMin == 0 {
 		// Default to 150ms minimum election timeout
 		cfg.ElectionTimeoutMin = 150 * time.Millisecond
 	}
-	
+
 	if cfg.ElectionTimeoutMax == 0 {
 		// Default to 300ms maximum election timeout
 		cfg.ElectionTimeoutMax = 300 * time.Millisecond
 	}
-	
+
 	if cfg.HeartbeatInterval == 0 {
 		// Default to 50ms heartbeat interval
 		// Should be much smaller than election timeout
 		cfg.HeartbeatInterval = 50 * time.Millisecond
 	}
-	
+
 	// Validate that min <= max for election timeout
 	if cfg.ElectionTimeoutMin > cfg.ElectionTimeoutMax {
 		cfg.ElectionTimeoutMax = cfg.ElectionTimeoutMin
 	}
-	
+
 	return &cfg
 }
 
@@ -72,7 +72,7 @@ type raftNode struct {
 func NewNode(config *Config, transport Transport, persistence Persistence, stateMachine StateMachine) (Node, error) {
 	// Apply defaults to config
 	cfg := applyConfigDefaults(config)
-	
+
 	// Create the node
 	node := &raftNode{
 		config:       cfg,
@@ -90,19 +90,19 @@ func NewNode(config *Config, transport Transport, persistence Persistence, state
 	node.configuration = NewConfigurationManager(cfg.Peers)
 	node.election = NewElectionManager(cfg.ID, cfg.Peers, node.state, node.log, transport, cfg)
 	node.replication = NewReplicationManager(cfg.ID, cfg.Peers, node.state, node.log, transport, cfg, stateMachine, node.snapshot, node.applyNotify)
-	
+
 	// Set the voting members count function
 	node.replication.SetVotingMembersCountFunc(func() int {
 		return len(node.configuration.GetVotingMembers())
 	})
-	
+
 	// Initialize safe configuration manager if metrics are available
 	var metrics ConfigMetrics
 	if cfg.Metrics != nil {
 		// Create a simple metrics wrapper if the main metrics interface is available
 		metrics = NewSimpleConfigMetrics()
 	}
-	
+
 	node.safeConfig = NewSafeConfigurationManager(
 		node.configuration,
 		node.replication,
@@ -157,10 +157,10 @@ func (n *raftNode) Stop() {
 		return
 	}
 	n.stopped = true
-	
+
 	// Save state before shutdown
 	n.persist()
-	
+
 	if n.cancel != nil {
 		n.cancel()
 	}
@@ -168,12 +168,12 @@ func (n *raftNode) Stop() {
 
 	// Stop state manager timers
 	n.state.Stop()
-	
+
 	// Stop safe configuration manager
 	if n.safeConfig != nil {
 		n.safeConfig.Stop()
 	}
-	
+
 	close(n.stopCh)
 	n.transport.Stop()
 }
@@ -426,7 +426,7 @@ func (n *raftNode) AddServerSafely(id int, address string) error {
 		state, _ := n.state.GetState()
 		return state == Leader
 	})
-	
+
 	// Set the submit function to actually submit configuration changes
 	n.safeConfig.SetSubmitConfigChangeFunc(func() error {
 		// Get the pending change from configuration manager
@@ -434,11 +434,11 @@ func (n *raftNode) AddServerSafely(id int, address string) error {
 		if change == nil {
 			return fmt.Errorf("no pending configuration change")
 		}
-		
+
 		// Submit it using the node's internal method
 		return n.submitConfigurationChange(change)
 	})
-	
+
 	// Use the safe configuration manager
 	return n.safeConfig.AddServerSafely(id, address)
 }
@@ -478,7 +478,7 @@ func (n *raftNode) TransferLeadership(targetID int) error {
 	if !found {
 		return fmt.Errorf("target server %d not in configuration", targetID)
 	}
-	
+
 	if !isVoting {
 		return fmt.Errorf("target server %d is not a voting member", targetID)
 	}
@@ -487,20 +487,20 @@ func (n *raftNode) TransferLeadership(targetID int) error {
 	// 1. Stop accepting new client requests
 	// 2. Bring target's log up to date
 	// 3. Send TimeoutNow RPC to target to trigger immediate election
-	
+
 	// For a basic implementation:
 	// We'll ensure the target is up-to-date and then step down
-	
+
 	// First, trigger replication to ensure target has latest entries
 	n.replication.Replicate()
-	
+
 	// Give some time for replication
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		
+
 		n.mu.Lock()
 		defer n.mu.Unlock()
-		
+
 		// Check if we're still leader
 		state, _ := n.state.GetState()
 		if state == Leader {
@@ -508,7 +508,7 @@ func (n *raftNode) TransferLeadership(targetID int) error {
 			// The target server should have the most up-to-date log
 			// and win the election
 			n.state.BecomeFollower(n.state.GetCurrentTerm())
-			
+
 			if n.config.Logger != nil {
 				n.config.Logger.Info("Stepped down to transfer leadership to %d", targetID)
 			}
@@ -565,7 +565,7 @@ func (n *raftNode) handleConfigurationChange(data []byte, index int) {
 			break
 		}
 	}
-	
+
 	// If this node was removed and is currently the leader, schedule step down
 	if !nodeInConfig {
 		state, _ := n.state.GetState()
@@ -578,7 +578,7 @@ func (n *raftNode) handleConfigurationChange(data []byte, index int) {
 			time.AfterFunc(500*time.Millisecond, func() {
 				n.mu.Lock()
 				defer n.mu.Unlock()
-				
+
 				// Check again if we're still leader
 				state, _ := n.state.GetState()
 				if state == Leader {
@@ -605,7 +605,7 @@ func (n *raftNode) handleConfigurationChange(data []byte, index int) {
 						break
 					}
 				}
-				
+
 				if !leaderInConfig {
 					// Leader was removed, clear leader ID to trigger new election
 					if n.config.Logger != nil {
@@ -631,7 +631,7 @@ func (n *raftNode) handleConfigurationChange(data []byte, index int) {
 		// Force immediate heartbeat to new configuration
 		n.replication.SendHeartbeats()
 	}
-	
+
 	if n.config.Logger != nil {
 		n.config.Logger.Info("Configuration changed at index %d: %v", index, allMembers)
 	}
@@ -644,12 +644,12 @@ func (n *raftNode) run() {
 			n.config.Logger.Info("Node %d: run loop exiting", n.config.ID)
 		}
 	}()
-	
+
 	// Use a ticker to periodically check timers
 	// This ensures we don't miss timer resets
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-n.ctx.Done():
@@ -684,7 +684,7 @@ func (n *raftNode) run() {
 							break
 						}
 					}
-					
+
 					if inConfig && isVoting {
 						// Start election only if we're a voting member
 						n.state.BecomeCandidate()
@@ -719,7 +719,7 @@ func (n *raftNode) run() {
 			default:
 				// Timer hasn't expired yet
 			}
-			
+
 			// Check heartbeat timer for leaders
 			select {
 			case <-n.state.GetHeartbeatTicker():
@@ -739,7 +739,7 @@ func (n *raftNode) run() {
 // applyLoop applies committed entries to the state machine
 func (n *raftNode) applyLoop() {
 	lastApplied := 0
-	
+
 	// Create a ticker for periodic checks
 	checkTicker := time.NewTicker(100 * time.Millisecond)
 	defer checkTicker.Stop()
@@ -776,13 +776,13 @@ func (n *raftNode) applyLoop() {
 					n.stateMachine.Apply(entry)
 				}
 				lastApplied = entry.Index
-				
+
 				// Update lastApplied in log manager
 				n.mu.Lock()
 				n.log.SetLastApplied(entry.Index)
 				n.mu.Unlock()
 			}
-			
+
 			// Check if we need to take a snapshot
 			if n.snapshot != nil && n.snapshot.NeedsSnapshot() {
 				n.mu.Lock()
@@ -892,7 +892,7 @@ func (n *raftNode) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesRe
 
 	n.replication.HandleAppendEntries(args, reply)
 	n.persist()
-	
+
 	// Record heartbeat for vote denial optimization
 	if reply.Success {
 		n.election.RecordHeartbeat()

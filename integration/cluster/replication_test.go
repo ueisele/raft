@@ -13,7 +13,7 @@ import (
 func TestLogReplication(t *testing.T) {
 	// Create a 3-node cluster
 	cluster := helpers.NewTestCluster(t, 3)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -58,9 +58,9 @@ func TestLogReplication(t *testing.T) {
 				t.Errorf("Node %d missing log entry at index %d", i, indices[j])
 				continue
 			}
-			
+
 			if cmd, ok := entry.Command.(string); !ok || cmd != expectedCmd {
-				t.Errorf("Node %d has wrong command at index %d: got %v, want %s", 
+				t.Errorf("Node %d has wrong command at index %d: got %v, want %s",
 					i, indices[j], entry.Command, expectedCmd)
 			}
 		}
@@ -71,7 +71,7 @@ func TestLogReplication(t *testing.T) {
 func TestReplicationWithFollowerFailure(t *testing.T) {
 	// Create a 5-node cluster
 	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport())
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -97,7 +97,7 @@ func TestReplicationWithFollowerFailure(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
-		
+
 		// Wait for commit on active nodes only
 		activeNodes := make([]raft.Node, 0, len(cluster.Nodes)-1)
 		for j, node := range cluster.Nodes {
@@ -105,7 +105,7 @@ func TestReplicationWithFollowerFailure(t *testing.T) {
 				activeNodes = append(activeNodes, node)
 			}
 		}
-		
+
 		helpers.WaitForCommitIndex(t, activeNodes, idx, time.Second)
 	}
 
@@ -119,14 +119,14 @@ func TestReplicationWithFollowerFailure(t *testing.T) {
 	// Wait for the previously partitioned node to catch up
 	helpers.WaitForConditionWithProgress(t, func() (bool, string) {
 		followerCommit := cluster.Nodes[followerID].GetCommitIndex()
-		return followerCommit >= commitIndexBeforeHeal, 
+		return followerCommit >= commitIndexBeforeHeal,
 			fmt.Sprintf("follower commit index %d, need %d", followerCommit, commitIndexBeforeHeal)
 	}, 5*time.Second, "follower catch-up")
 
 	// Verify the follower has caught up
 	followerCommit := cluster.Nodes[followerID].GetCommitIndex()
 	if followerCommit < commitIndexBeforeHeal {
-		t.Errorf("Follower didn't catch up: commit index %d < %d", 
+		t.Errorf("Follower didn't catch up: commit index %d < %d",
 			followerCommit, commitIndexBeforeHeal)
 	}
 }
@@ -135,7 +135,7 @@ func TestReplicationWithFollowerFailure(t *testing.T) {
 func TestReplicationConsistency(t *testing.T) {
 	// Create a 3-node cluster
 	cluster := helpers.NewTestCluster(t, 3)
-	
+
 	// Start cluster
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
@@ -155,7 +155,7 @@ func TestReplicationConsistency(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to submit command %d: %v", i, err)
 		}
-		
+
 		// Wait for commit
 		if err := cluster.WaitForCommitIndex(idx, time.Second); err != nil {
 			t.Fatalf("Command %d not committed: %v", i, err)
@@ -170,14 +170,14 @@ func TestReplicationConsistency(t *testing.T) {
 	// All nodes should have applied the same commands in the same order
 	for i := 1; i <= commitIndex; i++ {
 		var referenceEntry *raft.LogEntry
-		
+
 		for j, node := range cluster.Nodes {
 			entry := node.GetLogEntry(i)
 			if entry == nil {
 				t.Errorf("Node %d missing entry at index %d", j, i)
 				continue
 			}
-			
+
 			if referenceEntry == nil {
 				referenceEntry = entry
 			} else {
@@ -186,7 +186,7 @@ func TestReplicationConsistency(t *testing.T) {
 					t.Errorf("Inconsistent term at index %d: node 0 has %d, node %d has %d",
 						i, referenceEntry.Term, j, entry.Term)
 				}
-				
+
 				refCmd, _ := referenceEntry.Command.(string)
 				nodeCmd, _ := entry.Command.(string)
 				if refCmd != nodeCmd {
