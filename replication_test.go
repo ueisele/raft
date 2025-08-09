@@ -302,8 +302,10 @@ func TestReplicationManagerCommitAdvancement(t *testing.T) {
 	t.Logf("Current term: %d", state.GetTerm())
 	t.Logf("Match indices: %v", rm.matchIndex)
 
-	// Advance commit index
-	rm.advanceCommitIndex()
+	// Advance commit index (lock is required)
+	rm.mu.Lock()
+	rm.advanceCommitIndexWithLock()
+	rm.mu.Unlock()
 
 	// With 2/3 nodes at index 2, commit index should advance to 2
 	if log.GetCommitIndex() != 2 {
@@ -316,8 +318,10 @@ func TestReplicationManagerCommitAdvancement(t *testing.T) {
 	rm.nextIndex[3] = 4
 	rm.mu.Unlock()
 
-	// Advance commit index again
-	rm.advanceCommitIndex()
+	// Advance commit index again (lock is required)
+	rm.mu.Lock()
+	rm.advanceCommitIndexWithLock()
+	rm.mu.Unlock()
 
 	// With 2/3 nodes at index 3, commit index should advance to 3
 	if log.GetCommitIndex() != 3 {

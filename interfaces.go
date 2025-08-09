@@ -174,6 +174,13 @@ type SnapshotProvider interface {
 }
 
 // Config holds the configuration for a Raft node.
+// 
+// Timeout Philosophy:
+//   - Protocol timeouts (ElectionTimeout, HeartbeatInterval): Zero means "use defaults"
+//     These timeouts are essential for Raft consensus to function and cannot be unlimited.
+//   - Network timeouts (see transport.Config.RPCTimeout): Zero means "unlimited"  
+//     Network operations may optionally have no timeout for special use cases.
+//
 // Default values will be applied for any zero values:
 //   - MaxLogSize: 10000 (entries before snapshot)
 //   - ElectionTimeoutMin: 150ms
@@ -186,13 +193,19 @@ type Config struct {
 	// Peers is the list of all servers in the cluster (including this one)
 	Peers []int
 
-	// ElectionTimeoutMin is the minimum election timeout (defaults to 150ms)
+	// ElectionTimeoutMin is the minimum election timeout
+	// Zero value defaults to 150ms
+	// This timeout is required for Raft to function and cannot be unlimited
 	ElectionTimeoutMin time.Duration
 
-	// ElectionTimeoutMax is the maximum election timeout (defaults to 300ms)
+	// ElectionTimeoutMax is the maximum election timeout  
+	// Zero value defaults to 300ms
+	// This timeout is required for Raft to function and cannot be unlimited
 	ElectionTimeoutMax time.Duration
 
-	// HeartbeatInterval is the interval between heartbeats (defaults to 50ms)
+	// HeartbeatInterval is the interval between heartbeats
+	// Zero value defaults to 50ms
+	// This interval is required for Raft to function and cannot be unlimited
 	HeartbeatInterval time.Duration
 
 	// MaxLogSize is the maximum number of log entries before taking a snapshot (defaults to 10000)

@@ -73,10 +73,21 @@ type ConfigMetrics interface {
 
 // SafeConfigOptions contains options for SafeConfigurationManager
 type SafeConfigOptions struct {
-	PromotionThreshold   float64       // Default: 0.95 (95%)
-	PromotionCheckPeriod time.Duration // Default: 1 second
-	MinCatchUpEntries    int           // Default: 10
-	Metrics              ConfigMetrics // Optional metrics collector
+	// PromotionThreshold is the percentage of log caught up required for promotion
+	// Zero value defaults to 0.95 (95%)
+	PromotionThreshold float64
+
+	// PromotionCheckPeriod is how often to check for promotion
+	// Zero value defaults to 1 second
+	// This cannot be unlimited as periodic checks are required
+	PromotionCheckPeriod time.Duration
+
+	// MinCatchUpEntries is the minimum entries to replicate before promotion
+	// Zero value defaults to 10
+	MinCatchUpEntries int
+
+	// Metrics is an optional metrics collector
+	Metrics ConfigMetrics
 }
 
 // DefaultSafeConfigOptions returns default options
@@ -98,6 +109,17 @@ func NewSafeConfigurationManager(
 ) *SafeConfigurationManager {
 	if options == nil {
 		options = DefaultSafeConfigOptions()
+	}
+
+	// Apply defaults for zero values
+	if options.PromotionThreshold == 0 {
+		options.PromotionThreshold = 0.95
+	}
+	if options.PromotionCheckPeriod == 0 {
+		options.PromotionCheckPeriod = 1 * time.Second
+	}
+	if options.MinCatchUpEntries == 0 {
+		options.MinCatchUpEntries = 10
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
