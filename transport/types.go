@@ -12,8 +12,10 @@ type Config struct {
 	// Address to listen on (e.g., "localhost:8080")
 	Address string
 
-	// Timeout for RPC calls
-	RPCTimeout int // milliseconds
+	// Timeout for RPC calls in milliseconds
+	// 0 means no timeout (unlimited)
+	// Default should be set by the application (e.g., 5000ms)
+	RPCTimeout int
 }
 
 // Error types for transport failures

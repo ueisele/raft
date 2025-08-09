@@ -43,11 +43,8 @@ func NewHTTPTransport(config *transport.Config, discovery transport.PeerDiscover
 		},
 	}
 
-	// Use default timeout if not specified
+	// Convert timeout to duration (0 means no timeout)
 	rpcTimeout := time.Duration(config.RPCTimeout) * time.Millisecond
-	if rpcTimeout == 0 {
-		rpcTimeout = 5 * time.Second // Default to 5 seconds
-	}
 
 	return &HTTPTransport{
 		serverID:   config.ServerID,
@@ -147,9 +144,15 @@ func (t *HTTPTransport) SendRequestVote(serverID int, args *raft.RequestVoteArgs
 
 	url := fmt.Sprintf("http://%s/raft/requestvote", addr)
 
-	// Create context with timeout based on configured RPC timeout
-	ctx, cancel := context.WithTimeout(context.Background(), t.rpcTimeout)
-	defer cancel()
+	// Create context with timeout (0 means no timeout)
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if t.rpcTimeout > 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), t.rpcTimeout)
+		defer cancel()
+	} else {
+		ctx = context.Background()
+	}
 
 	var reply raft.RequestVoteReply
 	if err := t.sendRPC(ctx, url, args, &reply); err != nil {
@@ -168,9 +171,15 @@ func (t *HTTPTransport) SendAppendEntries(serverID int, args *raft.AppendEntries
 
 	url := fmt.Sprintf("http://%s/raft/appendentries", addr)
 
-	// Create context with timeout based on configured RPC timeout
-	ctx, cancel := context.WithTimeout(context.Background(), t.rpcTimeout)
-	defer cancel()
+	// Create context with timeout (0 means no timeout)
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if t.rpcTimeout > 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), t.rpcTimeout)
+		defer cancel()
+	} else {
+		ctx = context.Background()
+	}
 
 	var reply raft.AppendEntriesReply
 	if err := t.sendRPC(ctx, url, args, &reply); err != nil {
@@ -189,9 +198,15 @@ func (t *HTTPTransport) SendInstallSnapshot(serverID int, args *raft.InstallSnap
 
 	url := fmt.Sprintf("http://%s/raft/installsnapshot", addr)
 
-	// Create context with timeout based on configured RPC timeout
-	ctx, cancel := context.WithTimeout(context.Background(), t.rpcTimeout)
-	defer cancel()
+	// Create context with timeout (0 means no timeout)
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if t.rpcTimeout > 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), t.rpcTimeout)
+		defer cancel()
+	} else {
+		ctx = context.Background()
+	}
 
 	var reply raft.InstallSnapshotReply
 	if err := t.sendRPC(ctx, url, args, &reply); err != nil {
