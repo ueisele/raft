@@ -86,30 +86,44 @@ type Command struct {
 	Timestamp time.Time   `json:"timestamp"`
 }
 
+// ApplyResult represents the result of applying a command
+type ApplyResult struct {
+	Success bool   `json:"success"`
+	Error   string `json:"error,omitempty"`
+	Version int64  `json:"version,omitempty"`
+}
+
 // KVStore implements the StateMachine interface
 type KVStore struct {
 	mu       sync.RWMutex
 	data     map[string]string
 	versions map[string]int64
 	metadata map[string]time.Time
+
+	// Track applied entries for synchronous operations
+	appliedMu      sync.Mutex
+	appliedEntries map[int]chan *ApplyResult // index -> result channel
 }
 
 // NewKVStore creates a new KV store state machine
 func NewKVStore() *KVStore {
 	return &KVStore{
-		data:     make(map[string]string),
-		versions: make(map[string]int64),
-		metadata: make(map[string]time.Time),
+		data:           make(map[string]string),
+		versions:       make(map[string]int64),
+		metadata:       make(map[string]time.Time),
+		appliedEntries: make(map[int]chan *ApplyResult),
 	}
 }
 
 // Apply executes a command from the Raft log
 func (kv *KVStore) Apply(entry raft.LogEntry) interface{} {
+	var result *ApplyResult
+
 	// Handle command based on its type
 	switch cmd := entry.Command.(type) {
 	case Command:
 		// Direct Command struct
-		return kv.applyCommand(cmd)
+		result = kv.applyCommand(cmd)
 	case map[string]interface{}:
 		// Parse JSON command (for persistence recovery)
 		var command Command
@@ -128,16 +142,36 @@ func (kv *KVStore) Apply(entry raft.LogEntry) interface{} {
 			command.Timestamp, _ = time.Parse(time.RFC3339, timestamp)
 		}
 
-		return kv.applyCommand(command)
+		result = kv.applyCommand(command)
 	default:
-		return map[string]interface{}{
-			"success": false,
-			"error":   "invalid command format",
+		result = &ApplyResult{
+			Success: false,
+			Error:   "invalid command format",
 		}
 	}
+
+	// Notify any waiting goroutine
+	kv.appliedMu.Lock()
+	if ch, exists := kv.appliedEntries[entry.Index]; exists {
+		// Send result and close channel
+		// Use non-blocking send in case the waiter timed out
+		select {
+		case ch <- result:
+			// Successfully sent, close the channel
+			close(ch)
+		default:
+			// Waiter timed out, just close without sending
+			close(ch)
+		}
+		delete(kv.appliedEntries, entry.Index)
+	}
+	kv.appliedMu.Unlock()
+
+	// Return as interface{} for Raft compatibility
+	return result
 }
 
-func (kv *KVStore) applyCommand(cmd Command) interface{} {
+func (kv *KVStore) applyCommand(cmd Command) *ApplyResult {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 
@@ -147,16 +181,16 @@ func (kv *KVStore) applyCommand(cmd Command) interface{} {
 		kv.versions[cmd.Key]++
 		kv.metadata[cmd.Key] = cmd.Timestamp
 
-		return map[string]interface{}{
-			"success": true,
-			"version": kv.versions[cmd.Key],
+		return &ApplyResult{
+			Success: true,
+			Version: kv.versions[cmd.Key],
 		}
 
 	case DeleteCommand:
 		if _, exists := kv.data[cmd.Key]; !exists {
-			return map[string]interface{}{
-				"success": false,
-				"error":   "key not found",
+			return &ApplyResult{
+				Success: false,
+				Error:   "key not found",
 			}
 		}
 
@@ -164,14 +198,14 @@ func (kv *KVStore) applyCommand(cmd Command) interface{} {
 		delete(kv.versions, cmd.Key)
 		delete(kv.metadata, cmd.Key)
 
-		return map[string]interface{}{
-			"success": true,
+		return &ApplyResult{
+			Success: true,
 		}
 
 	default:
-		return map[string]interface{}{
-			"success": false,
-			"error":   "unknown command type",
+		return &ApplyResult{
+			Success: false,
+			Error:   "unknown command type",
 		}
 	}
 }
@@ -282,6 +316,28 @@ func (kv *KVStore) Stats() (int, int64) {
 	return count, size
 }
 
+// WaitForApplied waits for a specific log index to be applied
+func (kv *KVStore) WaitForApplied(index int, timeout time.Duration) (*ApplyResult, error) {
+	// Create a channel to wait on
+	ch := make(chan *ApplyResult, 1)
+
+	kv.appliedMu.Lock()
+	kv.appliedEntries[index] = ch
+	kv.appliedMu.Unlock()
+
+	// Wait for result or timeout
+	select {
+	case result := <-ch:
+		return result, nil
+	case <-time.After(timeout):
+		// Clean up on timeout
+		kv.appliedMu.Lock()
+		delete(kv.appliedEntries, index)
+		kv.appliedMu.Unlock()
+		return nil, fmt.Errorf("timeout waiting for index %d to be applied", index)
+	}
+}
+
 // Server represents the KV store server
 type Server struct {
 	nodeID      int
@@ -291,7 +347,6 @@ type Server struct {
 	apiPeers    map[int]string
 	raftPeers   map[int]string
 	startTime   time.Time
-	mu          sync.RWMutex
 }
 
 // LeaderRedirect response structure
@@ -325,7 +380,7 @@ func (s *Server) enforceLeaderOnly(w http.ResponseWriter, r *http.Request) bool 
 		w.WriteHeader(http.StatusPermanentRedirect) // 308
 
 		// Include JSON body with redirect information
-		json.NewEncoder(w).Encode(LeaderRedirect{
+		_ = json.NewEncoder(w).Encode(LeaderRedirect{
 			Error:     "not_leader",
 			LeaderID:  leaderID,
 			LeaderURL: fmt.Sprintf("http://%s", leaderAPIAddr),
@@ -384,16 +439,28 @@ func (s *Server) handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For this example, we assume the command was applied successfully
-	// In a real implementation, you'd want to wait for confirmation
+	// Wait for the command to be applied (with 10 second timeout)
+	result, err := s.kvStore.WaitForApplied(index, 10*time.Second)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"operation timeout: %v"}`, err), http.StatusRequestTimeout)
+		return
+	}
+
+	// Check if the operation was successful
+	if !result.Success {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, result.Error), http.StatusInternalServerError)
+		return
+	}
+
 	// Return success response
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"key":       key,
 		"value":     req.Value,
 		"timestamp": cmd.Timestamp.Format(time.RFC3339),
 		"term":      term,
 		"index":     index,
+		"version":   result.Version,
 	})
 }
 
@@ -413,7 +480,7 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"key":       key,
 		"value":     value,
 		"version":   version,
@@ -453,9 +520,22 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Wait for the command to be applied (with 10 second timeout)
+	result, err := s.kvStore.WaitForApplied(index, 10*time.Second)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"operation timeout: %v"}`, err), http.StatusRequestTimeout)
+		return
+	}
+
+	// Check if the operation was successful
+	if !result.Success {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, result.Error), http.StatusInternalServerError)
+		return
+	}
+
 	// Return success response
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"term":  term,
 		"index": index,
 	})
@@ -480,7 +560,7 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	keys := s.kvStore.List(prefix, limit)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"keys":     keys,
 		"count":    len(keys),
 		"has_more": false, // Could implement pagination later
@@ -539,7 +619,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // handleHealth handles GET /health
@@ -567,7 +647,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // parsePeers parses peer configuration string
@@ -772,7 +852,9 @@ func main() {
 	// Shutdown HTTP server
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	httpServer.Shutdown(ctx)
+	if err := httpServer.Shutdown(ctx); err != nil {
+		log.Printf("HTTP server shutdown error: %v", err)
+	}
 
 	// Stop Raft node
 	raftNode.Stop()

@@ -349,10 +349,7 @@ class TestRunner:
         success, result = client.put("test_key", "test_value")
         assert success, f"Failed to set key: {result}"
         
-        # Wait briefly for entry to be committed and applied
-        time.sleep(0.5)
-        
-        # Test GET
+        # Test GET (no wait needed - PUT is now synchronous)
         success, value = client.get("test_key")
         assert success and value == "test_value", f"Get returned wrong value: {value}"
         
@@ -360,10 +357,7 @@ class TestRunner:
         success = client.delete("test_key")
         assert success, "Failed to delete key"
         
-        # Wait briefly for deletion to be committed and applied
-        time.sleep(0.5)
-        
-        # Verify deletion
+        # Verify deletion (no wait needed - DELETE is now synchronous)
         success, value = client.get("test_key")
         assert success and value is None, "Key still exists after deletion"
         
@@ -412,8 +406,9 @@ class TestRunner:
         success, _ = client.put("before_failure", "important_data")
         assert success, "Failed to write before failure"
         
-        # Wait for data to be replicated and committed
-        time.sleep(1)
+        # Small delay to ensure data is fully replicated to followers
+        # (synchronous only guarantees commit, not follower application)
+        time.sleep(0.2)
         
         print(f"  - Stopping leader (Node {old_leader.id})...")
         

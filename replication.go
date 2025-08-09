@@ -263,7 +263,7 @@ func (rm *ReplicationManager) handleAppendEntriesReply(peer int, args *AppendEnt
 		rm.mu.Unlock()
 		return
 	}
-	
+
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 
@@ -326,7 +326,7 @@ func (rm *ReplicationManager) advanceCommitIndexWithLock() {
 		rm.config.Logger.Debug("Attempting to advance commit index: current=%d, lastIndex=%d, currentTerm=%d",
 			currentCommitIndex, lastIndex, currentTerm)
 	}
-	
+
 	// Special case for single-node cluster: immediately commit all entries from current term
 	if len(rm.peers) == 1 {
 		for n := currentCommitIndex + 1; n <= lastIndex; n++ {
@@ -338,7 +338,7 @@ func (rm *ReplicationManager) advanceCommitIndexWithLock() {
 				}
 			}
 		}
-		
+
 		// Notify apply loop if we committed something
 		if rm.logManager.GetCommitIndex() > currentCommitIndex {
 			select {
@@ -369,7 +369,7 @@ func (rm *ReplicationManager) advanceCommitIndexWithLock() {
 		// Count how many servers have this entry
 		count := 1 // Leader always has it
 		matchDetails := fmt.Sprintf("leader=%d", rm.serverID)
-		
+
 		// For single-node cluster, matchIndex will be empty
 		// In that case, only the leader has the entry
 		for peer, matchIdx := range rm.matchIndex {

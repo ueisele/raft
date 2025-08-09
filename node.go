@@ -902,7 +902,7 @@ func (n *raftNode) applyLoop() {
 			if commitIndex > lastApplied {
 				entries = n.log.GetEntries(lastApplied+1, commitIndex+1)
 				if n.config.Logger != nil {
-					n.config.Logger.Debug("applyLoop: commitIndex=%d, lastApplied=%d, applying %d entries", 
+					n.config.Logger.Debug("applyLoop: commitIndex=%d, lastApplied=%d, applying %d entries",
 						commitIndex, lastApplied, len(entries))
 				}
 			}

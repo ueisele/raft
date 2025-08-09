@@ -93,7 +93,7 @@ func (t *HTTPTransport) Start() error {
 	go func() {
 		// Signal that we're starting to serve
 		close(ready)
-		
+
 		// Start serving (this blocks until server stops)
 		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			// Log error but don't crash
@@ -103,7 +103,7 @@ func (t *HTTPTransport) Start() error {
 
 	// Wait for server to start accepting connections
 	<-ready
-	
+
 	// Add a small delay to ensure the OS has fully registered the listener
 	// This helps with "connection refused" errors during simultaneous startup
 	time.Sleep(10 * time.Millisecond)
@@ -237,7 +237,7 @@ func (t *HTTPTransport) sendRPC(ctx context.Context, url string, args interface{
 		if err == nil {
 			break // Success
 		}
-		
+
 		// Check if it's a connection error and we should retry
 		if attempt < maxRetries-1 && isRetriableError(err) {
 			// Exponential backoff: 10ms, 20ms, 40ms
@@ -249,10 +249,10 @@ func (t *HTTPTransport) sendRPC(ctx context.Context, url string, args interface{
 				return fmt.Errorf("context cancelled during retry: %w", ctx.Err())
 			}
 		}
-		
+
 		return fmt.Errorf("failed to send request: %w", err)
 	}
-	
+
 	if resp == nil {
 		return fmt.Errorf("no response after %d retries", maxRetries)
 	}
@@ -354,9 +354,9 @@ func isRetriableError(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	errStr := err.Error()
-	
+
 	// Connection errors that might happen during startup
 	retriableErrors := []string{
 		"connection refused",
@@ -365,12 +365,12 @@ func isRetriableError(err error) bool {
 		"broken pipe",
 		"network is unreachable",
 	}
-	
+
 	for _, retriable := range retriableErrors {
 		if strings.Contains(errStr, retriable) {
 			return true
 		}
 	}
-	
+
 	return false
 }

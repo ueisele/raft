@@ -174,11 +174,11 @@ type SnapshotProvider interface {
 }
 
 // Config holds the configuration for a Raft node.
-// 
+//
 // Timeout Philosophy:
 //   - Protocol timeouts (ElectionTimeout, HeartbeatInterval): Zero means "use defaults"
 //     These timeouts are essential for Raft consensus to function and cannot be unlimited.
-//   - Network timeouts (see transport.Config.RPCTimeout): Zero means "unlimited"  
+//   - Network timeouts (see transport.Config.RPCTimeout): Zero means "unlimited"
 //     Network operations may optionally have no timeout for special use cases.
 //
 // Default values will be applied for any zero values:
@@ -198,7 +198,7 @@ type Config struct {
 	// This timeout is required for Raft to function and cannot be unlimited
 	ElectionTimeoutMin time.Duration
 
-	// ElectionTimeoutMax is the maximum election timeout  
+	// ElectionTimeoutMax is the maximum election timeout
 	// Zero value defaults to 300ms
 	// This timeout is required for Raft to function and cannot be unlimited
 	ElectionTimeoutMax time.Duration
