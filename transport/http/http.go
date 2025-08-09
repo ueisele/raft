@@ -43,12 +43,18 @@ func NewHTTPTransport(config *transport.Config, discovery transport.PeerDiscover
 		},
 	}
 
+	// Use default timeout if not specified
+	rpcTimeout := time.Duration(config.RPCTimeout) * time.Millisecond
+	if rpcTimeout == 0 {
+		rpcTimeout = 5 * time.Second // Default to 5 seconds
+	}
+
 	return &HTTPTransport{
 		serverID:   config.ServerID,
 		address:    config.Address,
 		httpClient: httpClient,
 		discovery:  discovery,
-		rpcTimeout: time.Duration(config.RPCTimeout) * time.Millisecond,
+		rpcTimeout: rpcTimeout,
 	}, nil
 }
 
