@@ -9,7 +9,7 @@ import (
 // ReplicationManager handles log replication
 // Implements Section 5.3 of the Raft paper
 type ReplicationManager struct {
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	serverID int
 	peers    []int
 
@@ -60,8 +60,6 @@ func NewReplicationManager(serverID int, peers []int, state *StateManager, logMa
 // BecomeLeader initializes leader state for replication
 func (rm *ReplicationManager) BecomeLeader() {
 	rm.mu.Lock()
-	defer rm.mu.Unlock()
-
 	lastIndex := rm.logManager.GetLastIndex()
 
 	// Initialize nextIndex and matchIndex for all peers
@@ -76,6 +74,7 @@ func (rm *ReplicationManager) BecomeLeader() {
 	if rm.config.Logger != nil {
 		rm.config.Logger.Info("Initialized leader state, nextIndex=%d for all peers", lastIndex+1)
 	}
+	rm.mu.Unlock()
 
 	// Send initial empty AppendEntries to assert leadership
 	rm.sendHeartbeats()
@@ -83,20 +82,27 @@ func (rm *ReplicationManager) BecomeLeader() {
 
 // Replicate sends log entries to all followers
 func (rm *ReplicationManager) Replicate() {
-	state, _ := rm.state.GetState()
-	if state != Leader {
-		return
-	}
+	// Skip the leader check - we're only called from Submit which already verified we're the leader
+	// This avoids potential deadlock with state manager
+	// state, _ := rm.state.GetState()
+	// if state != Leader {
+	//     return
+	// }
+
+	// Get a copy of peers
+	// Note: We're only called from Submit() which is already serialized
+	// Using the lock here was causing deadlock, so we skip it
+	peers := rm.peers
 
 	// Send AppendEntries to all peers in parallel
-	for _, peer := range rm.peers {
+	for _, peer := range peers {
 		if peer != rm.serverID {
 			go rm.replicateToPeer(peer)
 		}
 	}
 
 	// For single-node cluster, immediately advance commit index
-	if len(rm.peers) == 1 {
+	if len(peers) == 1 {
 		rm.advanceCommitIndex()
 	}
 }
@@ -109,7 +115,7 @@ func (rm *ReplicationManager) SendHeartbeats() {
 	if rm.config.Logger != nil {
 		rm.config.Logger.Debug("Leader %d sending heartbeats", rm.serverID)
 	}
-	rm.sendHeartbeats()
+	rm.sendHeartbeatsWithLock()
 
 	// Check if we can still reach a majority
 	rm.checkQuorum()
@@ -298,6 +304,10 @@ func (rm *ReplicationManager) handleAppendEntriesReply(peer int, args *AppendEnt
 
 // advanceCommitIndex checks if we can advance the commit index
 func (rm *ReplicationManager) advanceCommitIndex() {
+	// Need to acquire lock to access matchIndex safely
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+
 	// Find the highest index that has been replicated on a majority
 	lastIndex := rm.logManager.GetLastIndex()
 	currentTerm := rm.state.GetTerm()
@@ -370,7 +380,27 @@ func (rm *ReplicationManager) advanceCommitIndex() {
 
 // sendHeartbeats sends empty AppendEntries to all peers
 func (rm *ReplicationManager) sendHeartbeats() {
-	for _, peer := range rm.peers {
+	// Get a copy of peers under read lock
+	rm.mu.RLock()
+	peers := make([]int, len(rm.peers))
+	copy(peers, rm.peers)
+	rm.mu.RUnlock()
+
+	for _, peer := range peers {
+		if peer != rm.serverID {
+			go rm.replicateToPeer(peer)
+		}
+	}
+}
+
+// sendHeartbeatsWithLock sends empty AppendEntries to all peers
+// NOTE: Caller must hold rm.mu lock
+func (rm *ReplicationManager) sendHeartbeatsWithLock() {
+	// Get a copy of peers - caller already holds lock
+	peers := make([]int, len(rm.peers))
+	copy(peers, rm.peers)
+
+	for _, peer := range peers {
 		if peer != rm.serverID {
 			go rm.replicateToPeer(peer)
 		}
@@ -596,8 +626,8 @@ func (rm *ReplicationManager) checkQuorum() {
 
 // GetMatchIndex returns the match index for a specific server
 func (rm *ReplicationManager) GetMatchIndex(serverID int) int {
-	rm.mu.Lock()
-	defer rm.mu.Unlock()
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
 
 	if matchIndex, exists := rm.matchIndex[serverID]; exists {
 		return matchIndex

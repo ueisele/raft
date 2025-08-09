@@ -202,10 +202,12 @@ func TestReplicationManagerReplicate(t *testing.T) {
 	transport.ClearCalls()
 
 	// Now simulate that peers have different states
+	rm.mu.Lock()
 	rm.matchIndex[2] = 1 // Follower 2 has replicated up to index 1
 	rm.nextIndex[2] = 2  // Next index to send to follower 2
 	rm.matchIndex[3] = 0 // Follower 3 has no entries
 	rm.nextIndex[3] = 1  // Next index to send to follower 3
+	rm.mu.Unlock()
 
 	// Set up responses
 	transport.mu.Lock()

@@ -56,11 +56,11 @@ func TestBasicNodeCreation(t *testing.T) {
 		attempts++
 		term, isLeader := node.GetState()
 		if isLeader {
-				t.Logf("Node became leader after %d attempts (term=%d)", attempts, term)
-				return
-			}
-			if attempts%10 == 0 {
-				t.Logf("Still waiting... attempt %d: term=%d, isLeader=%v", attempts, term, isLeader)
+			t.Logf("Node became leader after %d attempts (term=%d)", attempts, term)
+			return
+		}
+		if attempts%10 == 0 {
+			t.Logf("Still waiting... attempt %d: term=%d, isLeader=%v", attempts, term, isLeader)
 		}
 	}
 

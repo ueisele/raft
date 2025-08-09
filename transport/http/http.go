@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -31,10 +32,20 @@ func NewHTTPTransport(config *transport.Config, discovery transport.PeerDiscover
 		return nil, fmt.Errorf("discovery cannot be nil")
 	}
 
+	// Create HTTP client with custom transport to handle timeouts properly
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			// Use default transport settings but with better connection pooling
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+
 	return &HTTPTransport{
 		serverID:   config.ServerID,
 		address:    config.Address,
-		httpClient: &http.Client{},
+		httpClient: httpClient,
 		discovery:  discovery,
 		rpcTimeout: time.Duration(config.RPCTimeout) * time.Millisecond,
 	}, nil
@@ -62,16 +73,34 @@ func (t *HTTPTransport) Start() error {
 		Handler: t.mux,
 	}
 
+	// Create listener first to ensure we can bind to the address
+	listener, err := net.Listen("tcp", t.address)
+	if err != nil {
+		return fmt.Errorf("failed to listen on %s: %w", t.address, err)
+	}
+
 	// Copy server reference for goroutine to avoid race
 	server := t.httpServer
 
+	// Channel to signal server is ready
+	ready := make(chan error, 1)
+
 	// Start server in background
 	go func() {
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		// Signal that we're ready
+		ready <- nil
+
+		// Start serving (this blocks until server stops)
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			// Log error but don't crash
 			fmt.Printf("HTTP server error: %v\n", err)
 		}
 	}()
+
+	// Wait for server to be ready
+	if err := <-ready; err != nil {
+		return err
+	}
 
 	return nil
 }

@@ -1,0 +1,11 @@
+[project]
+name = "kv-store-tests"
+version = "1.0.0"
+description = "Test suite for distributed KV store example"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31.0",
+]
+
+[tool.uv]
+dev-dependencies = []

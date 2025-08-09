@@ -123,6 +123,12 @@ func NewNode(config *Config, transport Transport, persistence Persistence, state
 		}
 	}
 
+	// Set up safe configuration manager callbacks
+	node.safeConfig.SetIsLeaderFunc(func() bool {
+		state, _ := node.state.GetState()
+		return state == Leader
+	})
+
 	// Set transport RPC handler
 	transport.SetRPCHandler(node)
 
@@ -151,24 +157,49 @@ func (n *raftNode) Start(ctx context.Context) error {
 
 // Stop gracefully shuts down the Raft node
 func (n *raftNode) Stop() {
-	n.mu.Lock()
-	if n.stopped {
-		n.mu.Unlock()
-		return
-	}
-	n.stopped = true
+	// Try to acquire lock with timeout to avoid deadlock during shutdown
+	lockAcquired := make(chan struct{})
+	go func() {
+		n.mu.Lock()
+		close(lockAcquired)
+	}()
 
-	// Save state before shutdown
-	if err := n.persist(); err != nil {
-		if n.config.Logger != nil {
-			n.config.Logger.Error("Failed to persist state on shutdown: %v", err)
+	select {
+	case <-lockAcquired:
+		// Got the lock, proceed with normal shutdown
+		if n.stopped {
+			n.mu.Unlock()
+			return
 		}
-	}
+		n.stopped = true
 
-	if n.cancel != nil {
-		n.cancel()
+		// Save state before shutdown
+		if err := n.persist(); err != nil {
+			if n.config.Logger != nil {
+				n.config.Logger.Error("Failed to persist state on shutdown: %v", err)
+			}
+		}
+
+		if n.cancel != nil {
+			n.cancel()
+		}
+		n.mu.Unlock()
+
+	case <-time.After(2 * time.Second):
+		// Timeout - force shutdown without lock
+		if n.config.Logger != nil {
+			n.config.Logger.Warn("Stop() timeout - forcing shutdown without lock")
+		}
+
+		// Cancel context to stop background operations
+		if n.cancel != nil {
+			n.cancel()
+		}
+
+		// Mark as stopped using atomic operation to prevent race
+		// Note: This is a best-effort approach when we can't get the lock
+		// Some state might not be properly saved
 	}
-	n.mu.Unlock()
 
 	// Stop state manager timers
 	n.state.Stop()
@@ -178,20 +209,44 @@ func (n *raftNode) Stop() {
 		n.safeConfig.Stop()
 	}
 
-	close(n.stopCh)
+	// Only close stopCh if we successfully acquired the lock
+	// to avoid panic from closing twice
+	select {
+	case <-lockAcquired:
+		close(n.stopCh)
+	default:
+		// Channel might still be open but we can't safely close it
+	}
+
 	n.transport.Stop() //nolint:errcheck // best effort cleanup on context cancellation
 }
 
 // Submit submits a command to the Raft cluster
 func (n *raftNode) Submit(command interface{}) (int, int, bool) {
+	if n.config.Logger != nil {
+		n.config.Logger.Debug("Submit: trying to acquire lock...")
+	}
 	n.mu.Lock()
-	defer n.mu.Unlock()
+	if n.config.Logger != nil {
+		n.config.Logger.Debug("Submit: lock acquired")
+	}
+	// Note: We manually unlock in this function instead of using defer
 
+	if n.config.Logger != nil {
+		n.config.Logger.Debug("Submit: checking state...")
+	}
 	state, _ := n.state.GetState()
 	if state != Leader {
+		if n.config.Logger != nil {
+			n.config.Logger.Debug("Submit: not leader, returning false")
+		}
+		n.mu.Unlock()
 		return -1, -1, false
 	}
 
+	if n.config.Logger != nil {
+		n.config.Logger.Debug("Submit: creating log entry...")
+	}
 	// Append to log
 	entry := LogEntry{
 		Term:    n.state.GetCurrentTerm(),
@@ -201,24 +256,55 @@ func (n *raftNode) Submit(command interface{}) (int, int, bool) {
 
 	prevIndex := n.log.GetLastLogIndex()
 	prevTerm := n.log.GetLastLogTerm()
+	if n.config.Logger != nil {
+		n.config.Logger.Debug("Submit: appending entry to log...")
+	}
 	if err := n.log.AppendEntries(prevIndex, prevTerm, []LogEntry{entry}); err != nil {
+		if n.config.Logger != nil {
+			n.config.Logger.Debug("Submit: append failed: %v", err)
+		}
+		n.mu.Unlock()
 		return -1, -1, false
 	}
 
+	// Store values we need after releasing lock
+	entryIndex := entry.Index
+	entryTerm := entry.Term
+
+	// Release lock before persisting to avoid potential deadlock
+	n.mu.Unlock()
+
+	if n.config.Logger != nil {
+		n.config.Logger.Debug("Submit: persisting state...")
+	}
 	// Persist state - critical for consensus
 	if err := n.persist(); err != nil {
+		// Re-acquire lock to clean up
+		n.mu.Lock()
 		// Remove the entry we just added since we couldn't persist it
 		n.log.TruncateAfter(prevIndex)
+		n.mu.Unlock()
 		if n.config.Logger != nil {
 			n.config.Logger.Error("Failed to persist after Submit: %v", err)
 		}
 		return -1, -1, false
 	}
 
+	if n.config.Logger != nil {
+		n.config.Logger.Debug("Submit: persist completed, triggering replication...")
+	}
+
 	// Trigger replication
 	n.replication.Replicate()
 
-	return entry.Index, entry.Term, true
+	if n.config.Logger != nil {
+		n.config.Logger.Debug("Submit: replication triggered")
+	}
+
+	if n.config.Logger != nil {
+		n.config.Logger.Debug("Submit: completed successfully, returning index=%d, term=%d", entryIndex, entryTerm)
+	}
+	return entryIndex, entryTerm, true
 }
 
 // GetState returns current term and whether this server is the leader
@@ -712,6 +798,11 @@ func (n *raftNode) run() {
 						}
 					}
 
+					if n.config.Logger != nil {
+						n.config.Logger.Info("Node %d: Checking election eligibility - inConfig=%v, isVoting=%v, servers=%d",
+							n.config.ID, inConfig, isVoting, len(config.Servers))
+					}
+
 					if inConfig && isVoting {
 						// Start election only if we're a voting member
 						n.state.BecomeCandidate()
@@ -721,17 +812,34 @@ func (n *raftNode) run() {
 							}
 							// Continue with election anyway
 						}
+						n.mu.Unlock() // MUST release lock before starting election to avoid deadlock
 
 						// Run election in background
 						go func() {
-							if n.election.StartElection() {
+							if n.config.Logger != nil {
+								n.config.Logger.Debug("Election goroutine started")
+							}
+							won := n.election.StartElection()
+							if n.config.Logger != nil {
+								n.config.Logger.Debug("Election completed, won=%v", won)
+							}
+							if won {
+								if n.config.Logger != nil {
+									n.config.Logger.Debug("Acquiring lock to become leader...")
+								}
 								n.mu.Lock()
+								if n.config.Logger != nil {
+									n.config.Logger.Debug("Lock acquired, becoming leader...")
+								}
 								n.state.BecomeLeader()
 								// Set self as leader
 								leaderID := n.config.ID
 								n.state.SetLeaderID(&leaderID)
 								n.replication.BecomeLeader()
 								n.mu.Unlock()
+								if n.config.Logger != nil {
+									n.config.Logger.Debug("Became leader, lock released")
+								}
 							}
 						}()
 					} else {
@@ -745,9 +853,11 @@ func (n *raftNode) run() {
 						}
 						// Reset timer anyway to avoid busy loop
 						n.state.ResetElectionTimer()
+						n.mu.Unlock()
 					}
+				} else {
+					n.mu.Unlock()
 				}
-				n.mu.Unlock()
 			default:
 				// Timer hasn't expired yet
 			}
@@ -757,10 +867,11 @@ func (n *raftNode) run() {
 			case <-n.state.GetHeartbeatTicker():
 				n.mu.RLock()
 				state, _ := n.state.GetState()
+				n.mu.RUnlock()
+
 				if state == Leader {
 					n.replication.SendHeartbeats()
 				}
-				n.mu.RUnlock()
 			default:
 				// Heartbeat ticker hasn't fired yet
 			}

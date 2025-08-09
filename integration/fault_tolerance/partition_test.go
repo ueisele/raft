@@ -549,7 +549,6 @@ type asymmetricRegistry struct {
 	mu    sync.RWMutex
 }
 
-
 func (t *asymmetricTransport) blockOutgoingTo(nodeID int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
