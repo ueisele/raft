@@ -107,8 +107,11 @@ func NewKVStore() *KVStore {
 func (kv *KVStore) Apply(entry raft.LogEntry) interface{} {
 	// Handle command based on its type
 	switch cmd := entry.Command.(type) {
+	case Command:
+		// Direct Command struct
+		return kv.applyCommand(cmd)
 	case map[string]interface{}:
-		// Parse JSON command
+		// Parse JSON command (for persistence recovery)
 		var command Command
 
 		// Convert map to Command struct

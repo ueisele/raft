@@ -349,6 +349,9 @@ class TestRunner:
         success, result = client.put("test_key", "test_value")
         assert success, f"Failed to set key: {result}"
         
+        # Wait briefly for entry to be committed and applied
+        time.sleep(0.5)
+        
         # Test GET
         success, value = client.get("test_key")
         assert success and value == "test_value", f"Get returned wrong value: {value}"
@@ -356,6 +359,9 @@ class TestRunner:
         # Test DELETE
         success = client.delete("test_key")
         assert success, "Failed to delete key"
+        
+        # Wait briefly for deletion to be committed and applied
+        time.sleep(0.5)
         
         # Verify deletion
         success, value = client.get("test_key")
@@ -405,6 +411,9 @@ class TestRunner:
         client = KVClient(f"http://{old_leader.api_address}")
         success, _ = client.put("before_failure", "important_data")
         assert success, "Failed to write before failure"
+        
+        # Wait for data to be replicated and committed
+        time.sleep(1)
         
         print(f"  - Stopping leader (Node {old_leader.id})...")
         
