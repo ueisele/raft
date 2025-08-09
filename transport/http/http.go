@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	raft "github.com/ueisele/raft"
@@ -83,13 +84,13 @@ func (t *HTTPTransport) Start() error {
 	server := t.httpServer
 
 	// Channel to signal server is ready
-	ready := make(chan error, 1)
+	ready := make(chan struct{})
 
 	// Start server in background
 	go func() {
-		// Signal that we're ready
-		ready <- nil
-
+		// Signal that we're starting to serve
+		close(ready)
+		
 		// Start serving (this blocks until server stops)
 		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			// Log error but don't crash
@@ -97,10 +98,12 @@ func (t *HTTPTransport) Start() error {
 		}
 	}()
 
-	// Wait for server to be ready
-	if err := <-ready; err != nil {
-		return err
-	}
+	// Wait for server to start accepting connections
+	<-ready
+	
+	// Add a small delay to ensure the OS has fully registered the listener
+	// This helps with "connection refused" errors during simultaneous startup
+	time.Sleep(10 * time.Millisecond)
 
 	return nil
 }
@@ -192,22 +195,45 @@ func (t *HTTPTransport) SendInstallSnapshot(serverID int, args *raft.InstallSnap
 	return &reply, nil
 }
 
-// sendRPC sends a generic RPC request with context support
+// sendRPC sends a generic RPC request with context support and retry logic
 func (t *HTTPTransport) sendRPC(ctx context.Context, url string, args interface{}, reply interface{}) error {
 	jsonData, err := json.Marshal(args)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
+	// Retry logic for connection failures during startup
+	var resp *http.Response
+	maxRetries := 3
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(jsonData))
+		if err != nil {
+			return fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
 
-	resp, err := t.httpClient.Do(req)
-	if err != nil {
+		resp, err = t.httpClient.Do(req)
+		if err == nil {
+			break // Success
+		}
+		
+		// Check if it's a connection error and we should retry
+		if attempt < maxRetries-1 && isRetriableError(err) {
+			// Exponential backoff: 10ms, 20ms, 40ms
+			backoff := time.Duration(10<<uint(attempt)) * time.Millisecond
+			select {
+			case <-time.After(backoff):
+				continue // Retry
+			case <-ctx.Done():
+				return fmt.Errorf("context cancelled during retry: %w", ctx.Err())
+			}
+		}
+		
 		return fmt.Errorf("failed to send request: %w", err)
+	}
+	
+	if resp == nil {
+		return fmt.Errorf("no response after %d retries", maxRetries)
 	}
 	defer resp.Body.Close() //nolint:errcheck // read-only operation
 
@@ -300,4 +326,30 @@ func (t *HTTPTransport) getServerAddress(serverID int) (string, error) {
 		return "", fmt.Errorf("failed to get address for server %d: %w", serverID, err)
 	}
 	return addr, nil
+}
+
+// isRetriableError checks if an error is retriable (e.g., connection refused during startup)
+func isRetriableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	
+	errStr := err.Error()
+	
+	// Connection errors that might happen during startup
+	retriableErrors := []string{
+		"connection refused",
+		"no such host",
+		"connection reset",
+		"broken pipe",
+		"network is unreachable",
+	}
+	
+	for _, retriable := range retriableErrors {
+		if strings.Contains(errStr, retriable) {
+			return true
+		}
+	}
+	
+	return false
 }
