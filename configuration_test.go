@@ -44,6 +44,7 @@ func TestConfigurationManager(t *testing.T) {
 	pending := cm.GetPendingConfigChange()
 	if pending == nil {
 		t.Fatal("Expected pending configuration change")
+		return // Make linter understand this is unreachable
 	}
 
 	if pending.Type != ConfigChangeAddServer {

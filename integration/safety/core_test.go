@@ -185,7 +185,7 @@ func TestLeaderCompleteness(t *testing.T) {
 	// Wait for new leader among remaining nodes
 	time.Sleep(500 * time.Millisecond) // Allow election timeout
 
-	var newLeader int = -1
+	var newLeader = -1
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		for i, node := range cluster.Nodes {
@@ -331,7 +331,7 @@ func TestSplitVoteScenario(t *testing.T) {
 
 	// Check that eventually a new leader is elected
 	deadline := time.Now().Add(5 * time.Second)
-	var newLeader int = -1
+	var newLeader = -1
 	var newTerm int
 
 	for time.Now().Before(deadline) {

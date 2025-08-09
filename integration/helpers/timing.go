@@ -93,7 +93,7 @@ func WaitForConditionWithProgress(t *testing.T, condition func() (bool, string),
 // WaitForLeader waits for a leader to be elected
 func WaitForLeader(t *testing.T, nodes []raft.Node, timeout time.Duration) int {
 	t.Helper()
-	var leaderID int = -1
+	var leaderID = -1
 	WaitForConditionWithProgress(t, func() (bool, string) {
 		leaderCount := 0
 		for i, node := range nodes {

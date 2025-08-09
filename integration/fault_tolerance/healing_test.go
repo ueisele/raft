@@ -157,7 +157,7 @@ func TestEventualConsistency(t *testing.T) {
 	// Submit commands to majority partition
 	for i := 0; i < 5; i++ {
 		// Find leader in majority partition
-		var leader int = -1
+		var leader = -1
 		for j := 2; j < 5; j++ {
 			_, isLeader := cluster.Nodes[j].GetState()
 			if isLeader {
@@ -330,7 +330,7 @@ func TestHealingWithDivergentLogs(t *testing.T) {
 	// Each partition will elect its own leader and accept different commands
 
 	// Submit to minority partition (won't commit)
-	var minorityLeader int = -1
+	var minorityLeader = -1
 	for i := 0; i <= 1; i++ {
 		_, isLeader := cluster.Nodes[i].GetState()
 		if isLeader {
@@ -348,7 +348,7 @@ func TestHealingWithDivergentLogs(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// Submit to majority partition
-	var majorityLeader int = -1
+	var majorityLeader = -1
 	for attempts := 0; attempts < 10; attempts++ {
 		for i := 2; i <= 4; i++ {
 			_, isLeader := cluster.Nodes[i].GetState()

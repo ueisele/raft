@@ -115,7 +115,7 @@ func TestHTTPTransportBasicCluster(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// Find the leader
-	var leaderID int = -1
+	var leaderID = -1
 	for i, node := range nodes {
 		if node.IsLeader() {
 			leaderID = i
@@ -226,7 +226,7 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// Find the leader
-	var leaderID int = -1
+	var leaderID = -1
 	for i, node := range nodes {
 		if node.IsLeader() {
 			leaderID = i
@@ -364,7 +364,7 @@ func TestHTTPTransportHighLoad(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// Find the leader
-	var leaderID int = -1
+	var leaderID = -1
 	for i, node := range nodes {
 		if node.IsLeader() {
 			leaderID = i

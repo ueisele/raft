@@ -180,7 +180,7 @@ func (scm *SafeConfigurationManager) AddServerSafely(serverID int, address strin
 	}
 
 	// Always add as non-voting first
-	err := scm.ConfigurationManager.StartAddServer(ServerConfig{
+	err := scm.StartAddServer(ServerConfig{
 		ID:      serverID,
 		Address: address,
 		Voting:  false, // ALWAYS start as non-voting
@@ -196,7 +196,7 @@ func (scm *SafeConfigurationManager) AddServerSafely(serverID int, address strin
 	// Submit the configuration change
 	if scm.submitConfigChange != nil {
 		if err := scm.submitConfigChange(); err != nil {
-			scm.ConfigurationManager.CancelPendingChange()
+			scm.CancelPendingChange()
 			if scm.metrics != nil {
 				scm.metrics.RecordConfigurationError(err)
 			}
@@ -246,7 +246,7 @@ func (scm *SafeConfigurationManager) AddVotingServerUnsafe(serverID int, address
 		}
 	}
 
-	return scm.ConfigurationManager.StartAddServer(ServerConfig{
+	return scm.StartAddServer(ServerConfig{
 		ID:      serverID,
 		Address: address,
 		Voting:  true,
@@ -407,7 +407,7 @@ func (scm *SafeConfigurationManager) promoteServer(serverID int) {
 	// This ensures proper configuration change tracking
 
 	// First, remove the non-voting server
-	err := scm.ConfigurationManager.StartRemoveServer(serverID)
+	err := scm.StartRemoveServer(serverID)
 	if err != nil {
 		if scm.logger != nil {
 			scm.logger.Error("Failed to remove non-voting server %d for promotion: %v", serverID, err)
@@ -421,7 +421,7 @@ func (scm *SafeConfigurationManager) promoteServer(serverID int) {
 	// Submit the removal
 	if scm.submitConfigChange != nil {
 		if err := scm.submitConfigChange(); err != nil {
-			scm.ConfigurationManager.CancelPendingChange()
+			scm.CancelPendingChange()
 			if scm.logger != nil {
 				scm.logger.Error("Failed to submit removal for promotion: %v", err)
 			}
@@ -433,7 +433,7 @@ func (scm *SafeConfigurationManager) promoteServer(serverID int) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Now add it back as a voting server
-	err = scm.ConfigurationManager.StartAddServer(ServerConfig{
+	err = scm.StartAddServer(ServerConfig{
 		ID:      serverID,
 		Address: serverAddress,
 		Voting:  true,
@@ -451,7 +451,7 @@ func (scm *SafeConfigurationManager) promoteServer(serverID int) {
 	// Submit the addition
 	if scm.submitConfigChange != nil {
 		if err := scm.submitConfigChange(); err != nil {
-			scm.ConfigurationManager.CancelPendingChange()
+			scm.CancelPendingChange()
 			if scm.logger != nil {
 				scm.logger.Error("Failed to submit addition for promotion: %v", err)
 			}

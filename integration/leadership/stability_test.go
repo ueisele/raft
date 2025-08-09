@@ -49,7 +49,7 @@ func TestLeaderCommitIndexPreservation(t *testing.T) {
 	// Wait for new leader
 	time.Sleep(500 * time.Millisecond)
 
-	var newLeader int = -1
+	var newLeader = -1
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		for i, node := range cluster.Nodes {

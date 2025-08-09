@@ -111,7 +111,7 @@ func TestSnapshotDuringLeadershipChange(t *testing.T) {
 	// Wait for new leader
 	time.Sleep(500 * time.Millisecond)
 
-	var newLeader int = -1
+	var newLeader = -1
 	for i, node := range cluster.Nodes {
 		if i != initialLeader {
 			_, isLeader := node.GetState()

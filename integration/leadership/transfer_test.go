@@ -59,7 +59,7 @@ func TestLeadershipTransfer(t *testing.T) {
 
 	// Check if leadership transferred
 	// Any node could become leader, but term should increase
-	var newLeader int = -1
+	var newLeader = -1
 	var newTerm int
 	for i, node := range cluster.Nodes {
 		if i == initialLeader {

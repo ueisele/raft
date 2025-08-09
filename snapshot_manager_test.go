@@ -103,6 +103,7 @@ func TestSnapshotManagerBasics(t *testing.T) {
 
 	if loaded == nil {
 		t.Fatal("Loaded snapshot is nil")
+		return // Make linter understand this is unreachable
 	}
 
 	if loaded.LastIncludedIndex != snapshot.LastIncludedIndex {

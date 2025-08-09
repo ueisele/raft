@@ -142,7 +142,7 @@ func TestConfigChangeRollback(t *testing.T) {
 	// Wait for new leader in majority
 	time.Sleep(1 * time.Second)
 
-	var newLeaderID int = -1
+	var newLeaderID = -1
 	for i := 0; i < 5; i++ {
 		if i == leaderID {
 			continue

@@ -241,7 +241,7 @@ func TestLogReplicationUnderPartitions(t *testing.T) {
 	// Wait for new leader in majority
 	time.Sleep(500 * time.Millisecond)
 
-	var newLeaderID int = -1
+	var newLeaderID = -1
 	for _, nodeID := range majorityNodes {
 		_, isLeader := cluster.Nodes[nodeID].GetState()
 		if isLeader {

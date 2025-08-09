@@ -135,7 +135,7 @@ func WaitForLeader(t *testing.T, nodes []Node) int {
 // WaitForLeaderWithConfig waits for exactly one leader with custom timing
 func WaitForLeaderWithConfig(t *testing.T, nodes []Node, config *TimingConfig) int {
 	t.Helper()
-	var leaderID int = -1
+	var leaderID = -1
 
 	WaitForConditionWithProgress(t, func() (bool, string) {
 		leaderCount := 0
@@ -166,7 +166,7 @@ func WaitForNewLeader(t *testing.T, nodes []Node, oldLeaderID int) int {
 // WaitForNewLeaderWithConfig waits for a new leader with custom timing
 func WaitForNewLeaderWithConfig(t *testing.T, nodes []Node, oldLeaderID int, config *TimingConfig) int {
 	t.Helper()
-	var newLeaderID int = -1
+	var newLeaderID = -1
 
 	WaitForConditionWithProgress(t, func() (bool, string) {
 		leaderCount := 0
