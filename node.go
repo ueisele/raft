@@ -901,6 +901,10 @@ func (n *raftNode) applyLoop() {
 
 			if commitIndex > lastApplied {
 				entries = n.log.GetEntries(lastApplied+1, commitIndex+1)
+				if n.config.Logger != nil {
+					n.config.Logger.Debug("applyLoop: commitIndex=%d, lastApplied=%d, applying %d entries", 
+						commitIndex, lastApplied, len(entries))
+				}
 			}
 			n.mu.RUnlock()
 
@@ -916,6 +920,9 @@ func (n *raftNode) applyLoop() {
 					}
 				} else {
 					// Normal command - apply to state machine
+					if n.config.Logger != nil {
+						n.config.Logger.Debug("applyLoop: applying entry at index %d to state machine", entry.Index)
+					}
 					n.stateMachine.Apply(entry)
 				}
 				lastApplied = entry.Index

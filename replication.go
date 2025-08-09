@@ -89,21 +89,26 @@ func (rm *ReplicationManager) Replicate() {
 	//     return
 	// }
 
-	// Get a copy of peers
-	// Note: We're only called from Submit() which is already serialized
-	// Using the lock here was causing deadlock, so we skip it
+	// NOTE: We cannot lock here because Submit() holds n.mu while calling us,
+	// and other goroutines might hold rm.mu while needing n.mu (deadlock).
+	// Since Submit is already synchronized, we can safely access rm.peers without locking.
 	peers := rm.peers
 
 	// Send AppendEntries to all peers in parallel
 	for _, peer := range peers {
 		if peer != rm.serverID {
+			if rm.config != nil && rm.config.Logger != nil {
+				rm.config.Logger.Debug("Starting replication to peer %d", peer)
+			}
 			go rm.replicateToPeer(peer)
 		}
 	}
 
 	// For single-node cluster, immediately advance commit index
 	if len(peers) == 1 {
-		rm.advanceCommitIndex()
+		rm.mu.Lock()
+		rm.advanceCommitIndexWithLock()
+		rm.mu.Unlock()
 	}
 }
 
@@ -186,17 +191,15 @@ func (rm *ReplicationManager) HandleAppendEntries(args *AppendEntriesArgs, reply
 
 // replicateToPeer sends AppendEntries to a specific peer
 func (rm *ReplicationManager) replicateToPeer(peer int) {
-	rm.mu.Lock()
-
-	// Check if RPC is already in flight
-	if rm.inflightRPCs[peer] {
-		rm.mu.Unlock()
+	// Check state first without holding lock to avoid deadlock
+	state, currentTerm := rm.state.GetState()
+	if state != Leader {
 		return
 	}
 
-	// Check state
-	state, currentTerm := rm.state.GetState()
-	if state != Leader {
+	rm.mu.Lock()
+	// Check if RPC is already in flight
+	if rm.inflightRPCs[peer] {
 		rm.mu.Unlock()
 		return
 	}
@@ -217,6 +220,8 @@ func (rm *ReplicationManager) replicateToPeer(peer int) {
 				rm.config.Logger.Debug("prevEntry is nil for peer %d at index %d (nextIndex=%d)",
 					peer, prevIndex, nextIndex)
 			}
+			// Clear the in-flight flag before unlocking
+			delete(rm.inflightRPCs, peer)
 			rm.mu.Unlock()
 			rm.sendSnapshot(peer)
 			return
@@ -237,17 +242,28 @@ func (rm *ReplicationManager) replicateToPeer(peer int) {
 		LeaderCommit: rm.logManager.GetCommitIndex(),
 	}
 
+	// Don't hold lock while sending RPC
 	rm.mu.Unlock()
 
 	// Send RPC
 	reply, err := rm.transport.SendAppendEntries(peer, args)
 
-	// Process reply
+	// Process reply (this will acquire lock again and clear the in-flight flag)
 	rm.handleAppendEntriesReply(peer, args, reply, err)
 }
 
 // handleAppendEntriesReply processes the reply from AppendEntries RPC
 func (rm *ReplicationManager) handleAppendEntriesReply(peer int, args *AppendEntriesArgs, reply *AppendEntriesReply, err error) {
+	// Check if we're still leader before acquiring lock to avoid deadlock
+	state, currentTerm := rm.state.GetState()
+	if state != Leader || args.Term != currentTerm {
+		// Still need to clear in-flight flag
+		rm.mu.Lock()
+		delete(rm.inflightRPCs, peer)
+		rm.mu.Unlock()
+		return
+	}
+	
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 
@@ -259,12 +275,6 @@ func (rm *ReplicationManager) handleAppendEntriesReply(peer int, args *AppendEnt
 			rm.config.Logger.Warn("AppendEntries to %d failed: %v", peer, err)
 		}
 		// On error, the follower won't receive heartbeats, so their election timer will eventually expire
-		return
-	}
-
-	// Check if we're still leader in the same term
-	state, currentTerm := rm.state.GetState()
-	if state != Leader || args.Term != currentTerm {
 		return
 	}
 
@@ -282,8 +292,8 @@ func (rm *ReplicationManager) handleAppendEntriesReply(peer int, args *AppendEnt
 		rm.nextIndex[peer] = args.PrevLogIndex + len(args.Entries) + 1
 		rm.matchIndex[peer] = args.PrevLogIndex + len(args.Entries)
 
-		// Try to advance commit index
-		rm.advanceCommitIndex()
+		// Try to advance commit index (we already hold the lock)
+		rm.advanceCommitIndexWithLock()
 
 		// Record metrics
 		if rm.config.Metrics != nil {
@@ -303,10 +313,9 @@ func (rm *ReplicationManager) handleAppendEntriesReply(peer int, args *AppendEnt
 }
 
 // advanceCommitIndex checks if we can advance the commit index
-func (rm *ReplicationManager) advanceCommitIndex() {
-	// Need to acquire lock to access matchIndex safely
-	rm.mu.RLock()
-	defer rm.mu.RUnlock()
+// NOTE: Caller must hold rm.mu lock
+func (rm *ReplicationManager) advanceCommitIndexWithLock() {
+	// Caller already holds the lock, don't acquire again
 
 	// Find the highest index that has been replicated on a majority
 	lastIndex := rm.logManager.GetLastIndex()
@@ -316,6 +325,28 @@ func (rm *ReplicationManager) advanceCommitIndex() {
 	if rm.config.Logger != nil {
 		rm.config.Logger.Debug("Attempting to advance commit index: current=%d, lastIndex=%d, currentTerm=%d",
 			currentCommitIndex, lastIndex, currentTerm)
+	}
+	
+	// Special case for single-node cluster: immediately commit all entries from current term
+	if len(rm.peers) == 1 {
+		for n := currentCommitIndex + 1; n <= lastIndex; n++ {
+			entry := rm.logManager.GetEntry(n)
+			if entry != nil && entry.Term == currentTerm {
+				rm.logManager.SetCommitIndex(n)
+				if rm.config.Logger != nil {
+					rm.config.Logger.Debug("Single-node cluster: advanced commit index to %d", n)
+				}
+			}
+		}
+		
+		// Notify apply loop if we committed something
+		if rm.logManager.GetCommitIndex() > currentCommitIndex {
+			select {
+			case rm.applyNotify <- struct{}{}:
+			default:
+			}
+		}
+		return
 	}
 
 	for n := currentCommitIndex + 1; n <= lastIndex; n++ {
@@ -336,8 +367,11 @@ func (rm *ReplicationManager) advanceCommitIndex() {
 		}
 
 		// Count how many servers have this entry
-		count := 1 // Leader has it
+		count := 1 // Leader always has it
 		matchDetails := fmt.Sprintf("leader=%d", rm.serverID)
+		
+		// For single-node cluster, matchIndex will be empty
+		// In that case, only the leader has the entry
 		for peer, matchIdx := range rm.matchIndex {
 			if peer != rm.serverID {
 				matchDetails += fmt.Sprintf(", peer%d.match=%d", peer, matchIdx)
@@ -349,6 +383,10 @@ func (rm *ReplicationManager) advanceCommitIndex() {
 
 		// Check if majority has it (only counting voting members)
 		votingMembers := rm.getVotingMembersCount()
+		if votingMembers == 0 {
+			// Default to peer count if voting members function returns 0
+			votingMembers = len(rm.peers)
+		}
 		majority := votingMembers/2 + 1
 		if rm.config.Logger != nil {
 			rm.config.Logger.Debug("Entry %d: replicated on %d/%d servers (need %d for majority, %d voting members) [%s]",
