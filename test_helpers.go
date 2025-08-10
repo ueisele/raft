@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -206,44 +205,6 @@ func (l *TestLogger) Error(format string, args ...interface{}) {
 	l.t.Errorf("[ERROR] "+format, args...)
 }
 
-// SafeTestLogger provides a logger that checks if the test has completed
-type SafeTestLogger struct {
-	t    *testing.T
-	done atomic.Bool
-}
-
-// NewSafeTestLogger creates a new safe test logger
-func NewSafeTestLogger(t *testing.T) *SafeTestLogger {
-	return &SafeTestLogger{t: t}
-}
-
-func (l *SafeTestLogger) Stop() {
-	l.done.Store(true)
-}
-
-func (l *SafeTestLogger) Debug(format string, args ...interface{}) {
-	if !l.done.Load() {
-		l.t.Logf("[DEBUG] "+format, args...)
-	}
-}
-
-func (l *SafeTestLogger) Info(format string, args ...interface{}) {
-	if !l.done.Load() {
-		l.t.Logf("[INFO] "+format, args...)
-	}
-}
-
-func (l *SafeTestLogger) Warn(format string, args ...interface{}) {
-	if !l.done.Load() {
-		l.t.Logf("[WARN] "+format, args...)
-	}
-}
-
-func (l *SafeTestLogger) Error(format string, args ...interface{}) {
-	if !l.done.Load() {
-		l.t.Errorf("[ERROR] "+format, args...)
-	}
-}
 
 // MockPersistence is a mock implementation of Persistence for testing
 type MockPersistence struct {
