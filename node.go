@@ -271,6 +271,9 @@ func (n *raftNode) Submit(command interface{}) (int, int, bool) {
 	entryIndex := entry.Index
 	entryTerm := entry.Term
 
+	// Check if we're a single-node cluster (optimization)
+	isSingleNode := len(n.configuration.GetVotingMembers()) == 1
+
 	// Release lock before persisting to avoid potential deadlock
 	n.mu.Unlock()
 
@@ -294,8 +297,25 @@ func (n *raftNode) Submit(command interface{}) (int, int, bool) {
 		n.config.Logger.Debug("Submit: persist completed, triggering replication...")
 	}
 
-	// Trigger replication
-	n.replication.Replicate()
+	// For single-node clusters, we can commit immediately after persisting
+	// This avoids the overhead of async replication for single nodes
+	if isSingleNode {
+		n.mu.Lock()
+		// Directly advance commit index - we're the only node so we have majority
+		n.log.SetCommitIndex(entryIndex)
+		// Notify apply loop
+		select {
+		case n.applyNotify <- struct{}{}:
+		default:
+		}
+		n.mu.Unlock()
+		if n.config.Logger != nil {
+			n.config.Logger.Debug("Submit: single-node cluster, committed immediately at index %d", entryIndex)
+		}
+	} else {
+		// Multi-node cluster - trigger replication to followers
+		n.replication.Replicate()
+	}
 
 	if n.config.Logger != nil {
 		n.config.Logger.Debug("Submit: replication triggered")

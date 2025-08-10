@@ -104,12 +104,10 @@ func (rm *ReplicationManager) Replicate() {
 		}
 	}
 
-	// For single-node cluster, immediately advance commit index
-	if len(peers) == 1 {
-		rm.mu.Lock()
-		rm.advanceCommitIndexWithLock()
-		rm.mu.Unlock()
-	}
+	// Note: We don't need to call advanceCommitIndexWithLock here anymore
+	// - For single-node clusters: Submit() handles commit directly
+	// - For multi-node clusters: advanceCommitIndexWithLock will be called
+	//   when AppendEntries responses arrive in handleAppendEntriesReply
 }
 
 // SendHeartbeats sends heartbeat messages to all peers
@@ -327,27 +325,11 @@ func (rm *ReplicationManager) advanceCommitIndexWithLock() {
 			currentCommitIndex, lastIndex, currentTerm)
 	}
 
-	// Special case for single-node cluster: immediately commit all entries from current term
-	if len(rm.peers) == 1 {
-		for n := currentCommitIndex + 1; n <= lastIndex; n++ {
-			entry := rm.logManager.GetEntry(n)
-			if entry != nil && entry.Term == currentTerm {
-				rm.logManager.SetCommitIndex(n)
-				if rm.config.Logger != nil {
-					rm.config.Logger.Debug("Single-node cluster: advanced commit index to %d", n)
-				}
-			}
-		}
-
-		// Notify apply loop if we committed something
-		if rm.logManager.GetCommitIndex() > currentCommitIndex {
-			select {
-			case rm.applyNotify <- struct{}{}:
-			default:
-			}
-		}
-		return
-	}
+	// No special case needed for single-node clusters
+	// The majority calculation below handles it correctly:
+	// - For 1 node: majority = 1/2 + 1 = 1, so leader alone is enough
+	// - For 3 nodes: majority = 3/2 + 1 = 2, need leader + 1 follower
+	// - For 5 nodes: majority = 5/2 + 1 = 3, need leader + 2 followers
 
 	for n := currentCommitIndex + 1; n <= lastIndex; n++ {
 		entry := rm.logManager.GetEntry(n)
