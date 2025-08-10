@@ -12,7 +12,7 @@ import (
 // TestPartitionableDecorator tests the partitionable decorator functionality
 func TestPartitionableDecorator(t *testing.T) {
 	// Create a cluster with partitionable transport
-	cluster := helpers.NewTestCluster(t, 3,
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 		helpers.WithPartitionableTransport(),
 		helpers.WithClusterAutoStart(),
 	)
@@ -53,7 +53,7 @@ func TestPartitionableDecorator(t *testing.T) {
 // TestPartitionGroups tests creating partitions between groups of nodes
 func TestPartitionGroups(t *testing.T) {
 	// Create a 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5,
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2, 3, 4},
 		helpers.WithPartitionableTransport(),
 		helpers.WithClusterAutoStart(),
 	)
@@ -111,7 +111,7 @@ func TestPartitionGroups(t *testing.T) {
 // TestPartitionableWithMultipleDecorators tests partition capability with other decorators
 func TestPartitionableWithMultipleDecorators(t *testing.T) {
 	// Create a cluster with multiple decorators including partition
-	cluster := helpers.NewTestCluster(t, 3,
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 		helpers.WithTransportDecorators(
 			func(nodeID int, wrapped raft.Transport) raft.Transport {
 				return transporttest.NewPartitionableDecorator(wrapped)

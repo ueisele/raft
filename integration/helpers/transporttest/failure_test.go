@@ -12,7 +12,7 @@ import (
 // TestFailureDecorator tests the failure decorator functionality
 func TestFailureDecorator(t *testing.T) {
 	// Create a cluster with failure transport
-	cluster := helpers.NewTestCluster(t, 3,
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 		helpers.WithFailureTransport(0.5), // 50% failure rate
 		helpers.WithClusterAutoStart(),
 	)
@@ -77,7 +77,7 @@ func TestFailureDecorator(t *testing.T) {
 // TestFailureRateAdjustment tests dynamic failure rate adjustment
 func TestFailureRateAdjustment(t *testing.T) {
 	// Create a cluster with initial 0% failure rate
-	cluster := helpers.NewTestCluster(t, 3,
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 		helpers.WithFailureTransport(0.0),
 		helpers.WithClusterAutoStart(),
 	)
@@ -130,7 +130,7 @@ func TestFailureRateAdjustment(t *testing.T) {
 
 // TestFailureStatsReset tests resetting failure statistics
 func TestFailureStatsReset(t *testing.T) {
-	cluster := helpers.NewTestCluster(t, 3,
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 		helpers.WithFailureTransport(0.5),
 		helpers.WithClusterAutoStart(),
 	)
@@ -177,7 +177,7 @@ func TestFailureStatsReset(t *testing.T) {
 // TestFailureWithMultipleDecorators tests failure capability with other decorators
 func TestFailureWithMultipleDecorators(t *testing.T) {
 	// Create a cluster with multiple decorators including failure
-	cluster := helpers.NewTestCluster(t, 3,
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 		helpers.WithTransportDecorators(
 			func(nodeID int, wrapped raft.Transport) raft.Transport {
 				return transporttest.NewFailureDecorator(wrapped, 0.2)

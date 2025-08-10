@@ -11,7 +11,7 @@ import (
 // TestWithDelayTransportOption tests the WithDelayTransport cluster option
 func TestWithDelayTransportOption(t *testing.T) {
 	// Create a cluster using the WithDelayTransport option
-	cluster := helpers.NewTestCluster(t, 3,
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 		helpers.WithDelayTransport(),
 		helpers.WithClusterAutoStart(),
 	)

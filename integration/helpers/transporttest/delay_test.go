@@ -12,7 +12,7 @@ import (
 // TestDelayDecorator tests basic delay functionality
 func TestDelayDecorator(t *testing.T) {
 	// Create a cluster with delay decorator
-	cluster := helpers.NewTestCluster(t, 3,
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 		helpers.WithTransportDecorators(
 			func(nodeID int, wrapped raft.Transport) raft.Transport {
 				return transporttest.NewDelayDecorator(wrapped)
@@ -78,7 +78,7 @@ func TestDelayDecorator(t *testing.T) {
 // TestDelayBetweenNodes tests asymmetric delays between specific nodes
 func TestDelayBetweenNodes(t *testing.T) {
 	// Create a 3-node cluster with delay capability
-	cluster := helpers.NewTestCluster(t, 3,
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 		helpers.WithTransportDecorators(
 			func(nodeID int, wrapped raft.Transport) raft.Transport {
 				return transporttest.NewDelayDecorator(wrapped)
@@ -125,7 +125,7 @@ func TestDelayBetweenNodes(t *testing.T) {
 
 // TestSimulateSlowNetwork tests uniform network delay simulation
 func TestSimulateSlowNetwork(t *testing.T) {
-	cluster := helpers.NewTestCluster(t, 3,
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 		helpers.WithTransportDecorators(
 			func(nodeID int, wrapped raft.Transport) raft.Transport {
 				return transporttest.NewDelayDecorator(wrapped)
@@ -162,7 +162,7 @@ func TestSimulateSlowNetwork(t *testing.T) {
 
 // TestAsymmetricDelay tests asymmetric delay where one node has slow outbound connections
 func TestAsymmetricDelay(t *testing.T) {
-	cluster := helpers.NewTestCluster(t, 3,
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 		helpers.WithTransportDecorators(
 			func(nodeID int, wrapped raft.Transport) raft.Transport {
 				return transporttest.NewDelayDecorator(wrapped)
@@ -219,7 +219,7 @@ func TestAsymmetricDelay(t *testing.T) {
 // TestDelayWithMultipleDecorators tests delay capability with other decorators
 func TestDelayWithMultipleDecorators(t *testing.T) {
 	// Create a cluster with multiple decorators including delay
-	cluster := helpers.NewTestCluster(t, 3,
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 		helpers.WithTransportDecorators(
 			func(nodeID int, wrapped raft.Transport) raft.Transport {
 				return transporttest.NewDelayDecorator(wrapped)
@@ -262,7 +262,7 @@ func TestDelayWithMultipleDecorators(t *testing.T) {
 
 // TestDelayPersistence tests that delays persist across operations
 func TestDelayPersistence(t *testing.T) {
-	cluster := helpers.NewTestCluster(t, 3,
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 		helpers.WithTransportDecorators(
 			func(nodeID int, wrapped raft.Transport) raft.Transport {
 				return transporttest.NewDelayDecorator(wrapped)

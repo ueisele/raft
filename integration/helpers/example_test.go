@@ -73,7 +73,7 @@ func TestExampleMultiNode(t *testing.T) {
 // TestExampleClusterWithAutoStart demonstrates using TestCluster with auto-start
 func TestExampleClusterWithAutoStart(t *testing.T) {
 	// Create a cluster that automatically starts all nodes
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2}, helpers.WithClusterAutoStart())
 
 	// Since nodes are auto-started, we can immediately wait for a leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)

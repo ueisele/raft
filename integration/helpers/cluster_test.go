@@ -14,7 +14,7 @@ import (
 func TestClusterLifecycle(t *testing.T) {
 	t.Run("AutoCleanup", func(t *testing.T) {
 		// Create a test cluster - cleanup registered automatically
-		cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+		cluster := helpers.NewTestCluster(t, []int{0, 1, 2}, helpers.WithClusterAutoStart())
 
 		// Wait for leader
 		leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -28,7 +28,7 @@ func TestClusterLifecycle(t *testing.T) {
 
 	t.Run("AutoStart", func(t *testing.T) {
 		// Create a cluster with auto-start
-		cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+		cluster := helpers.NewTestCluster(t, []int{0, 1, 2}, helpers.WithClusterAutoStart())
 
 		// Nodes should already be running, leader should emerge
 		leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -52,7 +52,7 @@ func TestClusterLifecycle(t *testing.T) {
 
 	t.Run("ManualStart", func(t *testing.T) {
 		// Create a cluster without auto-start
-		cluster := helpers.NewTestCluster(t, 3)
+		cluster := helpers.NewTestCluster(t, []int{0, 1, 2})
 
 		// Nodes should not be running yet
 		leader, leaderID := cluster.GetLeader()
@@ -79,7 +79,7 @@ func TestClusterLifecycle(t *testing.T) {
 func TestClusterOperations(t *testing.T) {
 	t.Run("BasicOperations", func(t *testing.T) {
 		// Create and start a 5-node cluster
-		cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+		cluster := helpers.NewTestCluster(t, []int{0, 1, 2, 3, 4}, helpers.WithClusterAutoStart())
 
 		// Wait for leader election
 		leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -107,7 +107,7 @@ func TestClusterOperations(t *testing.T) {
 	})
 
 	t.Run("NodeAccess", func(t *testing.T) {
-		cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+		cluster := helpers.NewTestCluster(t, []int{0, 1, 2}, helpers.WithClusterAutoStart())
 
 		// Wait for leader
 		leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -116,22 +116,23 @@ func TestClusterOperations(t *testing.T) {
 		}
 
 		// Access individual nodes
-		for i, node := range cluster.Nodes {
+		nodes := cluster.GetNodes()
+		for nodeID, node := range nodes {
 			term, isLeader := node.GetState()
-			expectedLeader := (i == leaderID)
+			expectedLeader := (nodeID == leaderID)
 			if isLeader != expectedLeader {
-				t.Errorf("Node %d: expected isLeader=%v, got %v", i, expectedLeader, isLeader)
+				t.Errorf("Node %d: expected isLeader=%v, got %v", nodeID, expectedLeader, isLeader)
 			}
-			t.Logf("Node %d: term=%d, isLeader=%v", i, term, isLeader)
+			t.Logf("Node %d: term=%d, isLeader=%v", nodeID, term, isLeader)
 		}
 
 		// Access state machines and persistence
-		for i := 0; i < len(cluster.Nodes); i++ {
-			if sm := cluster.GetStateMachine(i); sm == nil {
-				t.Errorf("Node %d state machine is nil", i)
+		for _, nodeID := range cluster.NodeIDs() {
+			if sm, ok := cluster.GetStateMachine(nodeID); !ok || sm == nil {
+				t.Errorf("Node %d state machine is nil or not found", nodeID)
 			}
-			if p := cluster.GetPersistence(i); p == nil {
-				t.Errorf("Node %d persistence is nil", i)
+			if p, ok := cluster.GetPersistence(nodeID); !ok || p == nil {
+				t.Errorf("Node %d persistence is nil or not found", nodeID)
 			}
 		}
 	})
@@ -149,7 +150,12 @@ func TestClusterOperations(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				cluster := helpers.NewTestCluster(t, tc.size, helpers.WithClusterAutoStart())
+				// Create node IDs from 0 to size-1
+				nodeIDs := make([]int, tc.size)
+				for i := 0; i < tc.size; i++ {
+					nodeIDs[i] = i
+				}
+				cluster := helpers.NewTestCluster(t, nodeIDs, helpers.WithClusterAutoStart())
 
 				// Wait for leader election
 				leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -176,19 +182,19 @@ func TestClusterOperations(t *testing.T) {
 func TestClusterFactories(t *testing.T) {
 	t.Run("DefaultFactories", func(t *testing.T) {
 		// When no factories specified, should use mock implementations
-		cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+		cluster := helpers.NewTestCluster(t, []int{0, 1, 2}, helpers.WithClusterAutoStart())
 
 		if _, err := cluster.WaitForLeader(2 * time.Second); err != nil {
 			t.Fatalf("Failed to elect leader: %v", err)
 		}
 
 		// Verify mock implementations are used
-		for i := 0; i < 3; i++ {
-			if cluster.Persistences[i] == nil {
-				t.Errorf("Node %d has nil persistence", i)
+		for _, nodeID := range cluster.NodeIDs() {
+			if p, ok := cluster.GetPersistence(nodeID); !ok || p == nil {
+				t.Errorf("Node %d has nil persistence", nodeID)
 			}
-			if cluster.StateMachines[i] == nil {
-				t.Errorf("Node %d has nil state machine", i)
+			if sm, ok := cluster.GetStateMachine(nodeID); !ok || sm == nil {
+				t.Errorf("Node %d has nil state machine", nodeID)
 			}
 		}
 	})
@@ -199,7 +205,7 @@ func TestClusterFactories(t *testing.T) {
 		createdPersistence := make(map[int]bool)
 		createdStateMachines := make(map[int]bool)
 
-		cluster := helpers.NewTestCluster(t, 3,
+		cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 			helpers.WithTransportFactory(func(nodeID int, registry *transporttest.NodeRegistry) (raft.Transport, error) {
 				createdTransports[nodeID] = true
 				return transporttest.NewMultiNodeTransport(nodeID, registry), nil
@@ -233,45 +239,13 @@ func TestClusterFactories(t *testing.T) {
 		}
 	})
 
-	t.Run("BackwardCompatibility", func(t *testing.T) {
-		// Test backward compatibility with old-style arrays
-		persistences := []raft.Persistence{
-			raft.NewMockPersistence(),
-			raft.NewMockPersistence(),
-			raft.NewMockPersistence(),
-		}
-		stateMachines := []raft.StateMachine{
-			raft.NewMockStateMachine(),
-			raft.NewMockStateMachine(),
-			raft.NewMockStateMachine(),
-		}
-
-		cluster := helpers.NewTestCluster(t, 3,
-			helpers.WithPersistence(persistences),
-			helpers.WithStateMachines(stateMachines),
-			helpers.WithClusterAutoStart(),
-		)
-
-		// Verify the exact instances are used
-		for i := 0; i < 3; i++ {
-			if cluster.Persistences[i] != persistences[i] {
-				t.Errorf("Node %d not using expected persistence instance", i)
-			}
-			if cluster.StateMachines[i] != stateMachines[i] {
-				t.Errorf("Node %d not using expected state machine instance", i)
-			}
-		}
-
-		if _, err := cluster.WaitForLeader(2 * time.Second); err != nil {
-			t.Fatalf("Failed to elect leader: %v", err)
-		}
-	})
+	// Backward compatibility test removed - old array-based API no longer supported
 
 	t.Run("DynamicNodeAddition", func(t *testing.T) {
 		nodeCreated := false
 
 		// Start with 3 nodes for easier leader election
-		cluster := helpers.NewTestCluster(t, 3,
+		cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 			helpers.WithPersistenceFactory(func(nodeID int) (raft.Persistence, error) {
 				if nodeID == 3 {
 					nodeCreated = true
@@ -286,7 +260,7 @@ func TestClusterFactories(t *testing.T) {
 		}
 
 		// Add node 3 - should use the factory
-		node, err := cluster.AddNode(3)
+		node, err := cluster.AddNode(3, []int{0, 1, 2, 3})
 		if err != nil {
 			t.Fatalf("Failed to add node: %v", err)
 		}
@@ -305,7 +279,7 @@ func TestClusterFactories(t *testing.T) {
 func TestClusterDecorators(t *testing.T) {
 	t.Run("SingleDecorator", func(t *testing.T) {
 		// Test with partitionable transport
-		cluster := helpers.NewTestCluster(t, 3,
+		cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 			helpers.WithPartitionableTransport(),
 			helpers.WithClusterAutoStart(),
 		)
@@ -327,7 +301,8 @@ func TestClusterDecorators(t *testing.T) {
 		transporttest.CreatePartition(cluster, []int{leaderID}, []int{(leaderID + 1) % 3, (leaderID + 2) % 3})
 
 		// The isolated leader should step down
-		helpers.WaitForFollower(t, []raft.Node{cluster.Nodes[leaderID]}, 2*time.Second)
+		leaderNode, _ := cluster.GetNode(leaderID)
+		helpers.WaitForFollower(t, []raft.Node{leaderNode}, 2*time.Second)
 
 		// Heal the partition
 		transporttest.HealPartition(cluster)
@@ -342,7 +317,7 @@ func TestClusterDecorators(t *testing.T) {
 		decoratorCalls := make(map[string]int)
 
 		// Create cluster with multiple transport decorators
-		cluster := helpers.NewTestCluster(t, 3,
+		cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 			helpers.WithTransportDecorators(
 				func(nodeID int, wrapped raft.Transport) raft.Transport {
 					decoratorCalls[fmt.Sprintf("partition-%d", nodeID)]++
@@ -390,7 +365,7 @@ func TestClusterDecorators(t *testing.T) {
 
 	t.Run("DecoratorCapabilities", func(t *testing.T) {
 		// Test specific decorator capabilities
-		cluster := helpers.NewTestCluster(t, 3,
+		cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 			helpers.WithTransportDecorators(
 				func(nodeID int, wrapped raft.Transport) raft.Transport {
 					return transporttest.NewPartitionableDecorator(wrapped)
@@ -431,7 +406,7 @@ func TestClusterIntegration(t *testing.T) {
 		// Track all customizations
 		createdComponents := make(map[string]int)
 
-		cluster := helpers.NewTestCluster(t, 3,
+		cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 			// Custom timing
 			helpers.WithElectionTimeout(100*time.Millisecond, 200*time.Millisecond),
 			helpers.WithHeartbeatInterval(25*time.Millisecond),
@@ -505,7 +480,7 @@ func TestClusterIntegration(t *testing.T) {
 
 	t.Run("MixedNodeTypes", func(t *testing.T) {
 		// Different persistence/state machine per node
-		cluster := helpers.NewTestCluster(t, 5,
+		cluster := helpers.NewTestCluster(t, []int{0, 1, 2, 3, 4},
 			helpers.WithPersistenceFactory(func(nodeID int) (raft.Persistence, error) {
 				// Could return different types based on nodeID
 				return raft.NewMockPersistence(), nil

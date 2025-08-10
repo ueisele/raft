@@ -12,7 +12,7 @@ import (
 // TestMultipleDecorators tests stacking multiple decorators
 func TestMultipleDecorators(t *testing.T) {
 	// Create a cluster with multiple decorators
-	cluster := helpers.NewTestCluster(t, 3,
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
 		helpers.WithTransportDecorators(
 			func(nodeID int, wrapped raft.Transport) raft.Transport {
 				return transporttest.NewPartitionableDecorator(wrapped)
@@ -99,7 +99,7 @@ func TestDecoratorUnwrapping(t *testing.T) {
 func TestDecoratorOrdering(t *testing.T) {
 	// Test case 1: Partition then Failure
 	// If partition blocks, failure decorator never gets called
-	cluster1 := helpers.NewTestCluster(t, 2,
+	cluster1 := helpers.NewTestCluster(t, []int{0, 1},
 		helpers.WithTransportDecorators(
 			func(nodeID int, wrapped raft.Transport) raft.Transport {
 				return transporttest.NewPartitionableDecorator(wrapped)
@@ -126,7 +126,7 @@ func TestDecoratorOrdering(t *testing.T) {
 
 	// Test case 2: Failure then Partition
 	// Failure decorator gets called first
-	cluster2 := helpers.NewTestCluster(t, 2,
+	cluster2 := helpers.NewTestCluster(t, []int{0, 1},
 		helpers.WithTransportDecorators(
 			func(nodeID int, wrapped raft.Transport) raft.Transport {
 				return transporttest.NewFailureDecorator(wrapped, 1.0) // 100% failure
