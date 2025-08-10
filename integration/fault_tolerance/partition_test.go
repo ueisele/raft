@@ -474,19 +474,19 @@ func TestCascadingPartitions(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond)
 
-	// Should still have a leader among the 3 nodes (4, 5, 6)
+	// With only 3 nodes out of 7, there should be NO leader (no quorum: 3 < 4)
 	leaderFound = false
 	for i := 4; i < 7; i++ {
 		_, isLeader := cluster.Nodes[i].GetState()
 		if isLeader {
 			leaderFound = true
-			t.Logf("Leader found at node %d after phase 2", i)
+			t.Errorf("Unexpected leader at node %d with minority (3/7 nodes)", i)
 			break
 		}
 	}
 
 	if !leaderFound {
-		t.Error("No leader after partitioning 4 nodes")
+		t.Log("✓ No leader after partitioning 4 nodes (correct: 3/7 is not a quorum)")
 	}
 
 	// Phase 3: Partition node 4 (leaving only 2 nodes: 5 and 6)
