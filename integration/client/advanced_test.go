@@ -8,6 +8,7 @@ import (
 
 	"github.com/ueisele/raft"
 	"github.com/ueisele/raft/integration/helpers"
+	"github.com/ueisele/raft/integration/helpers/transporttest"
 )
 
 // TestLinearizableReads tests linearizable read operations
@@ -103,7 +104,7 @@ func TestClientTimeouts(t *testing.T) {
 	}
 
 	// Partition the leader from the rest
-	if err := helpers.PartitionNode(cluster, leaderID); err != nil {
+	if err := transporttest.PartitionNode(cluster, leaderID); err != nil {
 		t.Fatalf("Failed to partition leader: %v", err)
 	}
 
@@ -143,7 +144,7 @@ func TestClientTimeouts(t *testing.T) {
 	}
 
 	// Heal partition
-	helpers.HealPartition(cluster)
+	transporttest.HealPartition(cluster)
 
 	// Give some time for the cluster to stabilize
 	time.Sleep(500 * time.Millisecond)

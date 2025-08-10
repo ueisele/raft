@@ -10,6 +10,7 @@ import (
 
 	"github.com/ueisele/raft"
 	"github.com/ueisele/raft/integration/helpers"
+	"github.com/ueisele/raft/integration/helpers/transporttest"
 )
 
 // localTransport is a simple in-memory transport for testing
@@ -357,14 +358,14 @@ func TestSafeConfigurationMetrics(t *testing.T) {
 		HeartbeatInterval:  50 * time.Millisecond,
 	}
 
-	transport := helpers.NewMultiNodeTransport(3, cluster.Registry.(*helpers.NodeRegistry))
+	transport := transporttest.NewMultiNodeTransport(3, cluster.Registry.(*transporttest.NodeRegistry))
 	newNode, err := raft.NewNode(newConfig, transport, nil, raft.NewMockStateMachine())
 	if err != nil {
 		t.Fatalf("Failed to create new node: %v", err)
 	}
 
 	// Register new node
-	cluster.Registry.(*helpers.NodeRegistry).Register(3, newNode.(raft.RPCHandler))
+	cluster.Registry.(*transporttest.NodeRegistry).Register(3, newNode.(raft.RPCHandler))
 
 	// Start new node
 	ctx := context.Background()

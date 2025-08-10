@@ -25,26 +25,26 @@ func TestMultipleDecorators(t *testing.T) {
 	)
 
 	// Verify both capabilities are present
-	if _, ok := helpers.GetTransportCapability[transporttest.PartitionCapable](cluster, 0); !ok {
+	if _, ok := transporttest.GetCapability[transporttest.PartitionCapable](cluster, 0); !ok {
 		t.Error("Transport should support partitioning")
 	}
-	if _, ok := helpers.GetTransportCapability[transporttest.FailureCapable](cluster, 0); !ok {
+	if _, ok := transporttest.GetCapability[transporttest.FailureCapable](cluster, 0); !ok {
 		t.Error("Transport should support failures")
 	}
 
 	// Test that both work
-	helpers.SetFailureRate(cluster, 0.2)
-	if err := helpers.PartitionNode(cluster, 1); err != nil {
+	transporttest.SetFailureRate(cluster, 0.2)
+	if err := transporttest.PartitionNode(cluster, 1); err != nil {
 		t.Errorf("Failed to partition: %v", err)
 	}
 
 	// Both features should be active
-	if partition, ok := helpers.GetTransportCapability[transporttest.PartitionCapable](cluster, 1); ok {
+	if partition, ok := transporttest.GetCapability[transporttest.PartitionCapable](cluster, 1); ok {
 		if !partition.IsBlocked(-1) && !partition.IsBlocked(0) {
 			t.Error("Partition not active")
 		}
 	}
-	if failure, ok := helpers.GetTransportCapability[transporttest.FailureCapable](cluster, 0); ok {
+	if failure, ok := transporttest.GetCapability[transporttest.FailureCapable](cluster, 0); ok {
 		if failure.GetFailureRate() != 0.2 {
 			t.Errorf("Failure rate should be 0.2, got %f", failure.GetFailureRate())
 		}
@@ -112,14 +112,14 @@ func TestDecoratorOrdering(t *testing.T) {
 	)
 
 	// Partition node 0 from node 1
-	if partition, ok := helpers.GetTransportCapability[transporttest.PartitionCapable](cluster1, 0); ok {
+	if partition, ok := transporttest.GetCapability[transporttest.PartitionCapable](cluster1, 0); ok {
 		partition.Block(1)
 	}
 
 	// Try to send something (this would normally be done internally)
 	// The partition should block it before failure decorator can fail it
 	// We can verify by checking failure stats - should be 0 attempts
-	attempts1, _ := helpers.GetFailureStats(cluster1)
+	attempts1, _ := transporttest.GetFailureStats(cluster1)
 	if attempts1 != 0 {
 		t.Logf("Note: Partition decorator should prevent failure decorator from seeing attempts, but got %d attempts", attempts1)
 	}
@@ -153,7 +153,7 @@ func TestDecoratorOrdering(t *testing.T) {
 	}
 
 	// Check failure stats - should have attempts
-	attempts2, failures2 := helpers.GetFailureStats(cluster2)
+	attempts2, failures2 := transporttest.GetFailureStats(cluster2)
 	if attempts2 > 0 && failures2 != attempts2 {
 		t.Errorf("With 100%% failure rate, all attempts should fail: %d/%d", failures2, attempts2)
 	}

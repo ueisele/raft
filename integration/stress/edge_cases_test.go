@@ -11,6 +11,7 @@ import (
 
 	"github.com/ueisele/raft"
 	"github.com/ueisele/raft/integration/helpers"
+	"github.com/ueisele/raft/integration/helpers/transporttest"
 )
 
 // TestPendingConfigChangeBlocking tests that pending config changes block new ones
@@ -59,7 +60,7 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 		HeartbeatInterval:  50 * time.Millisecond,
 		Logger:             raft.NewTestLogger(t),
 	}
-	transport3 := helpers.NewMultiNodeTransport(3, cluster.Registry)
+	transport3 := transporttest.NewMultiNodeTransport(3, cluster.Registry)
 	node3, err := raft.NewNode(config3, transport3, nil, raft.NewMockStateMachine())
 	if err != nil {
 		t.Fatalf("Failed to create node 3: %v", err)
@@ -83,7 +84,7 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 		HeartbeatInterval:  50 * time.Millisecond,
 		Logger:             raft.NewTestLogger(t),
 	}
-	transport4 := helpers.NewMultiNodeTransport(4, cluster.Registry)
+	transport4 := transporttest.NewMultiNodeTransport(4, cluster.Registry)
 	node4, err := raft.NewNode(config4, transport4, nil, raft.NewMockStateMachine())
 	if err != nil {
 		t.Fatalf("Failed to create node 4: %v", err)
@@ -471,7 +472,7 @@ func TestExtremeTiming(t *testing.T) {
 				HeartbeatInterval:  5 * time.Millisecond,  // Very short
 			}
 
-			transport := helpers.NewMultiNodeTransport(i, cluster.Registry)
+			transport := transporttest.NewMultiNodeTransport(i, cluster.Registry)
 			node, err := raft.NewNode(config, transport, nil, raft.NewMockStateMachine())
 			if err != nil {
 				t.Fatalf("Failed to create node: %v", err)
@@ -525,7 +526,7 @@ func TestExtremeTiming(t *testing.T) {
 				HeartbeatInterval:  1000 * time.Millisecond, // Very long
 			}
 
-			transport := helpers.NewMultiNodeTransport(i, cluster.Registry)
+			transport := transporttest.NewMultiNodeTransport(i, cluster.Registry)
 			node, err := raft.NewNode(config, transport, nil, raft.NewMockStateMachine())
 			if err != nil {
 				t.Fatalf("Failed to create node: %v", err)

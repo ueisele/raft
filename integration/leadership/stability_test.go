@@ -9,6 +9,7 @@ import (
 
 	"github.com/ueisele/raft"
 	"github.com/ueisele/raft/integration/helpers"
+	"github.com/ueisele/raft/integration/helpers/transporttest"
 )
 
 // TestLeaderCommitIndexPreservation tests that leader preserves commit index across terms
@@ -194,7 +195,7 @@ func TestLeaderRecoveryAfterBriefPartition(t *testing.T) {
 	}
 
 	// Brief partition of leader (less than election timeout)
-	if err := helpers.PartitionNode(cluster, leaderID); err != nil {
+	if err := transporttest.PartitionNode(cluster, leaderID); err != nil {
 		t.Fatalf("Failed to partition leader: %v", err)
 	}
 	t.Log("Briefly partitioned leader")
@@ -203,7 +204,7 @@ func TestLeaderRecoveryAfterBriefPartition(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Heal partition quickly
-	helpers.HealPartition(cluster)
+	transporttest.HealPartition(cluster)
 	t.Log("Healed partition")
 
 	// Give time to stabilize

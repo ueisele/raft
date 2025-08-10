@@ -18,10 +18,10 @@ type DelayCapable interface {
 
 // SetDelay sets a delay for all transports in the cluster when communicating
 // with the specified server. Use serverID -1 to set delay for all servers.
-func SetDelay(cluster TestCluster, serverID int, delay time.Duration) {
-	transports := cluster.GetTransports()
-	for i := range transports {
-		if delayCapable, ok := GetCapability[DelayCapable](transports, i); ok {
+func SetDelay(provider TransportProvider, serverID int, delay time.Duration) {
+	transports := provider.GetTransports()
+	for id := range transports {
+		if delayCapable, ok := GetCapability[DelayCapable](provider, id); ok {
 			delayCapable.SetDelay(serverID, delay)
 		}
 	}
@@ -29,20 +29,17 @@ func SetDelay(cluster TestCluster, serverID int, delay time.Duration) {
 
 // SetDelayBetween sets a delay for communication from one specific node to another.
 // This allows for asymmetric delays in the network.
-func SetDelayBetween(cluster TestCluster, fromNode, toNode int, delay time.Duration) {
-	transports := cluster.GetTransports()
-	if fromNode >= 0 && fromNode < len(transports) {
-		if delayCapable, ok := GetCapability[DelayCapable](transports, fromNode); ok {
-			delayCapable.SetDelay(toNode, delay)
-		}
+func SetDelayBetween(provider TransportProvider, fromNode, toNode int, delay time.Duration) {
+	if delayCapable, ok := GetCapability[DelayCapable](provider, fromNode); ok {
+		delayCapable.SetDelay(toNode, delay)
 	}
 }
 
 // ClearAllDelays removes all delays from all transports in the cluster.
-func ClearAllDelays(cluster TestCluster) {
-	transports := cluster.GetTransports()
-	for i := range transports {
-		if delayCapable, ok := GetCapability[DelayCapable](transports, i); ok {
+func ClearAllDelays(provider TransportProvider) {
+	transports := provider.GetTransports()
+	for id := range transports {
+		if delayCapable, ok := GetCapability[DelayCapable](provider, id); ok {
 			delayCapable.ClearDelays()
 		}
 	}
@@ -50,17 +47,14 @@ func ClearAllDelays(cluster TestCluster) {
 
 // SimulateSlowNetwork adds a uniform delay to all communications in the cluster.
 // This is useful for testing behavior under high-latency conditions.
-func SimulateSlowNetwork(cluster TestCluster, delay time.Duration) {
-	SetDelay(cluster, -1, delay)
+func SimulateSlowNetwork(provider TransportProvider, delay time.Duration) {
+	SetDelay(provider, -1, delay)
 }
 
 // SimulateAsymmetricDelay creates an asymmetric delay where one node has
 // slow outbound connections but normal inbound connections.
-func SimulateAsymmetricDelay(cluster TestCluster, slowNode int, delay time.Duration) {
-	transports := cluster.GetTransports()
-	if slowNode >= 0 && slowNode < len(transports) {
-		if delayCapable, ok := GetCapability[DelayCapable](transports, slowNode); ok {
-			delayCapable.SetDelay(-1, delay)
-		}
+func SimulateAsymmetricDelay(provider TransportProvider, slowNode int, delay time.Duration) {
+	if delayCapable, ok := GetCapability[DelayCapable](provider, slowNode); ok {
+		delayCapable.SetDelay(-1, delay)
 	}
 }

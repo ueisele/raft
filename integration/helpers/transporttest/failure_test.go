@@ -38,7 +38,7 @@ func TestFailureDecorator(t *testing.T) {
 	}
 
 	// Check failure statistics
-	attempts, failures := helpers.GetFailureStats(cluster)
+	attempts, failures := transporttest.GetFailureStats(cluster)
 	if attempts == 0 {
 		t.Error("No attempts recorded")
 	}
@@ -50,10 +50,10 @@ func TestFailureDecorator(t *testing.T) {
 		failures, attempts, float64(failures)/float64(attempts)*100)
 
 	// Set failure rate to 0
-	helpers.SetFailureRate(cluster, 0.0)
+	transporttest.SetFailureRate(cluster, 0.0)
 
 	// Submit more commands - should have no failures
-	beforeAttempts, beforeFailures := helpers.GetFailureStats(cluster)
+	beforeAttempts, beforeFailures := transporttest.GetFailureStats(cluster)
 	lastIndex = 0
 	for i := 0; i < 10; i++ {
 		idx, _, err := cluster.SubmitCommand(i)
@@ -65,7 +65,7 @@ func TestFailureDecorator(t *testing.T) {
 	if lastIndex > 0 {
 		cluster.WaitForCommitIndex(lastIndex, 500*time.Millisecond) //nolint:errcheck
 	}
-	afterAttempts, afterFailures := helpers.GetFailureStats(cluster)
+	afterAttempts, afterFailures := transporttest.GetFailureStats(cluster)
 
 	newFailures := afterFailures - beforeFailures
 	newAttempts := afterAttempts - beforeAttempts
@@ -84,7 +84,7 @@ func TestFailureRateAdjustment(t *testing.T) {
 
 	// Verify initial failure rate
 	for i := 0; i < 3; i++ {
-		if failure, ok := helpers.GetTransportCapability[transporttest.FailureCapable](cluster, i); ok {
+		if failure, ok := transporttest.GetCapability[transporttest.FailureCapable](cluster, i); ok {
 			if rate := failure.GetFailureRate(); rate != 0.0 {
 				t.Errorf("Node %d: expected initial failure rate 0.0, got %f", i, rate)
 			}
@@ -92,11 +92,11 @@ func TestFailureRateAdjustment(t *testing.T) {
 	}
 
 	// Change failure rate to 30%
-	helpers.SetFailureRate(cluster, 0.3)
+	transporttest.SetFailureRate(cluster, 0.3)
 
 	// Verify new failure rate
 	for i := 0; i < 3; i++ {
-		if failure, ok := helpers.GetTransportCapability[transporttest.FailureCapable](cluster, i); ok {
+		if failure, ok := transporttest.GetCapability[transporttest.FailureCapable](cluster, i); ok {
 			if rate := failure.GetFailureRate(); rate != 0.3 {
 				t.Errorf("Node %d: expected failure rate 0.3, got %f", i, rate)
 			}
@@ -116,7 +116,7 @@ func TestFailureRateAdjustment(t *testing.T) {
 		cluster.WaitForCommitIndex(lastIdx, 500*time.Millisecond) //nolint:errcheck // may fail due to failures
 	}
 
-	attempts, failures := helpers.GetFailureStats(cluster)
+	attempts, failures := transporttest.GetFailureStats(cluster)
 	if attempts > 0 {
 		actualRate := float64(failures) / float64(attempts)
 		t.Logf("Actual failure rate: %.2f (%d/%d)", actualRate, failures, attempts)
@@ -155,20 +155,20 @@ func TestFailureStatsReset(t *testing.T) {
 	}
 
 	// Check we have some stats
-	attempts1, _ := helpers.GetFailureStats(cluster)
+	attempts1, _ := transporttest.GetFailureStats(cluster)
 	if attempts1 == 0 {
 		t.Fatal("No attempts recorded before reset")
 	}
 
 	// Reset stats
 	for i := 0; i < 3; i++ {
-		if failure, ok := helpers.GetTransportCapability[transporttest.FailureCapable](cluster, i); ok {
+		if failure, ok := transporttest.GetCapability[transporttest.FailureCapable](cluster, i); ok {
 			failure.ResetStats()
 		}
 	}
 
 	// Verify stats are reset
-	attempts2, failures2 := helpers.GetFailureStats(cluster)
+	attempts2, failures2 := transporttest.GetFailureStats(cluster)
 	if attempts2 != 0 || failures2 != 0 {
 		t.Errorf("Stats not reset: attempts=%d, failures=%d", attempts2, failures2)
 	}
@@ -190,14 +190,14 @@ func TestFailureWithMultipleDecorators(t *testing.T) {
 	)
 
 	// Verify failure capability is accessible
-	if _, ok := helpers.GetTransportCapability[transporttest.FailureCapable](cluster, 0); !ok {
+	if _, ok := transporttest.GetCapability[transporttest.FailureCapable](cluster, 0); !ok {
 		t.Error("Transport should support failures even with multiple decorators")
 	}
 
 	// Test failure rate adjustment works
-	helpers.SetFailureRate(cluster, 0.1)
+	transporttest.SetFailureRate(cluster, 0.1)
 
-	if failure, ok := helpers.GetTransportCapability[transporttest.FailureCapable](cluster, 0); ok {
+	if failure, ok := transporttest.GetCapability[transporttest.FailureCapable](cluster, 0); ok {
 		if rate := failure.GetFailureRate(); rate != 0.1 {
 			t.Errorf("Expected failure rate 0.1, got %f", rate)
 		}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/ueisele/raft"
 	"github.com/ueisele/raft/integration/helpers"
+	"github.com/ueisele/raft/integration/helpers/transporttest"
 )
 
 // TestAsymmetricPartition tests asymmetric network partitions where A can send to B but B cannot send to A
@@ -222,8 +223,8 @@ func TestRapidPartitionChanges(t *testing.T) {
 			name: "Split brain (2-3)",
 			partition: func() {
 				// Partition into [0,1] and [2,3,4]
-				helpers.PartitionNode(cluster, 0) //nolint:errcheck // test partition setup
-				helpers.PartitionNode(cluster, 1) //nolint:errcheck // test partition setup
+				transporttest.PartitionNode(cluster, 0) //nolint:errcheck // test partition setup
+				transporttest.PartitionNode(cluster, 1) //nolint:errcheck // test partition setup
 			},
 			duration: 300 * time.Millisecond,
 		},
@@ -234,7 +235,7 @@ func TestRapidPartitionChanges(t *testing.T) {
 				for i, node := range cluster.Nodes {
 					_, isLeader := node.GetState()
 					if isLeader {
-						helpers.PartitionNode(cluster, i) //nolint:errcheck // test partition setup
+						transporttest.PartitionNode(cluster, i) //nolint:errcheck // test partition setup
 						break
 					}
 				}
@@ -247,9 +248,9 @@ func TestRapidPartitionChanges(t *testing.T) {
 				// Isolate nodes one by one
 				go func() {
 					for i := 0; i < 5; i++ {
-						helpers.PartitionNode(cluster, i) //nolint:errcheck // test partition setup
+						transporttest.PartitionNode(cluster, i) //nolint:errcheck // test partition setup
 						time.Sleep(50 * time.Millisecond)
-						helpers.HealPartition(cluster)
+						transporttest.HealPartition(cluster)
 					}
 				}()
 			},
@@ -259,9 +260,9 @@ func TestRapidPartitionChanges(t *testing.T) {
 			name: "Majority isolated",
 			partition: func() {
 				// Isolate 3 out of 5 nodes
-				helpers.PartitionNode(cluster, 0) //nolint:errcheck // test partition setup
-				helpers.PartitionNode(cluster, 1) //nolint:errcheck // test partition setup
-				helpers.PartitionNode(cluster, 2) //nolint:errcheck // test partition setup
+				transporttest.PartitionNode(cluster, 0) //nolint:errcheck // test partition setup
+				transporttest.PartitionNode(cluster, 1) //nolint:errcheck // test partition setup
+				transporttest.PartitionNode(cluster, 2) //nolint:errcheck // test partition setup
 			},
 			duration: 300 * time.Millisecond,
 		},
@@ -275,7 +276,7 @@ func TestRapidPartitionChanges(t *testing.T) {
 
 		time.Sleep(pattern.duration)
 
-		helpers.HealPartition(cluster)
+		transporttest.HealPartition(cluster)
 		recordEvent("After heal")
 
 		// Brief stabilization period
@@ -353,7 +354,7 @@ func TestPartitionDuringConfigChange(t *testing.T) {
 
 	// Create partition: leader + 1 node vs other node
 	isolatedNode := (leaderID + 2) % 3
-	if err := helpers.PartitionNode(cluster, isolatedNode); err != nil {
+	if err := transporttest.PartitionNode(cluster, isolatedNode); err != nil {
 		t.Fatalf("Failed to partition node: %v", err)
 	}
 
@@ -371,7 +372,7 @@ func TestPartitionDuringConfigChange(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	// Heal partition
-	helpers.HealPartition(cluster)
+	transporttest.HealPartition(cluster)
 	t.Log("Healed partition")
 
 	// Wait for stabilization
@@ -432,8 +433,8 @@ func TestCascadingPartitions(t *testing.T) {
 	t.Log("Starting cascading partitions...")
 
 	// Phase 1: Partition nodes 0 and 1
-	helpers.PartitionNode(cluster, 0) //nolint:errcheck // test partition setup
-	helpers.PartitionNode(cluster, 1) //nolint:errcheck // test partition setup
+	transporttest.PartitionNode(cluster, 0) //nolint:errcheck // test partition setup
+	transporttest.PartitionNode(cluster, 1) //nolint:errcheck // test partition setup
 	t.Log("Phase 1: Partitioned nodes 0 and 1 (5 nodes remaining)")
 
 	// Wait for a leader among the remaining 5 nodes
@@ -455,8 +456,8 @@ func TestCascadingPartitions(t *testing.T) {
 	}
 
 	// Phase 2: Partition nodes 2 and 3
-	helpers.PartitionNode(cluster, 2) //nolint:errcheck // test partition setup
-	helpers.PartitionNode(cluster, 3) //nolint:errcheck // test partition setup
+	transporttest.PartitionNode(cluster, 2) //nolint:errcheck // test partition setup
+	transporttest.PartitionNode(cluster, 3) //nolint:errcheck // test partition setup
 	t.Log("Phase 2: Partitioned nodes 2 and 3 (3 nodes remaining)")
 
 	time.Sleep(500 * time.Millisecond)
@@ -477,7 +478,7 @@ func TestCascadingPartitions(t *testing.T) {
 	}
 
 	// Phase 3: Partition node 4 (leaving only 2 nodes: 5 and 6)
-	helpers.PartitionNode(cluster, 4) //nolint:errcheck // test partition setup
+	transporttest.PartitionNode(cluster, 4) //nolint:errcheck // test partition setup
 	t.Log("Phase 3: Partitioned node 4 (2 nodes remaining - no quorum)")
 
 	// Wait to ensure no leader emerges with only 2/7 nodes
@@ -511,7 +512,7 @@ func TestCascadingPartitions(t *testing.T) {
 	t.Log("\nHealing partitions in reverse order...")
 
 	// Heal node 4 first (now have 3 nodes: 4, 5, 6)
-	helpers.HealPartition(cluster)
+	transporttest.HealPartition(cluster)
 
 	// Wait for nodes to detect healing but not necessarily elect leader yet (still no quorum)
 	helpers.WaitForCondition(t, func() bool {
@@ -520,7 +521,7 @@ func TestCascadingPartitions(t *testing.T) {
 	}, 500*time.Millisecond, "partition heal to take effect")
 
 	// Continue healing
-	helpers.HealPartition(cluster)
+	transporttest.HealPartition(cluster)
 
 	// Now wait for cluster to stabilize with majority restored
 	helpers.WaitForCondition(t, func() bool {

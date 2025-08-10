@@ -98,7 +98,7 @@ func TestDelayBetweenNodes(t *testing.T) {
 	transporttest.SetDelayBetween(cluster, leaderID, follower1, 100*time.Millisecond)
 
 	// Verify the delay is set correctly
-	if delay, ok := helpers.GetTransportCapability[transporttest.DelayCapable](cluster, leaderID); ok {
+	if delay, ok := transporttest.GetCapability[transporttest.DelayCapable](cluster, leaderID); ok {
 		if d := delay.GetDelay(follower1); d != 100*time.Millisecond {
 			t.Errorf("Expected delay of 100ms to follower %d, got %v", follower1, d)
 		}
@@ -139,7 +139,7 @@ func TestSimulateSlowNetwork(t *testing.T) {
 
 	// Verify all nodes have the global delay set
 	for i := 0; i < 3; i++ {
-		if delay, ok := helpers.GetTransportCapability[transporttest.DelayCapable](cluster, i); ok {
+		if delay, ok := transporttest.GetCapability[transporttest.DelayCapable](cluster, i); ok {
 			// Check delay to all nodes (using -1 for global)
 			if d := delay.GetDelay(-1); d != 30*time.Millisecond {
 				t.Errorf("Node %d: expected global delay of 30ms, got %v", i, d)
@@ -175,7 +175,7 @@ func TestAsymmetricDelay(t *testing.T) {
 	transporttest.SimulateAsymmetricDelay(cluster, 1, 75*time.Millisecond)
 
 	// Verify node 1 has delay to all nodes
-	if delay, ok := helpers.GetTransportCapability[transporttest.DelayCapable](cluster, 1); ok {
+	if delay, ok := transporttest.GetCapability[transporttest.DelayCapable](cluster, 1); ok {
 		if d := delay.GetDelay(-1); d != 75*time.Millisecond {
 			t.Errorf("Node 1: expected global delay of 75ms, got %v", d)
 		}
@@ -186,7 +186,7 @@ func TestAsymmetricDelay(t *testing.T) {
 		if i == 1 {
 			continue
 		}
-		if delay, ok := helpers.GetTransportCapability[transporttest.DelayCapable](cluster, i); ok {
+		if delay, ok := transporttest.GetCapability[transporttest.DelayCapable](cluster, i); ok {
 			if d := delay.GetDelay(-1); d != 0 {
 				t.Errorf("Node %d: expected no delay, got %v", i, d)
 			}
@@ -235,24 +235,24 @@ func TestDelayWithMultipleDecorators(t *testing.T) {
 	)
 
 	// Verify delay capability is accessible through decorator chain
-	if _, ok := helpers.GetTransportCapability[transporttest.DelayCapable](cluster, 0); !ok {
+	if _, ok := transporttest.GetCapability[transporttest.DelayCapable](cluster, 0); !ok {
 		t.Error("Transport should support delays even with multiple decorators")
 	}
 
 	// Test setting and getting delays
 	transporttest.SetDelay(cluster, -1, 25*time.Millisecond)
 
-	if delay, ok := helpers.GetTransportCapability[transporttest.DelayCapable](cluster, 0); ok {
+	if delay, ok := transporttest.GetCapability[transporttest.DelayCapable](cluster, 0); ok {
 		if d := delay.GetDelay(-1); d != 25*time.Millisecond {
 			t.Errorf("Expected delay of 25ms, got %v", d)
 		}
 	}
 
 	// Verify all capabilities work together
-	if _, ok := helpers.GetTransportCapability[transporttest.PartitionCapable](cluster, 0); !ok {
+	if _, ok := transporttest.GetCapability[transporttest.PartitionCapable](cluster, 0); !ok {
 		t.Error("Should also support partitioning")
 	}
-	if _, ok := helpers.GetTransportCapability[transporttest.FailureCapable](cluster, 0); !ok {
+	if _, ok := transporttest.GetCapability[transporttest.FailureCapable](cluster, 0); !ok {
 		t.Error("Should also support failures")
 	}
 
@@ -277,7 +277,7 @@ func TestDelayPersistence(t *testing.T) {
 	transporttest.SetDelayBetween(cluster, 1, 2, 30*time.Millisecond)
 
 	// Verify delays persist
-	if delay, ok := helpers.GetTransportCapability[transporttest.DelayCapable](cluster, 0); ok {
+	if delay, ok := transporttest.GetCapability[transporttest.DelayCapable](cluster, 0); ok {
 		if d := delay.GetDelay(1); d != 10*time.Millisecond {
 			t.Errorf("Node 0->1 delay: expected 10ms, got %v", d)
 		}
@@ -286,7 +286,7 @@ func TestDelayPersistence(t *testing.T) {
 		}
 	}
 
-	if delay, ok := helpers.GetTransportCapability[transporttest.DelayCapable](cluster, 1); ok {
+	if delay, ok := transporttest.GetCapability[transporttest.DelayCapable](cluster, 1); ok {
 		if d := delay.GetDelay(2); d != 30*time.Millisecond {
 			t.Errorf("Node 1->2 delay: expected 30ms, got %v", d)
 		}
@@ -295,7 +295,7 @@ func TestDelayPersistence(t *testing.T) {
 	// Clear specific delay
 	transporttest.SetDelayBetween(cluster, 0, 1, 0)
 
-	if delay, ok := helpers.GetTransportCapability[transporttest.DelayCapable](cluster, 0); ok {
+	if delay, ok := transporttest.GetCapability[transporttest.DelayCapable](cluster, 0); ok {
 		if d := delay.GetDelay(1); d != 0 {
 			t.Errorf("Node 0->1 delay should be cleared, got %v", d)
 		}
@@ -310,7 +310,7 @@ func TestDelayPersistence(t *testing.T) {
 
 	// Verify all cleared
 	for i := 0; i < 3; i++ {
-		if delay, ok := helpers.GetTransportCapability[transporttest.DelayCapable](cluster, i); ok {
+		if delay, ok := transporttest.GetCapability[transporttest.DelayCapable](cluster, i); ok {
 			for j := 0; j < 3; j++ {
 				if d := delay.GetDelay(j); d != 0 {
 					t.Errorf("Node %d->%d delay should be 0, got %v", i, j, d)

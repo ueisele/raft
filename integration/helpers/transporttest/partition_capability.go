@@ -2,8 +2,6 @@ package transporttest
 
 import (
 	"fmt"
-
-	"github.com/ueisele/raft"
 )
 
 // PartitionCapable indicates a transport can simulate network partitions.
@@ -22,28 +20,21 @@ type PartitionCapable interface {
 	IsBlocked(serverID int) bool
 }
 
-// TestCluster is an interface to avoid circular dependencies.
-// The actual TestCluster type is in the helpers package.
-type TestCluster interface {
-	GetTransports() []raft.Transport
-}
-
 // PartitionNode partitions a specific node from all others.
 // The node will not be able to send or receive messages from any other node.
-func PartitionNode(cluster TestCluster, nodeID int) error {
-	transports := cluster.GetTransports()
-
+func PartitionNode(provider TransportProvider, nodeID int) error {
 	// First, block the node from sending to others
-	if partition, ok := GetCapability[PartitionCapable](transports, nodeID); ok {
+	if partition, ok := GetCapability[PartitionCapable](provider, nodeID); ok {
 		partition.BlockAll()
 	} else {
 		return fmt.Errorf("node %d transport does not support partitioning", nodeID)
 	}
 
 	// Then, block all other nodes from sending to this node
-	for i := range transports {
-		if i != nodeID {
-			if partition, ok := GetCapability[PartitionCapable](transports, i); ok {
+	transports := provider.GetTransports()
+	for id := range transports {
+		if id != nodeID {
+			if partition, ok := GetCapability[PartitionCapable](provider, id); ok {
 				partition.Block(nodeID)
 			}
 		}
@@ -54,10 +45,10 @@ func PartitionNode(cluster TestCluster, nodeID int) error {
 
 // HealPartition removes all network partitions in the cluster.
 // All nodes will be able to communicate with each other again.
-func HealPartition(cluster TestCluster) {
-	transports := cluster.GetTransports()
-	for i := range transports {
-		if partition, ok := GetCapability[PartitionCapable](transports, i); ok {
+func HealPartition(provider TransportProvider) {
+	transports := provider.GetTransports()
+	for id := range transports {
+		if partition, ok := GetCapability[PartitionCapable](provider, id); ok {
 			partition.UnblockAll()
 		}
 	}
@@ -66,12 +57,10 @@ func HealPartition(cluster TestCluster) {
 // CreatePartition creates a network partition between two groups of nodes.
 // Nodes in group1 cannot communicate with nodes in group2 and vice versa.
 // Nodes within the same group can still communicate with each other.
-func CreatePartition(cluster TestCluster, group1, group2 []int) error {
-	transports := cluster.GetTransports()
-
+func CreatePartition(provider TransportProvider, group1, group2 []int) error {
 	// Block communication from group1 to group2
 	for _, id1 := range group1 {
-		if partition, ok := GetCapability[PartitionCapable](transports, id1); ok {
+		if partition, ok := GetCapability[PartitionCapable](provider, id1); ok {
 			for _, id2 := range group2 {
 				partition.Block(id2)
 			}
@@ -82,7 +71,7 @@ func CreatePartition(cluster TestCluster, group1, group2 []int) error {
 
 	// Block communication from group2 to group1
 	for _, id2 := range group2 {
-		if partition, ok := GetCapability[PartitionCapable](transports, id2); ok {
+		if partition, ok := GetCapability[PartitionCapable](provider, id2); ok {
 			for _, id1 := range group1 {
 				partition.Block(id1)
 			}

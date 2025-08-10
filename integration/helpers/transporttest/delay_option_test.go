@@ -17,7 +17,7 @@ func TestWithDelayTransportOption(t *testing.T) {
 	)
 
 	// Verify delay capability is available
-	if _, ok := helpers.GetTransportCapability[transporttest.DelayCapable](cluster, 0); !ok {
+	if _, ok := transporttest.GetCapability[transporttest.DelayCapable](cluster, 0); !ok {
 		t.Fatal("Transport should support delays when using WithDelayTransport option")
 	}
 
@@ -26,7 +26,7 @@ func TestWithDelayTransportOption(t *testing.T) {
 
 	// Verify delay is set
 	for i := 0; i < 3; i++ {
-		if delay, ok := helpers.GetTransportCapability[transporttest.DelayCapable](cluster, i); ok {
+		if delay, ok := transporttest.GetCapability[transporttest.DelayCapable](cluster, i); ok {
 			if d := delay.GetDelay(-1); d != 25*time.Millisecond {
 				t.Errorf("Node %d: expected delay of 25ms, got %v", i, d)
 			}

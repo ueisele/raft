@@ -81,7 +81,7 @@ func TestClusterHealing(t *testing.T) {
 	}
 
 	// Use the same transport type
-	transport := helpers.NewMultiNodeTransport(initialLeader, cluster.Registry)
+	transport := transporttest.NewMultiNodeTransport(initialLeader, cluster.Registry)
 
 	oldNode, err := raft.NewNode(oldConfig, transport, nil, raft.NewMockStateMachine())
 	if err != nil {
@@ -157,10 +157,10 @@ func TestEventualConsistency(t *testing.T) {
 	t.Log("Disruption 1: Creating temporary partition")
 
 	// Partition nodes 0 and 1 from the rest
-	if err := helpers.PartitionNode(cluster, 0); err != nil {
+	if err := transporttest.PartitionNode(cluster, 0); err != nil {
 		t.Fatalf("Failed to partition node 0: %v", err)
 	}
-	if err := helpers.PartitionNode(cluster, 1); err != nil {
+	if err := transporttest.PartitionNode(cluster, 1); err != nil {
 		t.Fatalf("Failed to partition node 1: %v", err)
 	}
 
@@ -185,7 +185,7 @@ func TestEventualConsistency(t *testing.T) {
 	}
 
 	// Heal partition
-	helpers.HealPartition(cluster)
+	transporttest.HealPartition(cluster)
 	t.Log("Healed partition")
 
 	// Wait for convergence
@@ -257,7 +257,7 @@ func TestEventualConsistency(t *testing.T) {
 
 					// Create transport - use same type as cluster
 					var transport raft.Transport
-					transport = helpers.NewMultiNodeTransport(i, cluster.Registry)
+					transport = transporttest.NewMultiNodeTransport(i, cluster.Registry)
 
 					// Check if cluster uses partitionable transports and add decorator if so
 					if len(cluster.Transports) > 0 {
@@ -330,10 +330,10 @@ func TestHealingWithDivergentLogs(t *testing.T) {
 	t.Logf("Common commit index before divergence: %d", commonCommitIndex)
 
 	// Create network partition: [0,1] vs [2,3,4]
-	if err := helpers.PartitionNode(cluster, 0); err != nil {
+	if err := transporttest.PartitionNode(cluster, 0); err != nil {
 		t.Fatalf("Failed to partition node 0: %v", err)
 	}
-	if err := helpers.PartitionNode(cluster, 1); err != nil {
+	if err := transporttest.PartitionNode(cluster, 1); err != nil {
 		t.Fatalf("Failed to partition node 1: %v", err)
 	}
 	t.Log("Created partition: [0,1] vs [2,3,4]")
@@ -404,7 +404,7 @@ func TestHealingWithDivergentLogs(t *testing.T) {
 	}
 
 	// Heal the partition
-	helpers.HealPartition(cluster)
+	transporttest.HealPartition(cluster)
 	t.Log("Healed partition - nodes will now reconcile")
 
 	// Wait for reconciliation
@@ -501,8 +501,8 @@ func TestHealingUnderLoad(t *testing.T) {
 
 	// Create partition while under load
 	t.Log("Creating partition under load")
-	helpers.PartitionNode(cluster, 0) //nolint:errcheck // test partition setup
-	helpers.PartitionNode(cluster, 1) //nolint:errcheck // test partition setup
+	transporttest.PartitionNode(cluster, 0) //nolint:errcheck // test partition setup
+	transporttest.PartitionNode(cluster, 1) //nolint:errcheck // test partition setup
 
 	// Continue load during partition
 	time.Sleep(1 * time.Second)
@@ -513,7 +513,7 @@ func TestHealingUnderLoad(t *testing.T) {
 
 	// Heal partition while still under load
 	t.Log("Healing partition under load")
-	helpers.HealPartition(cluster)
+	transporttest.HealPartition(cluster)
 
 	// Continue load during healing
 	time.Sleep(2 * time.Second)

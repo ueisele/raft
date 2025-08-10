@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ueisele/raft"
+	"github.com/ueisele/raft/integration/helpers/transporttest"
 	jsonpersistence "github.com/ueisele/raft/persistence"
 	"github.com/ueisele/raft/persistence/json"
 )
@@ -19,7 +20,7 @@ type TestCluster struct {
 	Transports    []raft.Transport
 	Persistences  []raft.Persistence
 	StateMachines []raft.StateMachine
-	Registry      *NodeRegistry // Single registry type for all transports
+	Registry      *transporttest.NodeRegistry // Single registry type for all transports
 	config        clusterConfig
 	t             *testing.T
 	ctx           context.Context
@@ -39,7 +40,7 @@ type clusterConfig struct {
 	logger raft.Logger
 
 	// Factory functions for creating components per node
-	transportFactory    func(nodeID int, registry *NodeRegistry) (raft.Transport, error)
+	transportFactory    func(nodeID int, registry *transporttest.NodeRegistry) (raft.Transport, error)
 	persistenceFactory  func(nodeID int) (raft.Persistence, error)
 	stateMachineFactory func(nodeID int) (raft.StateMachine, error)
 
@@ -145,7 +146,7 @@ func WithClusterAutoStart() ClusterOption {
 }
 
 // WithTransportFactory sets a custom transport factory
-func WithTransportFactory(factory func(nodeID int, registry *NodeRegistry) (raft.Transport, error)) ClusterOption {
+func WithTransportFactory(factory func(nodeID int, registry *transporttest.NodeRegistry) (raft.Transport, error)) ClusterOption {
 	return func(c *clusterConfig) {
 		c.transportFactory = factory
 	}
@@ -186,7 +187,7 @@ func NewTestCluster(t *testing.T, size int, opts ...ClusterOption) *TestCluster 
 	}
 
 	// Create registry
-	cluster.Registry = NewNodeRegistryWithLogger(config.logger)
+	cluster.Registry = transporttest.NewNodeRegistryWithLogger(config.logger)
 
 	// Create nodes
 	peers := make([]int, size)
@@ -262,23 +263,34 @@ func (c *TestCluster) SubmitCommand(command interface{}) (int, int, error) {
 	return index, term, nil
 }
 
-// GetLeader returns the current leader node and its ID
-func (c *TestCluster) GetLeader() (raft.Node, int) {
+// GetTransports returns all transports in the cluster as a map.
+// This implements the TransportProvider interface from transporttest package.
+// Returns a map where keys are node IDs (array indices for old implementation).
+// The returned map is a copy to prevent external modifications.
+func (c *TestCluster) GetTransports() map[int]raft.Transport {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	
+	// Convert array to map, using index as nodeID
+	// This assumes sequential node IDs starting from 0
+	result := make(map[int]raft.Transport, len(c.Transports))
+	for i, transport := range c.Transports {
+		if transport != nil {
+			result[i] = transport
+		}
+	}
+	return result
+}
+
+// GetTransport returns the transport for a specific node
+func (c *TestCluster) GetTransport(nodeID int) raft.Transport {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	for i, node := range c.Nodes {
-		if node.IsLeader() {
-			return node, i
-		}
+	if nodeID >= 0 && nodeID < len(c.Transports) {
+		return c.Transports[nodeID]
 	}
-	return nil, -1
-}
-
-// GetLeaderNode returns the current leader node (nil if no leader)
-func (c *TestCluster) GetLeaderNode() raft.Node {
-	leader, _ := c.GetLeader()
-	return leader
+	return nil
 }
 
 // GetPersistence returns the persistence for a specific node
@@ -305,6 +317,25 @@ func (c *TestCluster) GetStateMachine(nodeID int) *raft.MockStateMachine {
 	return nil
 }
 
+// GetLeader returns the current leader node and its ID
+func (c *TestCluster) GetLeader() (raft.Node, int) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	for i, node := range c.Nodes {
+		if node.IsLeader() {
+			return node, i
+		}
+	}
+	return nil, -1
+}
+
+// GetLeaderNode returns the current leader node (nil if no leader)
+func (c *TestCluster) GetLeaderNode() raft.Node {
+	leader, _ := c.GetLeader()
+	return leader
+}
+
 // AddNode dynamically adds a new node to the cluster.
 // The node is created with the given ID and started automatically if auto start has been enabled on the cluster.
 // Returns the created node.
@@ -313,7 +344,7 @@ func (c *TestCluster) AddNode(nodeID int) (raft.Node, error) {
 	return c.addNode(nodeID, peers, c.config.autoStart)
 }
 
-// AddNode dynamically adds a new node to the cluster.
+// addNode dynamically adds a new node to the cluster.
 // The node is created with the given ID and given peers.
 // Returns the created node.
 func (c *TestCluster) addNode(nodeID int, peers []int, autoStart bool) (raft.Node, error) {
@@ -345,7 +376,7 @@ func (c *TestCluster) addNode(nodeID int, peers []int, autoStart bool) (raft.Nod
 		}
 	} else {
 		// Create base transport
-		transport = NewMultiNodeTransport(nodeID, c.Registry)
+		transport = transporttest.NewMultiNodeTransport(nodeID, c.Registry)
 	}
 	// Apply any additional decorators from options
 	for _, decorator := range c.config.transportDecorators {

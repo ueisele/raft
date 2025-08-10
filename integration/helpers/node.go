@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ueisele/raft"
+	"github.com/ueisele/raft/integration/helpers/transporttest"
 )
 
 // TestNode wraps a single Raft node for testing with automatic cleanup
@@ -183,7 +184,7 @@ func (n *TestNode) Submit(command interface{}) (int, int, error) {
 // This is useful for tests that need nodes but not a full cluster
 func CreateTestNodeSet(t *testing.T, count int, opts ...TestNodeOption) []*TestNode {
 	// Create a registry for nodes to find each other
-	registry := NewNodeRegistry()
+	registry := transporttest.NewNodeRegistry()
 
 	// Create peer list
 	peers := make([]int, count)
@@ -195,7 +196,7 @@ func CreateTestNodeSet(t *testing.T, count int, opts ...TestNodeOption) []*TestN
 	nodes := make([]*TestNode, count)
 	for i := 0; i < count; i++ {
 		// Create transport that uses the registry
-		transport := NewMultiNodeTransport(i, registry)
+		transport := transporttest.NewMultiNodeTransport(i, registry)
 
 		// Create node with transport
 		nodeOpts := append([]TestNodeOption{

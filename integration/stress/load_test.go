@@ -10,6 +10,7 @@ import (
 
 	"github.com/ueisele/raft"
 	"github.com/ueisele/raft/integration/helpers"
+	"github.com/ueisele/raft/integration/helpers/transporttest"
 )
 
 // TestHighLoadSingleClient tests system behavior under high load from a single client
@@ -355,7 +356,7 @@ func TestLoadWithNetworkPartitions(t *testing.T) {
 
 	// Create a partition (3 nodes vs 2 nodes)
 	t.Log("Creating network partition")
-	helpers.CreatePartition(cluster, []int{0, 1, 2}, []int{3, 4})
+	transporttest.CreatePartition(cluster, []int{0, 1, 2}, []int{3, 4})
 
 	// Run under partition
 	time.Sleep(3 * time.Second)
@@ -363,7 +364,7 @@ func TestLoadWithNetworkPartitions(t *testing.T) {
 
 	// Heal partition
 	t.Log("Healing network partition")
-	helpers.HealPartition(cluster)
+	transporttest.HealPartition(cluster)
 
 	// Run after healing
 	beforeHeal := atomic.LoadInt64(&successCount)

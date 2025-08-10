@@ -9,6 +9,7 @@ import (
 
 	"github.com/ueisele/raft"
 	"github.com/ueisele/raft/integration/helpers"
+	"github.com/ueisele/raft/integration/helpers/transporttest"
 )
 
 // TestExampleClientInteraction shows how clients should properly interact with Raft
@@ -277,7 +278,7 @@ func TestClientLinearizability(t *testing.T) {
 	t.Run("StaleReads", func(t *testing.T) {
 		// Partition a follower
 		isolatedFollower := (leaderID + 2) % 3
-		if err := helpers.PartitionNode(cluster, isolatedFollower); err != nil {
+		if err := transporttest.PartitionNode(cluster, isolatedFollower); err != nil {
 			t.Fatalf("Failed to partition node: %v", err)
 		}
 		t.Logf("Partitioned follower %d", isolatedFollower)
@@ -309,7 +310,7 @@ func TestClientLinearizability(t *testing.T) {
 		}
 
 		// Heal partition
-		helpers.HealPartition(cluster)
+		transporttest.HealPartition(cluster)
 
 		// Wait for follower to catch up
 		helpers.WaitForConditionWithProgress(t, func() (bool, string) {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/ueisele/raft"
 	"github.com/ueisele/raft/integration/helpers"
+	"github.com/ueisele/raft/integration/helpers/transporttest"
 )
 
 // Global storage for persistence data in tests
@@ -135,7 +136,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 	// Create 3-node cluster with persistence
 	numNodes := 3
 	nodes := make([]raft.Node, numNodes)
-	registry := helpers.NewNodeRegistry()
+	registry := transporttest.NewNodeRegistry()
 
 	for i := 0; i < numNodes; i++ {
 		config := &raft.Config{
@@ -147,7 +148,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 			Logger:             raft.NewTestLogger(t),
 		}
 
-		transport := helpers.NewMultiNodeTransport(i, registry)
+		transport := transporttest.NewMultiNodeTransport(i, registry)
 
 		// Create persistence for each node
 		nodeDir := filepath.Join(tempDir, fmt.Sprintf("node-%d", i))
@@ -210,7 +211,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 
 	// Recreate nodes with same persistence
 	newNodes := make([]raft.Node, numNodes)
-	newRegistry := helpers.NewNodeRegistry()
+	newRegistry := transporttest.NewNodeRegistry()
 
 	for i := 0; i < numNodes; i++ {
 		config := &raft.Config{
@@ -222,7 +223,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 			Logger:             raft.NewTestLogger(t),
 		}
 
-		transport := helpers.NewMultiNodeTransport(i, newRegistry)
+		transport := transporttest.NewMultiNodeTransport(i, newRegistry)
 
 		// Use same persistence directory
 		nodeDir := filepath.Join(tempDir, fmt.Sprintf("node-%d", i))
@@ -510,14 +511,14 @@ func TestPersistenceWithSnapshots(t *testing.T) {
 type persistentCluster struct {
 	nodes      []raft.Node
 	transports []raft.Transport
-	registry   *helpers.NodeRegistry
+	registry   *transporttest.NodeRegistry
 	tempDir    string
 }
 
 func createPersistentCluster(t *testing.T, tempDir string, size int) *persistentCluster {
 	nodes := make([]raft.Node, size)
 	transports := make([]raft.Transport, size)
-	registry := helpers.NewNodeRegistry()
+	registry := transporttest.NewNodeRegistry()
 
 	for i := 0; i < size; i++ {
 		config := &raft.Config{
@@ -529,7 +530,7 @@ func createPersistentCluster(t *testing.T, tempDir string, size int) *persistent
 			Logger:             raft.NewTestLogger(t),
 		}
 
-		transport := helpers.NewMultiNodeTransport(i, registry)
+		transport := transporttest.NewMultiNodeTransport(i, registry)
 		transports[i] = transport
 
 		// Create persistence for each node
@@ -581,7 +582,7 @@ func restartNode(t *testing.T, ctx context.Context, cluster *persistentCluster, 
 		Logger:             raft.NewTestLogger(t),
 	}
 
-	transport := helpers.NewMultiNodeTransport(nodeID, cluster.registry)
+	transport := transporttest.NewMultiNodeTransport(nodeID, cluster.registry)
 
 	nodeDir := filepath.Join(cluster.tempDir, fmt.Sprintf("node-%d", nodeID))
 	persistence := newFilePersistence(nodeDir)

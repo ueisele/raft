@@ -9,6 +9,7 @@ import (
 
 	"github.com/ueisele/raft"
 	"github.com/ueisele/raft/integration/helpers"
+	"github.com/ueisele/raft/integration/helpers/transporttest"
 )
 
 // TestSimultaneousConfigChanges tests handling of concurrent configuration changes
@@ -97,8 +98,8 @@ func TestConfigChangeRollback(t *testing.T) {
 	switch reg := cluster.Registry.(type) {
 	case *helpers.PartitionRegistry:
 		transport = helpers.NewPartitionableTransport(newNodeID, reg)
-	case *helpers.NodeRegistry:
-		transport = helpers.NewMultiNodeTransport(newNodeID, reg)
+	case *transporttest.NodeRegistry:
+		transport = transporttest.NewMultiNodeTransport(newNodeID, reg)
 	default:
 		t.Fatalf("Unknown registry type: %T", cluster.Registry)
 	}
@@ -112,7 +113,7 @@ func TestConfigChangeRollback(t *testing.T) {
 	switch reg := cluster.Registry.(type) {
 	case *helpers.PartitionRegistry:
 		reg.Register(newNodeID, newNode.(raft.RPCHandler))
-	case *helpers.NodeRegistry:
+	case *transporttest.NodeRegistry:
 		reg.Register(newNodeID, newNode.(raft.RPCHandler))
 	}
 
@@ -274,11 +275,11 @@ func TestConfigChangeWithNodeFailures(t *testing.T) {
 				Logger:             raft.NewTestLogger(t),
 			}
 
-			transport := helpers.NewMultiNodeTransport(followerToStop, cluster.Registry.(*helpers.NodeRegistry))
+			transport := transporttest.NewMultiNodeTransport(followerToStop, cluster.Registry.(*transporttest.NodeRegistry))
 			node, err := raft.NewNode(config, transport, nil, raft.NewMockStateMachine())
 			if err == nil {
 				cluster.Nodes[followerToStop] = node
-				cluster.Registry.(*helpers.NodeRegistry).Register(followerToStop, node.(raft.RPCHandler))
+				cluster.Registry.(*transporttest.NodeRegistry).Register(followerToStop, node.(raft.RPCHandler))
 				if err := node.Start(ctx); err != nil {
 					t.Errorf("Failed to restart node %d: %v", followerToStop, err)
 				}
@@ -383,14 +384,14 @@ func TestMaximumClusterSize(t *testing.T) {
 			Logger:             raft.NewTestLogger(t),
 		}
 
-		transport := helpers.NewMultiNodeTransport(newNodeID, cluster.Registry.(*helpers.NodeRegistry))
+		transport := transporttest.NewMultiNodeTransport(newNodeID, cluster.Registry.(*transporttest.NodeRegistry))
 		node, err := raft.NewNode(config, transport, nil, raft.NewMockStateMachine())
 		if err != nil {
 			t.Fatalf("Failed to create node %d: %v", newNodeID, err)
 		}
 
 		// Register and start node
-		cluster.Registry.(*helpers.NodeRegistry).Register(newNodeID, node.(raft.RPCHandler))
+		cluster.Registry.(*transporttest.NodeRegistry).Register(newNodeID, node.(raft.RPCHandler))
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", newNodeID, err)
 		}

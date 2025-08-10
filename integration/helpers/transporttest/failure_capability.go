@@ -16,10 +16,10 @@ type FailureCapable interface {
 
 // SetFailureRate sets the failure rate for all transports that support it.
 // The rate should be between 0.0 (no failures) and 1.0 (always fail).
-func SetFailureRate(cluster TestCluster, rate float64) {
-	transports := cluster.GetTransports()
-	for i := range transports {
-		if failure, ok := GetCapability[FailureCapable](transports, i); ok {
+func SetFailureRate(provider TransportProvider, rate float64) {
+	transports := provider.GetTransports()
+	for id := range transports {
+		if failure, ok := GetCapability[FailureCapable](provider, id); ok {
 			failure.SetFailureRate(rate)
 		}
 	}
@@ -28,10 +28,10 @@ func SetFailureRate(cluster TestCluster, rate float64) {
 // GetFailureStats returns aggregated failure statistics from all transports.
 // It sums up the total attempts and failures across all nodes that support
 // the FailureCapable interface.
-func GetFailureStats(cluster TestCluster) (totalAttempts, totalFailures int64) {
-	transports := cluster.GetTransports()
-	for i := range transports {
-		if failure, ok := GetCapability[FailureCapable](transports, i); ok {
+func GetFailureStats(provider TransportProvider) (totalAttempts, totalFailures int64) {
+	transports := provider.GetTransports()
+	for id := range transports {
+		if failure, ok := GetCapability[FailureCapable](provider, id); ok {
 			attempts, failures := failure.GetStats()
 			totalAttempts += attempts
 			totalFailures += failures
@@ -41,10 +41,10 @@ func GetFailureStats(cluster TestCluster) (totalAttempts, totalFailures int64) {
 }
 
 // ResetFailureStats resets failure statistics for all transports that support it.
-func ResetFailureStats(cluster TestCluster) {
-	transports := cluster.GetTransports()
-	for i := range transports {
-		if failure, ok := GetCapability[FailureCapable](transports, i); ok {
+func ResetFailureStats(provider TransportProvider) {
+	transports := provider.GetTransports()
+	for id := range transports {
+		if failure, ok := GetCapability[FailureCapable](provider, id); ok {
 			failure.ResetStats()
 		}
 	}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/ueisele/raft"
 	"github.com/ueisele/raft/integration/helpers"
+	"github.com/ueisele/raft/integration/helpers/transporttest"
 )
 
 // TestVotingSafety combines all voting safety tests into one comprehensive test
@@ -218,7 +219,7 @@ func testImmediateVotingDanger(t *testing.T) {
 	// Create scenario where immediate voting could be dangerous
 	numNodes := 3
 	nodes := make([]raft.Node, numNodes)
-	registry := helpers.NewNodeRegistry()
+	registry := transporttest.NewNodeRegistry()
 
 	for i := 0; i < numNodes; i++ {
 		config := &raft.Config{
@@ -230,7 +231,7 @@ func testImmediateVotingDanger(t *testing.T) {
 			Logger:             raft.NewTestLogger(t),
 		}
 
-		transport := helpers.NewMultiNodeTransport(i, registry)
+		transport := transporttest.NewMultiNodeTransport(i, registry)
 
 		node, err := raft.NewNode(config, transport, nil, raft.NewMockStateMachine())
 		if err != nil {
@@ -451,7 +452,7 @@ func testVoteGrantingAfterTimeout(t *testing.T) {
 	}
 
 	// Partition the leader to simulate it being unreachable
-	if err := helpers.PartitionNode(cluster, leaderID); err != nil {
+	if err := transporttest.PartitionNode(cluster, leaderID); err != nil {
 		t.Fatalf("Failed to partition leader: %v", err)
 	}
 

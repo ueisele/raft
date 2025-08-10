@@ -200,9 +200,9 @@ func TestClusterFactories(t *testing.T) {
 		createdStateMachines := make(map[int]bool)
 
 		cluster := helpers.NewTestCluster(t, 3,
-			helpers.WithTransportFactory(func(nodeID int, registry *helpers.NodeRegistry) (raft.Transport, error) {
+			helpers.WithTransportFactory(func(nodeID int, registry *transporttest.NodeRegistry) (raft.Transport, error) {
 				createdTransports[nodeID] = true
-				return helpers.NewMultiNodeTransport(nodeID, registry), nil
+				return transporttest.NewMultiNodeTransport(nodeID, registry), nil
 			}),
 			helpers.WithPersistenceFactory(func(nodeID int) (raft.Persistence, error) {
 				createdPersistence[nodeID] = true
@@ -318,19 +318,19 @@ func TestClusterDecorators(t *testing.T) {
 
 		// Verify partitionable capability
 		for i := 0; i < 3; i++ {
-			if _, ok := helpers.GetTransportCapability[transporttest.PartitionCapable](cluster, i); !ok {
+			if _, ok := transporttest.GetCapability[transporttest.PartitionCapable](cluster, i); !ok {
 				t.Errorf("Node %d should have PartitionCapable", i)
 			}
 		}
 
 		// Test partition functionality
-		helpers.CreatePartition(cluster, []int{leaderID}, []int{(leaderID + 1) % 3, (leaderID + 2) % 3})
+		transporttest.CreatePartition(cluster, []int{leaderID}, []int{(leaderID + 1) % 3, (leaderID + 2) % 3})
 
 		// The isolated leader should step down
 		helpers.WaitForFollower(t, []raft.Node{cluster.Nodes[leaderID]}, 2*time.Second)
 
 		// Heal the partition
-		helpers.HealPartition(cluster)
+		transporttest.HealPartition(cluster)
 
 		// A leader should emerge again
 		if _, err := cluster.WaitForLeader(2 * time.Second); err != nil {
@@ -366,10 +366,10 @@ func TestClusterDecorators(t *testing.T) {
 			}
 
 			// Verify capabilities are accessible
-			if _, ok := helpers.GetTransportCapability[transporttest.PartitionCapable](cluster, i); !ok {
+			if _, ok := transporttest.GetCapability[transporttest.PartitionCapable](cluster, i); !ok {
 				t.Errorf("Node %d missing PartitionCapable", i)
 			}
-			if _, ok := helpers.GetTransportCapability[transporttest.FailureCapable](cluster, i); !ok {
+			if _, ok := transporttest.GetCapability[transporttest.FailureCapable](cluster, i); !ok {
 				t.Errorf("Node %d missing FailureCapable", i)
 			}
 		}
@@ -403,7 +403,7 @@ func TestClusterDecorators(t *testing.T) {
 		)
 
 		// Test partition capability
-		if partition, ok := helpers.GetTransportCapability[transporttest.PartitionCapable](cluster, 0); ok {
+		if partition, ok := transporttest.GetCapability[transporttest.PartitionCapable](cluster, 0); ok {
 			partition.Block(99)
 			if !partition.IsBlocked(99) {
 				t.Error("Partition capability not working")
@@ -414,7 +414,7 @@ func TestClusterDecorators(t *testing.T) {
 		}
 
 		// Test debug capability
-		if _, ok := helpers.GetTransportCapability[transporttest.DebugCapable](cluster, 0); !ok {
+		if _, ok := transporttest.GetCapability[transporttest.DebugCapable](cluster, 0); !ok {
 			t.Error("Missing DebugCapable")
 		}
 
@@ -438,9 +438,9 @@ func TestClusterIntegration(t *testing.T) {
 			helpers.WithMaxLogSize(100),
 
 			// Custom factories
-			helpers.WithTransportFactory(func(nodeID int, registry *helpers.NodeRegistry) (raft.Transport, error) {
+			helpers.WithTransportFactory(func(nodeID int, registry *transporttest.NodeRegistry) (raft.Transport, error) {
 				createdComponents[fmt.Sprintf("transport-%d", nodeID)]++
-				return helpers.NewMultiNodeTransport(nodeID, registry), nil
+				return transporttest.NewMultiNodeTransport(nodeID, registry), nil
 			}),
 			helpers.WithPersistenceFactory(func(nodeID int) (raft.Persistence, error) {
 				createdComponents[fmt.Sprintf("persistence-%d", nodeID)]++

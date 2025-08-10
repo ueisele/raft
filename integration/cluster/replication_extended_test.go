@@ -11,6 +11,7 @@ import (
 
 	"github.com/ueisele/raft"
 	"github.com/ueisele/raft/integration/helpers"
+	"github.com/ueisele/raft/integration/helpers/transporttest"
 )
 
 // TestLogReplicationWithFailures tests log replication with various failure scenarios
@@ -355,7 +356,7 @@ func TestReplicationWithSlowFollowers(t *testing.T) {
 	numNodes := 5
 	nodes := make([]raft.Node, numNodes)
 	transports := make([]*delayTransport, numNodes)
-	registry := helpers.NewNodeRegistry()
+	registry := transporttest.NewNodeRegistry()
 
 	for i := 0; i < numNodes; i++ {
 		config := &raft.Config{
@@ -376,7 +377,7 @@ func TestReplicationWithSlowFollowers(t *testing.T) {
 		}
 
 		transport := &delayTransport{
-			baseTransport: helpers.NewMultiNodeTransport(i, registry),
+			baseTransport: transporttest.NewMultiNodeTransport(i, registry),
 			delay:         delay,
 		}
 		transports[i] = transport

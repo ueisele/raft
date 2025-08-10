@@ -12,10 +12,10 @@ type DebugCapable interface {
 
 // SetDebugLogger sets the logger for all transports that support debug logging.
 // This is useful for enabling detailed RPC logging across all nodes in a test cluster.
-func SetDebugLogger(cluster TestCluster, logger raft.Logger) {
-	transports := cluster.GetTransports()
-	for i := range transports {
-		if debug, ok := GetCapability[DebugCapable](transports, i); ok {
+func SetDebugLogger(provider TransportProvider, logger raft.Logger) {
+	transports := provider.GetTransports()
+	for id := range transports {
+		if debug, ok := GetCapability[DebugCapable](provider, id); ok {
 			debug.SetLogger(logger)
 		}
 	}
@@ -23,6 +23,6 @@ func SetDebugLogger(cluster TestCluster, logger raft.Logger) {
 
 // EnableDebugLogging is a convenience function to enable debug logging
 // with a test logger for all transports that support it.
-func EnableDebugLogging(cluster TestCluster, logger raft.Logger) {
-	SetDebugLogger(cluster, logger)
+func EnableDebugLogging(provider TransportProvider, logger raft.Logger) {
+	SetDebugLogger(provider, logger)
 }
