@@ -104,7 +104,20 @@ func TestLogReplicationWithFailures(t *testing.T) {
 	}
 
 	// Wait for replication to settle
-	time.Sleep(2 * time.Second)
+	helpers.WaitForCondition(t, func() bool {
+		// Check if cluster has stabilized (no more progress)
+		commitIndices := make([]int, len(nodes))
+		for i, node := range nodes {
+			commitIndices[i] = node.GetCommitIndex()
+		}
+		time.Sleep(100 * time.Millisecond) // Small delay to detect if still progressing
+		for i, node := range nodes {
+			if node.GetCommitIndex() != commitIndices[i] {
+				return false // Still making progress
+			}
+		}
+		return true // Cluster has stabilized
+	}, 3*time.Second, "replication to settle")
 
 	// Check how many commands were committed
 	maxCommitIndex := 0

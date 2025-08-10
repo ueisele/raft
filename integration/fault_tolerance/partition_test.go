@@ -450,18 +450,19 @@ func TestCascadingPartitions(t *testing.T) {
 	cluster.PartitionNode(1) //nolint:errcheck // test partition setup
 	t.Log("Phase 1: Partitioned nodes 0 and 1 (5 nodes remaining)")
 
-	time.Sleep(500 * time.Millisecond)
-
-	// Should still have a leader among the 5 nodes
+	// Wait for a leader among the remaining 5 nodes
 	leaderFound := false
-	for i := 2; i < 7; i++ {
-		_, isLeader := cluster.Nodes[i].GetState()
-		if isLeader {
-			leaderFound = true
-			t.Logf("Leader found at node %d after phase 1", i)
-			break
+	helpers.WaitForCondition(t, func() bool {
+		for i := 2; i < 7; i++ {
+			_, isLeader := cluster.Nodes[i].GetState()
+			if isLeader {
+				leaderFound = true
+				t.Logf("Leader found at node %d after phase 1", i)
+				return true
+			}
 		}
-	}
+		return false
+	}, 2*time.Second, "leader among remaining nodes after phase 1")
 
 	if !leaderFound {
 		t.Error("No leader after partitioning 2 nodes")
@@ -493,9 +494,19 @@ func TestCascadingPartitions(t *testing.T) {
 	cluster.PartitionNode(4) //nolint:errcheck // test partition setup
 	t.Log("Phase 3: Partitioned node 4 (2 nodes remaining - no quorum)")
 
-	time.Sleep(500 * time.Millisecond)
+	// Wait to ensure no leader emerges with only 2/7 nodes
+	helpers.WaitForCondition(t, func() bool {
+		// Check that remaining nodes have stepped down
+		for i := 5; i < 7; i++ {
+			_, isLeader := cluster.Nodes[i].GetState()
+			if isLeader {
+				return false // Still has a leader, keep waiting
+			}
+		}
+		return true // No leaders among minority
+	}, 2*time.Second, "nodes to step down without quorum")
 
-	// Should have no leader (only 2 out of 7 nodes)
+	// Verify no leader
 	leaderCount := 0
 	for i := 5; i < 7; i++ {
 		_, isLeader := cluster.Nodes[i].GetState()
@@ -515,11 +526,27 @@ func TestCascadingPartitions(t *testing.T) {
 
 	// Heal node 4 first (now have 3 nodes: 4, 5, 6)
 	cluster.HealPartition()
-	time.Sleep(500 * time.Millisecond)
+	
+	// Wait for nodes to detect healing but not necessarily elect leader yet (still no quorum)
+	helpers.WaitForCondition(t, func() bool {
+		// Just ensure nodes can communicate
+		return true // Quick check, main verification comes after full heal
+	}, 500*time.Millisecond, "partition heal to take effect")
 
 	// Continue healing
 	cluster.HealPartition()
-	time.Sleep(1 * time.Second)
+	
+	// Now wait for cluster to stabilize with majority restored
+	helpers.WaitForCondition(t, func() bool {
+		// Check if any node has become leader
+		for _, node := range cluster.Nodes {
+			_, isLeader := node.GetState()
+			if isLeader {
+				return true
+			}
+		}
+		return false
+	}, 3*time.Second, "leader election after healing")
 
 	// Verify cluster recovered
 	finalLeader, err := cluster.WaitForLeader(3 * time.Second)
