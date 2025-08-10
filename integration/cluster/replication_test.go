@@ -75,7 +75,7 @@ func TestReplicationWithFollowerFailure(t *testing.T) {
 
 	// Partition one follower
 	followerID := (leaderID + 1) % 5
-	if err := cluster.PartitionNode(followerID); err != nil {
+	if err := helpers.PartitionNode(cluster, followerID); err != nil {
 		t.Fatalf("Failed to partition node: %v", err)
 	}
 	t.Logf("Partitioned follower node %d", followerID)
@@ -103,7 +103,7 @@ func TestReplicationWithFollowerFailure(t *testing.T) {
 	commitIndexBeforeHeal := cluster.Nodes[leaderID].GetCommitIndex()
 
 	// Heal the partition
-	cluster.HealPartition()
+	helpers.HealPartition(cluster)
 	t.Log("Healed partition")
 
 	// Wait for the previously partitioned node to catch up

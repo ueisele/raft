@@ -103,7 +103,7 @@ func TestClientTimeouts(t *testing.T) {
 	}
 
 	// Partition the leader from the rest
-	if err := cluster.PartitionNode(leaderID); err != nil {
+	if err := helpers.PartitionNode(cluster, leaderID); err != nil {
 		t.Fatalf("Failed to partition leader: %v", err)
 	}
 
@@ -143,7 +143,7 @@ func TestClientTimeouts(t *testing.T) {
 	}
 
 	// Heal partition
-	cluster.HealPartition()
+	helpers.HealPartition(cluster)
 
 	// Give some time for the cluster to stabilize
 	time.Sleep(500 * time.Millisecond)

@@ -59,12 +59,12 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 		HeartbeatInterval:  50 * time.Millisecond,
 		Logger:             raft.NewTestLogger(t),
 	}
-	transport3 := helpers.NewMultiNodeTransport(3, cluster.Registry.(*helpers.NodeRegistry))
+	transport3 := helpers.NewMultiNodeTransport(3, cluster.Registry)
 	node3, err := raft.NewNode(config3, transport3, nil, raft.NewMockStateMachine())
 	if err != nil {
 		t.Fatalf("Failed to create node 3: %v", err)
 	}
-	cluster.Registry.(*helpers.NodeRegistry).Register(3, node3.(raft.RPCHandler))
+	cluster.Registry.Register(3, node3.(raft.RPCHandler))
 	if err := node3.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node 3: %v", err)
 	}
@@ -83,12 +83,12 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 		HeartbeatInterval:  50 * time.Millisecond,
 		Logger:             raft.NewTestLogger(t),
 	}
-	transport4 := helpers.NewMultiNodeTransport(4, cluster.Registry.(*helpers.NodeRegistry))
+	transport4 := helpers.NewMultiNodeTransport(4, cluster.Registry)
 	node4, err := raft.NewNode(config4, transport4, nil, raft.NewMockStateMachine())
 	if err != nil {
 		t.Fatalf("Failed to create node 4: %v", err)
 	}
-	cluster.Registry.(*helpers.NodeRegistry).Register(4, node4.(raft.RPCHandler))
+	cluster.Registry.Register(4, node4.(raft.RPCHandler))
 	if err := node4.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node 4: %v", err)
 	}
@@ -471,14 +471,14 @@ func TestExtremeTiming(t *testing.T) {
 				HeartbeatInterval:  5 * time.Millisecond,  // Very short
 			}
 
-			transport := helpers.NewMultiNodeTransport(i, cluster.Registry.(*helpers.NodeRegistry))
+			transport := helpers.NewMultiNodeTransport(i, cluster.Registry)
 			node, err := raft.NewNode(config, transport, nil, raft.NewMockStateMachine())
 			if err != nil {
 				t.Fatalf("Failed to create node: %v", err)
 			}
 
 			cluster.Nodes[i] = node
-			cluster.Registry.(*helpers.NodeRegistry).Register(i, node.(raft.RPCHandler))
+			cluster.Registry.Register(i, node.(raft.RPCHandler))
 		}
 
 		ctx := context.Background()
@@ -525,14 +525,14 @@ func TestExtremeTiming(t *testing.T) {
 				HeartbeatInterval:  1000 * time.Millisecond, // Very long
 			}
 
-			transport := helpers.NewMultiNodeTransport(i, cluster.Registry.(*helpers.NodeRegistry))
+			transport := helpers.NewMultiNodeTransport(i, cluster.Registry)
 			node, err := raft.NewNode(config, transport, nil, raft.NewMockStateMachine())
 			if err != nil {
 				t.Fatalf("Failed to create node: %v", err)
 			}
 
 			cluster.Nodes[i] = node
-			cluster.Registry.(*helpers.NodeRegistry).Register(i, node.(raft.RPCHandler))
+			cluster.Registry.Register(i, node.(raft.RPCHandler))
 		}
 
 		ctx := context.Background()

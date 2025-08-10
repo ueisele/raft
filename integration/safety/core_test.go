@@ -164,7 +164,7 @@ func TestLeaderCompleteness(t *testing.T) {
 	t.Logf("Initial leader %d committed up to index %d", initialLeader, commitIndex)
 
 	// Force leader change by partitioning current leader
-	if err := cluster.PartitionNode(initialLeader); err != nil {
+	if err := helpers.PartitionNode(cluster, initialLeader); err != nil {
 		t.Fatalf("Failed to partition leader: %v", err)
 	}
 
@@ -208,7 +208,7 @@ func TestLeaderCompleteness(t *testing.T) {
 	t.Log("✓ Leader completeness property verified")
 
 	// Heal partition
-	cluster.HealPartition()
+	helpers.HealPartition(cluster)
 
 	// Submit more commands with new leader
 	for i := 0; i < 3; i++ {

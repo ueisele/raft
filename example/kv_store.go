@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -34,48 +35,40 @@ const (
 	DeleteCommand CommandType = "delete"
 )
 
-// LogLevel represents the logging level
-type LogLevel int
-
-const (
-	LogLevelDebug LogLevel = iota
-	LogLevelInfo
-	LogLevelWarn
-	LogLevelError
-)
-
-// SimpleLogger implements the raft.Logger interface with configurable log level
+// SimpleLogger implements the raft.Logger interface with a configurable log level
 type SimpleLogger struct {
-	level LogLevel
+	level slog.Level
 }
 
 // NewSimpleLogger creates a logger with the specified level
-func NewSimpleLogger(level LogLevel) *SimpleLogger {
+func NewSimpleLogger(level slog.Level) *SimpleLogger {
 	return &SimpleLogger{level: level}
 }
 
-func (l *SimpleLogger) Debug(format string, args ...interface{}) {
-	if l.level <= LogLevelDebug {
-		log.Printf("[DEBUG] "+format, args...)
+func (l *SimpleLogger) Enabled(_ context.Context, level slog.Level) bool {
+	return level <= l.level
+}
+
+func (l *SimpleLogger) Log(ctx context.Context, level slog.Level, msg string, args ...any) {
+	if l.Enabled(ctx, level) {
+		log.Printf("[%s] %s", level, fmt.Sprintf(msg, args...))
 	}
+}
+
+func (l *SimpleLogger) Debug(format string, args ...interface{}) {
+	l.Log(context.Background(), slog.LevelDebug, format, args...)
 }
 
 func (l *SimpleLogger) Info(format string, args ...interface{}) {
-	if l.level <= LogLevelInfo {
-		log.Printf("[INFO] "+format, args...)
-	}
+	l.Log(context.Background(), slog.LevelInfo, format, args...)
 }
 
 func (l *SimpleLogger) Warn(format string, args ...interface{}) {
-	if l.level <= LogLevelWarn {
-		log.Printf("[WARN] "+format, args...)
-	}
+	l.Log(context.Background(), slog.LevelWarn, format, args...)
 }
 
 func (l *SimpleLogger) Error(format string, args ...interface{}) {
-	if l.level <= LogLevelError {
-		log.Printf("[ERROR] "+format, args...)
-	}
+	l.Log(context.Background(), slog.LevelError, format, args...)
 }
 
 // Command represents a state machine operation
@@ -772,18 +765,18 @@ func main() {
 
 	// Create Raft configuration
 	// Parse log level from command line
-	var level LogLevel
+	var level slog.Level
 	switch strings.ToLower(*logLevel) {
 	case "debug":
-		level = LogLevelDebug
+		level = slog.LevelDebug
 	case "info":
-		level = LogLevelInfo
+		level = slog.LevelInfo
 	case "warn":
-		level = LogLevelWarn
+		level = slog.LevelWarn
 	case "error":
-		level = LogLevelError
+		level = slog.LevelError
 	default:
-		level = LogLevelInfo
+		level = slog.LevelInfo
 	}
 	logger := NewSimpleLogger(level)
 	config := &raft.Config{

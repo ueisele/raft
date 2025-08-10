@@ -451,7 +451,7 @@ func testVoteGrantingAfterTimeout(t *testing.T) {
 	}
 
 	// Partition the leader to simulate it being unreachable
-	if err := cluster.PartitionNode(leaderID); err != nil {
+	if err := helpers.PartitionNode(cluster, leaderID); err != nil {
 		t.Fatalf("Failed to partition leader: %v", err)
 	}
 

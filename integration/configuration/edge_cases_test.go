@@ -117,7 +117,7 @@ func TestConfigChangeRollback(t *testing.T) {
 	}
 
 	// Partition the leader first
-	if err := cluster.PartitionNode(leaderID); err != nil {
+	if err := helpers.PartitionNode(cluster, leaderID); err != nil {
 		t.Fatalf("Failed to partition leader: %v", err)
 	}
 	t.Logf("Partitioned leader %d", leaderID)
@@ -184,7 +184,7 @@ func TestConfigChangeRollback(t *testing.T) {
 	}
 
 	// Heal partition
-	cluster.HealPartition()
+	helpers.HealPartition(cluster)
 }
 
 // TestConfigChangeWithNodeFailures tests configuration changes with node failures

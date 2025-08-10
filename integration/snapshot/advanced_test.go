@@ -29,7 +29,7 @@ func TestSnapshotDuringPartition(t *testing.T) {
 
 	// Partition node 4
 	partitionedNode := 4
-	if err := cluster.PartitionNode(partitionedNode); err != nil {
+	if err := helpers.PartitionNode(cluster, partitionedNode); err != nil {
 		t.Fatalf("Failed to partition node %d: %v", partitionedNode, err)
 	}
 
@@ -66,7 +66,7 @@ func TestSnapshotDuringPartition(t *testing.T) {
 	}, 2*time.Second, "snapshot creation in majority partition")
 
 	// Heal partition
-	cluster.HealPartition()
+	helpers.HealPartition(cluster)
 	t.Log("Healed partition")
 
 	// Wait for partitioned node to catch up
@@ -346,7 +346,7 @@ func TestSnapshotInstallationRaceConditions(t *testing.T) {
 
 	t.Logf("Partitioning nodes %v", partitionNodes)
 	for _, nodeID := range partitionNodes {
-		if err := cluster.PartitionNode(nodeID); err != nil {
+		if err := helpers.PartitionNode(cluster, nodeID); err != nil {
 			t.Fatalf("Failed to partition node %d: %v", nodeID, err)
 		}
 	}
@@ -583,7 +583,7 @@ func TestSnapshotTransmissionFailure(t *testing.T) {
 
 	// Partition follower
 	followerID := (leaderID + 1) % 3
-	if err := cluster.PartitionNode(followerID); err != nil {
+	if err := helpers.PartitionNode(cluster, followerID); err != nil {
 		t.Fatalf("Failed to partition node: %v", err)
 	}
 
@@ -596,13 +596,13 @@ func TestSnapshotTransmissionFailure(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	// Briefly heal and re-partition to simulate transmission failure
-	cluster.HealPartition()
+	helpers.HealPartition(cluster)
 	time.Sleep(100 * time.Millisecond)
-	cluster.PartitionNode(followerID) //nolint:errcheck // test partition setup
+	helpers.PartitionNode(cluster, followerID) //nolint:errcheck // test partition setup
 	time.Sleep(100 * time.Millisecond)
 
 	// Finally heal
-	cluster.HealPartition()
+	helpers.HealPartition(cluster)
 
 	// Wait for follower to catch up
 	time.Sleep(2 * time.Second)

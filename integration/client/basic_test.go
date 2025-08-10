@@ -277,7 +277,7 @@ func TestClientLinearizability(t *testing.T) {
 	t.Run("StaleReads", func(t *testing.T) {
 		// Partition a follower
 		isolatedFollower := (leaderID + 2) % 3
-		if err := cluster.PartitionNode(isolatedFollower); err != nil {
+		if err := helpers.PartitionNode(cluster, isolatedFollower); err != nil {
 			t.Fatalf("Failed to partition node: %v", err)
 		}
 		t.Logf("Partitioned follower %d", isolatedFollower)
@@ -309,7 +309,7 @@ func TestClientLinearizability(t *testing.T) {
 		}
 
 		// Heal partition
-		cluster.HealPartition()
+		helpers.HealPartition(cluster)
 
 		// Wait for follower to catch up
 		helpers.WaitForConditionWithProgress(t, func() (bool, string) {

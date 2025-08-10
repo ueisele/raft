@@ -205,7 +205,7 @@ func TestLogReplicationUnderPartitions(t *testing.T) {
 
 	// Partition the network
 	for _, minority := range minorityNodes {
-		if err := cluster.PartitionNode(minority); err != nil {
+		if err := helpers.PartitionNode(cluster, minority); err != nil {
 			t.Fatalf("Failed to partition node %d: %v", minority, err)
 		}
 	}
@@ -266,7 +266,7 @@ func TestLogReplicationUnderPartitions(t *testing.T) {
 	}
 
 	// Heal partition
-	cluster.HealPartition()
+	helpers.HealPartition(cluster)
 	t.Log("Healed partition")
 
 	// Wait for minority nodes to catch up

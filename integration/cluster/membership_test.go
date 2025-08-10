@@ -42,35 +42,11 @@ func TestBasicMembershipChange(t *testing.T) {
 	// Test 1: Add a new server
 	t.Log("Test 1: Adding server 3")
 
-	// Create new node
-	newConfig := &raft.Config{
-		ID:                 3,
-		Peers:              []int{}, // Will be updated when added
-		ElectionTimeoutMin: 150 * time.Millisecond,
-		ElectionTimeoutMax: 300 * time.Millisecond,
-		HeartbeatInterval:  50 * time.Millisecond,
-	}
-
-	// Use same transport type as cluster
-	transport := helpers.NewMultiNodeTransport(3, cluster.Registry.(*helpers.NodeRegistry))
-	newNode, err := raft.NewNode(newConfig, transport, nil, raft.NewMockStateMachine())
+	// Create new node using TestCluster's AddNode method
+	newNode, err := cluster.AddNode(3)
 	if err != nil {
-		t.Fatalf("Failed to create new node: %v", err)
+		t.Fatalf("Failed to add new node: %v", err)
 	}
-
-	// Register with cluster
-	cluster.Registry.(*helpers.NodeRegistry).Register(3, newNode.(raft.RPCHandler))
-
-	// Start new node
-	ctx := context.Background()
-	if err := newNode.Start(ctx); err != nil {
-		t.Fatalf("Failed to start new node: %v", err)
-	}
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		newNode.Stop(ctx) //nolint:errcheck // test cleanup
-	})
 
 	// Add server to configuration
 	err = leader.AddServer(3, "server-3", true)
@@ -79,7 +55,7 @@ func TestBasicMembershipChange(t *testing.T) {
 	}
 
 	// Wait for configuration to propagate
-	allNodes := append(cluster.Nodes, newNode)
+	allNodes := cluster.Nodes // Now includes the new node automatically
 	helpers.WaitForServers(t, allNodes, []int{0, 1, 2, 3}, 5*time.Second)
 
 	// Verify new server can participate
@@ -202,59 +178,16 @@ func TestConcurrentMembershipChanges(t *testing.T) {
 
 	leader := cluster.Nodes[leaderID]
 
-	// Create new nodes first (but don't start them yet)
-	node3Config := &raft.Config{
-		ID:                 3,
-		Peers:              []int{},
-		ElectionTimeoutMin: 150 * time.Millisecond,
-		ElectionTimeoutMax: 300 * time.Millisecond,
-		HeartbeatInterval:  50 * time.Millisecond,
-	}
-
-	node4Config := &raft.Config{
-		ID:                 4,
-		Peers:              []int{},
-		ElectionTimeoutMin: 150 * time.Millisecond,
-		ElectionTimeoutMax: 300 * time.Millisecond,
-		HeartbeatInterval:  50 * time.Millisecond,
-	}
-
-	transport3 := helpers.NewMultiNodeTransport(3, cluster.Registry.(*helpers.NodeRegistry))
-	transport4 := helpers.NewMultiNodeTransport(4, cluster.Registry.(*helpers.NodeRegistry))
-
-	node3, err := raft.NewNode(node3Config, transport3, nil, raft.NewMockStateMachine())
+	// Create new nodes using TestCluster's AddNode method
+	_, err = cluster.AddNode(3)
 	if err != nil {
-		t.Fatalf("Failed to create node 3: %v", err)
+		t.Fatalf("Failed to add node 3: %v", err)
 	}
 
-	node4, err := raft.NewNode(node4Config, transport4, nil, raft.NewMockStateMachine())
+	_, err = cluster.AddNode(4)
 	if err != nil {
-		t.Fatalf("Failed to create node 4: %v", err)
+		t.Fatalf("Failed to add node 4: %v", err)
 	}
-
-	// Register nodes with cluster
-	cluster.Registry.(*helpers.NodeRegistry).Register(3, node3.(raft.RPCHandler))
-	cluster.Registry.(*helpers.NodeRegistry).Register(4, node4.(raft.RPCHandler))
-
-	// Start the nodes
-	ctx := context.Background()
-	if err := node3.Start(ctx); err != nil {
-		t.Fatalf("Failed to start node 3: %v", err)
-	}
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		node3.Stop(ctx) //nolint:errcheck // test cleanup
-	})
-
-	if err := node4.Start(ctx); err != nil {
-		t.Fatalf("Failed to start node 4: %v", err)
-	}
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		node4.Stop(ctx) //nolint:errcheck // test cleanup
-	})
 
 	// Try to add two servers concurrently
 	errChan := make(chan error, 2)

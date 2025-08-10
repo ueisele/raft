@@ -355,7 +355,7 @@ func TestLoadWithNetworkPartitions(t *testing.T) {
 
 	// Create a partition (3 nodes vs 2 nodes)
 	t.Log("Creating network partition")
-	cluster.CreatePartition([]int{0, 1, 2}, []int{3, 4})
+	helpers.CreatePartition(cluster, []int{0, 1, 2}, []int{3, 4})
 
 	// Run under partition
 	time.Sleep(3 * time.Second)
@@ -363,7 +363,7 @@ func TestLoadWithNetworkPartitions(t *testing.T) {
 
 	// Heal partition
 	t.Log("Healing network partition")
-	cluster.HealPartition()
+	helpers.HealPartition(cluster)
 
 	// Run after healing
 	beforeHeal := atomic.LoadInt64(&successCount)

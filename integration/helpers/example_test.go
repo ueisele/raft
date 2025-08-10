@@ -74,32 +74,32 @@ func TestExampleMultiNode(t *testing.T) {
 func TestExampleClusterWithAutoStart(t *testing.T) {
 	// Create a cluster that automatically starts all nodes
 	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
-	
+
 	// Since nodes are auto-started, we can immediately wait for a leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
 	if err != nil {
 		t.Fatalf("No leader elected: %v", err)
 	}
-	
+
 	t.Logf("Leader elected: node %d", leaderID)
-	
+
 	// Submit a command
 	index, term, err := cluster.SubmitCommand("auto-started-command")
 	if err != nil {
 		t.Fatalf("Failed to submit: %v", err)
 	}
-	
+
 	// Wait for replication
 	cluster.WaitForCommitIndex(index, time.Second)
 	t.Logf("Command committed at index %d, term %d", index, term)
-	
+
 	// Cluster automatically stops when test ends!
 }
 
 // Example showing the before and after difference
 func TestComparisonOldVsNew(t *testing.T) {
 	t.Run("Old way - manual cleanup", func(t *testing.T) {
-		// OLD WAY - lots of boilerplate
+		// OLD WAY - lots of manual setup, cleanup, and waiting boilerplate
 		config := &raft.Config{
 			ID:                 0,
 			Peers:              []int{0},
@@ -117,30 +117,68 @@ func TestComparisonOldVsNew(t *testing.T) {
 			t.Fatalf("Failed to create node: %v", err)
 		}
 
-		// Must remember to clean up
+		// Must remember to clean up manually
 		t.Cleanup(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			node.Stop(ctx) //nolint:errcheck
 		})
 
+		// Must manually start the node
 		ctx := context.Background()
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start: %v", err)
 		}
 
-		// ... test logic ...
+		// Must manually wait for leader with custom logic
+		timeout := 2 * time.Second
+		deadline := time.Now().Add(timeout)
+		for time.Now().Before(deadline) {
+			if node.IsLeader() {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if !node.IsLeader() {
+			t.Fatal("Node failed to become leader")
+		}
+
+		// Submit a command and manually wait for commit
+		index, _, isLeader := node.Submit("test-command")
+		if !isLeader {
+			t.Fatal("Node is not leader")
+		}
+
+		// Manually poll for commit
+		commitDeadline := time.Now().Add(time.Second)
+		for time.Now().Before(commitDeadline) {
+			if node.GetCommitIndex() >= index {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if node.GetCommitIndex() < index {
+			t.Fatal("Command not committed")
+		}
+
+		t.Logf("OLD WAY: Command committed at index %d", index)
 	})
 
 	t.Run("New way - automatic cleanup", func(t *testing.T) {
-		// NEW WAY - clean and simple!
+		// NEW WAY - clean and simple with helper methods!
 		node := helpers.CreateStandaloneTestNode(t, helpers.WithAutoStart())
 
-		// That's it! Node starts and stops automatically.
-		// Just use it:
+		// Wait for leadership - one line with timeout
 		node.WaitForLeader(time.Second)
 
-		// ... test logic ...
-		// No cleanup needed!
+		// Submit command and wait for commit - clean and simple
+		index, _, err := node.Submit("test-command")
+		if err != nil {
+			t.Fatalf("Failed to submit: %v", err)
+		}
+		node.WaitForCommitIndex(index, time.Second)
+
+		t.Logf("NEW WAY: Command committed at index %d", index)
+		// No manual cleanup needed - happens automatically!
 	})
 }

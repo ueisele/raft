@@ -194,7 +194,7 @@ func TestLeaderRecoveryAfterBriefPartition(t *testing.T) {
 	}
 
 	// Brief partition of leader (less than election timeout)
-	if err := cluster.PartitionNode(leaderID); err != nil {
+	if err := helpers.PartitionNode(cluster, leaderID); err != nil {
 		t.Fatalf("Failed to partition leader: %v", err)
 	}
 	t.Log("Briefly partitioned leader")
@@ -203,7 +203,7 @@ func TestLeaderRecoveryAfterBriefPartition(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Heal partition quickly
-	cluster.HealPartition()
+	helpers.HealPartition(cluster)
 	t.Log("Healed partition")
 
 	// Give time to stabilize

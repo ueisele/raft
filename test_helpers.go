@@ -1,7 +1,9 @@
 package raft
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -179,30 +181,46 @@ func (t *MockTransport) ClearCalls() {
 
 // ========== Test loggers ==========
 
-// TestLogger provides a simple logger that outputs to the test logger
+// TestLogger implements the raft.Logger interface with a configurable log level that outputs to the test logger
 type TestLogger struct {
-	t *testing.T
+	t     *testing.T
+	level slog.Level
 }
 
-// NewTestLogger creates a new test logger
+// NewTestLogger creates a logger with the specified level
 func NewTestLogger(t *testing.T) *TestLogger {
-	return &TestLogger{t: t}
+	return NewTestLoggerWithLevel(t, slog.LevelDebug)
+}
+
+// NewTestLoggerWithLevel creates a logger with the specified level
+func NewTestLoggerWithLevel(t *testing.T, level slog.Level) *TestLogger {
+	return &TestLogger{t: t, level: level}
+}
+
+func (l *TestLogger) Enabled(_ context.Context, level slog.Level) bool {
+	return level <= l.level
+}
+
+func (l *TestLogger) Log(ctx context.Context, level slog.Level, msg string, args ...any) {
+	if l.Enabled(ctx, level) {
+		l.t.Logf("[%s] %s", level, fmt.Sprintf(msg, args...))
+	}
 }
 
 func (l *TestLogger) Debug(format string, args ...interface{}) {
-	l.t.Logf("[DEBUG] "+format, args...)
+	l.Log(context.Background(), slog.LevelDebug, format, args...)
 }
 
 func (l *TestLogger) Info(format string, args ...interface{}) {
-	l.t.Logf("[INFO] "+format, args...)
+	l.Log(context.Background(), slog.LevelInfo, format, args...)
 }
 
 func (l *TestLogger) Warn(format string, args ...interface{}) {
-	l.t.Logf("[WARN] "+format, args...)
+	l.Log(context.Background(), slog.LevelWarn, format, args...)
 }
 
 func (l *TestLogger) Error(format string, args ...interface{}) {
-	l.t.Errorf("[ERROR] "+format, args...)
+	l.Log(context.Background(), slog.LevelError, format, args...)
 }
 
 // MockPersistence is a mock implementation of Persistence for testing

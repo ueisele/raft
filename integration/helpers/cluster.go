@@ -3,19 +3,24 @@ package helpers
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/ueisele/raft"
+	jsonpersistence "github.com/ueisele/raft/persistence"
+	"github.com/ueisele/raft/persistence/json"
 )
 
 // TestCluster manages a cluster of Raft nodes for testing
 type TestCluster struct {
+	mu            sync.RWMutex // Protects Nodes, Transports, Persistences, StateMachines slices
 	Nodes         []raft.Node
 	Transports    []raft.Transport
 	Persistences  []raft.Persistence
 	StateMachines []raft.StateMachine
-	Registry      interface{} // Can be NodeRegistry, DebugNodeRegistry, or PartitionRegistry
+	Registry      *NodeRegistry // Single registry type for all transports
+	config        clusterConfig
 	t             *testing.T
 	ctx           context.Context
 	cancel        context.CancelFunc
@@ -28,13 +33,20 @@ type clusterConfig struct {
 	electionTimeoutMin time.Duration
 	electionTimeoutMax time.Duration
 	heartbeatInterval  time.Duration
-	useDebugTransport  bool
-	usePartitionable   bool
-	logger             raft.Logger
-	persistence        []raft.Persistence
-	stateMachines      []raft.StateMachine
-	maxLogSize         int
-	autoStart          bool
+
+	maxLogSize int
+
+	logger raft.Logger
+
+	// Factory functions for creating components per node
+	transportFactory    func(nodeID int, registry *NodeRegistry) (raft.Transport, error)
+	persistenceFactory  func(nodeID int) (raft.Persistence, error)
+	stateMachineFactory func(nodeID int) (raft.StateMachine, error)
+
+	// Decorators for transport
+	transportDecorators []func(nodeID int, wrapped raft.Transport) raft.Transport
+
+	autoStart bool
 }
 
 // WithElectionTimeout sets the election timeout range
@@ -52,33 +64,70 @@ func WithHeartbeatInterval(interval time.Duration) ClusterOption {
 	}
 }
 
-// WithDebugTransport enables debug transport with logging
-func WithDebugTransport(logger raft.Logger) ClusterOption {
+// WithLogger sets the logger for nodes
+func WithLogger(logger raft.Logger) ClusterOption {
 	return func(c *clusterConfig) {
-		c.useDebugTransport = true
 		c.logger = logger
 	}
 }
 
-// WithPartitionableTransport enables partitionable transport
-func WithPartitionableTransport() ClusterOption {
+// WithPersistenceFactory sets a factory for creating persistence per node
+func WithPersistenceFactory(factory func(nodeID int) (raft.Persistence, error)) ClusterOption {
 	return func(c *clusterConfig) {
-		c.usePartitionable = true
+		c.persistenceFactory = factory
 	}
 }
 
-// WithPersistence sets persistence for nodes
+// WithStateMachineFactory sets a factory for creating state machines per node
+func WithStateMachineFactory(factory func(nodeID int) (raft.StateMachine, error)) ClusterOption {
+	return func(c *clusterConfig) {
+		c.stateMachineFactory = factory
+	}
+}
+
+// WithMockPersistence uses mock persistence for all nodes
+func WithMockPersistence() ClusterOption {
+	return WithPersistenceFactory(func(nodeID int) (raft.Persistence, error) {
+		return raft.NewMockPersistence(), nil
+	})
+}
+
+// WithMockStateMachine uses mock state machine for all nodes
+func WithMockStateMachine() ClusterOption {
+	return WithStateMachineFactory(func(nodeID int) (raft.StateMachine, error) {
+		return raft.NewMockStateMachine(), nil
+	})
+}
+
+// WithJSONPersistence uses JSON persistence with a base directory
+func WithJSONPersistence(baseDir string) ClusterOption {
+	return WithPersistenceFactory(func(nodeID int) (raft.Persistence, error) {
+		nodeDir := fmt.Sprintf("%s/node-%d", baseDir, nodeID)
+		return json.NewJSONPersistence(&jsonpersistence.Config{
+			DataDir:  nodeDir,
+			ServerID: nodeID,
+		})
+	})
+}
+
+// Backward compatibility: convert old-style persistence array to factory
 func WithPersistence(persistence []raft.Persistence) ClusterOption {
-	return func(c *clusterConfig) {
-		c.persistence = persistence
-	}
+	return WithPersistenceFactory(func(nodeID int) (raft.Persistence, error) {
+		if nodeID < len(persistence) {
+			return persistence[nodeID], nil
+		}
+		return raft.NewMockPersistence(), nil
+	})
 }
 
-// WithStateMachines sets state machines for nodes
+// Backward compatibility: convert old-style state machine array to factory
 func WithStateMachines(stateMachines []raft.StateMachine) ClusterOption {
-	return func(c *clusterConfig) {
-		c.stateMachines = stateMachines
-	}
+	return WithStateMachineFactory(func(nodeID int) (raft.StateMachine, error) {
+		if nodeID < len(stateMachines) {
+			return stateMachines[nodeID], nil
+		}
+		return raft.NewMockStateMachine(), nil
+	})
 }
 
 // WithMaxLogSize sets the max log size before snapshot
@@ -95,16 +144,30 @@ func WithClusterAutoStart() ClusterOption {
 	}
 }
 
+// WithTransportFactory sets a custom transport factory
+func WithTransportFactory(factory func(nodeID int, registry *NodeRegistry) (raft.Transport, error)) ClusterOption {
+	return func(c *clusterConfig) {
+		c.transportFactory = factory
+	}
+}
+
+// WithTransportDecorators adds decorators to wrap the base transport
+func WithTransportDecorators(decorators ...func(nodeID int, wrapped raft.Transport) raft.Transport) ClusterOption {
+	return func(c *clusterConfig) {
+		c.transportDecorators = append(c.transportDecorators, decorators...)
+	}
+}
+
 // NewTestCluster creates a new test cluster
 func NewTestCluster(t *testing.T, size int, opts ...ClusterOption) *TestCluster {
 	// Apply options
-	config := &clusterConfig{
+	config := clusterConfig{
 		electionTimeoutMin: 150 * time.Millisecond,
 		electionTimeoutMax: 300 * time.Millisecond,
 		heartbeatInterval:  50 * time.Millisecond,
 	}
 	for _, opt := range opts {
-		opt(config)
+		opt(&config)
 	}
 
 	// Create context
@@ -112,27 +175,18 @@ func NewTestCluster(t *testing.T, size int, opts ...ClusterOption) *TestCluster 
 
 	// Create cluster
 	cluster := &TestCluster{
-		Nodes:         make([]raft.Node, size),
-		Transports:    make([]raft.Transport, size),
-		Persistences:  make([]raft.Persistence, size),
-		StateMachines: make([]raft.StateMachine, size),
+		Nodes:         make([]raft.Node, 0, size),
+		Transports:    make([]raft.Transport, 0, size),
+		Persistences:  make([]raft.Persistence, 0, size),
+		StateMachines: make([]raft.StateMachine, 0, size),
+		config:        config,
 		t:             t,
 		ctx:           ctx,
 		cancel:        cancel,
 	}
 
-	// Create registry based on transport type
-	var registry interface{}
-	if config.usePartitionable {
-		registry = NewPartitionRegistry()
-		cluster.Registry = registry
-	} else if config.useDebugTransport {
-		registry = NewDebugNodeRegistry(config.logger)
-		cluster.Registry = registry
-	} else {
-		registry = NewNodeRegistry()
-		cluster.Registry = registry
-	}
+	// Create registry
+	cluster.Registry = NewNodeRegistryWithLogger(config.logger)
 
 	// Create nodes
 	peers := make([]int, size)
@@ -141,66 +195,9 @@ func NewTestCluster(t *testing.T, size int, opts ...ClusterOption) *TestCluster 
 	}
 
 	for i := 0; i < size; i++ {
-		// Create config
-		nodeConfig := &raft.Config{
-			ID:                 i,
-			Peers:              peers,
-			ElectionTimeoutMin: config.electionTimeoutMin,
-			ElectionTimeoutMax: config.electionTimeoutMax,
-			HeartbeatInterval:  config.heartbeatInterval,
-		}
-
-		if config.logger != nil {
-			nodeConfig.Logger = config.logger
-		}
-
-		if config.maxLogSize > 0 {
-			nodeConfig.MaxLogSize = config.maxLogSize
-		}
-
-		// Create transport
-		var transport raft.Transport
-		if config.usePartitionable {
-			transport = NewPartitionableTransport(i, registry.(*PartitionRegistry))
-		} else if config.useDebugTransport {
-			transport = NewDebugTransport(i, registry.(*DebugNodeRegistry), config.logger)
-		} else {
-			transport = NewMultiNodeTransport(i, registry.(*NodeRegistry))
-		}
-		cluster.Transports[i] = transport
-
-		// Get persistence and state machine
-		var persistence raft.Persistence
-		if config.persistence != nil && i < len(config.persistence) {
-			persistence = config.persistence[i]
-		} else {
-			persistence = raft.NewMockPersistence()
-		}
-		cluster.Persistences[i] = persistence
-
-		var stateMachine raft.StateMachine
-		if config.stateMachines != nil && i < len(config.stateMachines) {
-			stateMachine = config.stateMachines[i]
-		} else {
-			stateMachine = raft.NewMockStateMachine()
-		}
-		cluster.StateMachines[i] = stateMachine
-
-		// Create node
-		node, err := raft.NewNode(nodeConfig, transport, persistence, stateMachine)
+		_, err := cluster.addNode(i, peers, false)
 		if err != nil {
 			t.Fatalf("Failed to create node %d: %v", i, err)
-		}
-		cluster.Nodes[i] = node
-
-		// Register with registry
-		switch r := registry.(type) {
-		case *NodeRegistry:
-			r.Register(i, node.(raft.RPCHandler))
-		case *DebugNodeRegistry:
-			r.Register(i, node.(raft.RPCHandler))
-		case *PartitionRegistry:
-			r.Register(i, node.(raft.RPCHandler))
 		}
 	}
 
@@ -221,6 +218,9 @@ func NewTestCluster(t *testing.T, size int, opts ...ClusterOption) *TestCluster 
 
 // Start starts all nodes in the cluster
 func (c *TestCluster) Start() error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	for i, node := range c.Nodes {
 		if err := node.Start(c.ctx); err != nil {
 			return fmt.Errorf("failed to start node %d: %w", i, err)
@@ -231,6 +231,9 @@ func (c *TestCluster) Start() error {
 
 // Stop stops all nodes in the cluster
 func (c *TestCluster) Stop() {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	c.cancel()
 	// Use a timeout context for stopping nodes
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -242,79 +245,6 @@ func (c *TestCluster) Stop() {
 			c.t.Logf("Warning: failed to stop node %d: %v", i, err)
 		}
 	}
-}
-
-// WaitForLeader waits for a leader to be elected and returns its ID
-func (c *TestCluster) WaitForLeader(timeout time.Duration) (int, error) {
-	c.t.Helper()
-	leaderID := WaitForLeader(c.t, c.Nodes, timeout)
-	return leaderID, nil
-}
-
-// GetLeader returns the current leader node and its ID
-func (c *TestCluster) GetLeader() (raft.Node, int) {
-	for i, node := range c.Nodes {
-		if node.IsLeader() {
-			return node, i
-		}
-	}
-	return nil, -1
-}
-
-// PartitionNode isolates a node from the cluster (requires partitionable transport)
-func (c *TestCluster) PartitionNode(nodeID int) error {
-	transport, ok := c.Transports[nodeID].(*PartitionableTransport)
-	if !ok {
-		return fmt.Errorf("node %d does not have partitionable transport", nodeID)
-	}
-	transport.BlockAll()
-
-	// Also block this node from all other nodes
-	for i, t := range c.Transports {
-		if i != nodeID {
-			if pt, ok := t.(*PartitionableTransport); ok {
-				pt.Block(nodeID)
-			}
-		}
-	}
-	return nil
-}
-
-// HealPartition removes all network partitions
-func (c *TestCluster) HealPartition() {
-	for _, t := range c.Transports {
-		if pt, ok := t.(*PartitionableTransport); ok {
-			pt.UnblockAll()
-		}
-	}
-}
-
-// CreatePartition creates a network partition between two groups
-func (c *TestCluster) CreatePartition(group1, group2 []int) {
-	// Block communication from group1 to group2
-	for _, id1 := range group1 {
-		if pt, ok := c.Transports[id1].(*PartitionableTransport); ok {
-			for _, id2 := range group2 {
-				pt.Block(id2)
-			}
-		}
-	}
-
-	// Block communication from group2 to group1
-	for _, id2 := range group2 {
-		if pt, ok := c.Transports[id2].(*PartitionableTransport); ok {
-			for _, id1 := range group1 {
-				pt.Block(id1)
-			}
-		}
-	}
-}
-
-// WaitForCommitIndex waits for all nodes to reach at least the specified commit index
-func (c *TestCluster) WaitForCommitIndex(index int, timeout time.Duration) error {
-	c.t.Helper()
-	WaitForCommitIndex(c.t, c.Nodes, index, timeout)
-	return nil
 }
 
 // SubmitCommand submits a command to the leader
@@ -332,21 +262,30 @@ func (c *TestCluster) SubmitCommand(command interface{}) (int, int, error) {
 	return index, term, nil
 }
 
+// GetLeader returns the current leader node and its ID
+func (c *TestCluster) GetLeader() (raft.Node, int) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	for i, node := range c.Nodes {
+		if node.IsLeader() {
+			return node, i
+		}
+	}
+	return nil, -1
+}
+
 // GetLeaderNode returns the current leader node (nil if no leader)
 func (c *TestCluster) GetLeaderNode() raft.Node {
 	leader, _ := c.GetLeader()
 	return leader
 }
 
-// WaitForStableCluster waits for the cluster to stabilize with a leader
-func (c *TestCluster) WaitForStableCluster(timeout time.Duration) {
-	c.t.Helper()
-	// Wait for a leader to be elected
-	WaitForLeader(c.t, c.Nodes, timeout)
-}
-
 // GetPersistence returns the persistence for a specific node
 func (c *TestCluster) GetPersistence(nodeID int) raft.Persistence {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	if nodeID >= 0 && nodeID < len(c.Persistences) {
 		return c.Persistences[nodeID]
 	}
@@ -355,10 +294,184 @@ func (c *TestCluster) GetPersistence(nodeID int) raft.Persistence {
 
 // GetStateMachine returns the state machine for a specific node
 func (c *TestCluster) GetStateMachine(nodeID int) *raft.MockStateMachine {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	if nodeID >= 0 && nodeID < len(c.StateMachines) {
 		if sm, ok := c.StateMachines[nodeID].(*raft.MockStateMachine); ok {
 			return sm
 		}
 	}
 	return nil
+}
+
+// AddNode dynamically adds a new node to the cluster.
+// The node is created with the given ID and started automatically if auto start has been enabled on the cluster.
+// Returns the created node.
+func (c *TestCluster) AddNode(nodeID int) (raft.Node, error) {
+	var peers []int // Empty initially, will be updated via AddServer
+	return c.addNode(nodeID, peers, c.config.autoStart)
+}
+
+// AddNode dynamically adds a new node to the cluster.
+// The node is created with the given ID and given peers.
+// Returns the created node.
+func (c *TestCluster) addNode(nodeID int, peers []int, autoStart bool) (raft.Node, error) {
+	// Create node config with empty peers (will be updated when added to cluster)
+	nodeConfig := &raft.Config{
+		ID:                 nodeID,
+		Peers:              peers,
+		ElectionTimeoutMin: c.config.electionTimeoutMin,
+		ElectionTimeoutMax: c.config.electionTimeoutMax,
+		HeartbeatInterval:  c.config.heartbeatInterval,
+	}
+
+	if c.config.logger != nil {
+		nodeConfig.Logger = c.config.logger
+	}
+
+	if c.config.maxLogSize > 0 {
+		nodeConfig.MaxLogSize = c.config.maxLogSize
+	}
+
+	// Create base transport
+	var transport raft.Transport
+	var err error
+	// Use custom factory if provided
+	if c.config.transportFactory != nil {
+		transport, err = c.config.transportFactory(nodeID, c.Registry)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create transport for node %d: %w", nodeID, err)
+		}
+	} else {
+		// Create base transport
+		transport = NewMultiNodeTransport(nodeID, c.Registry)
+	}
+	// Apply any additional decorators from options
+	for _, decorator := range c.config.transportDecorators {
+		transport = decorator(nodeID, transport)
+	}
+
+	// Create persistence using factory
+	var persistence raft.Persistence
+	if c.config.persistenceFactory != nil {
+		persistence, err = c.config.persistenceFactory(nodeID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create persistence for node %d: %w", nodeID, err)
+		}
+	} else {
+		persistence = raft.NewMockPersistence()
+	}
+
+	// Create state machine using factory
+	var stateMachine raft.StateMachine
+	if c.config.stateMachineFactory != nil {
+		stateMachine, err = c.config.stateMachineFactory(nodeID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create state machine for node %d: %w", nodeID, err)
+		}
+	} else {
+		stateMachine = raft.NewMockStateMachine()
+	}
+
+	// Create node
+	node, err := raft.NewNode(nodeConfig, transport, persistence, stateMachine)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create node %d: %w", nodeID, err)
+	}
+
+	// Expand cluster's slices to include this node
+	// Protected by mutex to prevent concurrent modifications
+	c.mu.Lock()
+	c.Registry.Register(nodeID, node.(raft.RPCHandler))
+	c.Nodes = append(c.Nodes, node)
+	c.Transports = append(c.Transports, transport)
+	c.Persistences = append(c.Persistences, persistence)
+	c.StateMachines = append(c.StateMachines, stateMachine)
+	c.mu.Unlock()
+
+	// Start the node
+	if autoStart {
+		if err := node.Start(c.ctx); err != nil {
+			return nil, fmt.Errorf("failed to start node %d: %w", nodeID, err)
+		}
+	}
+
+	return node, nil
+}
+
+// RemoveNode removes a node from the cluster's tracking (does not stop it)
+// This is useful after calling RemoveServer on the Raft cluster
+func (c *TestCluster) RemoveNode(nodeID int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Unregister the node from the registry
+	c.Registry.Unregister(nodeID)
+
+	// Find and remove the node from our tracking
+	// Note: We don't stop the node here - that should be done separately
+	// This just removes it from the cluster's node list
+	newNodes := make([]raft.Node, 0, len(c.Nodes))
+	newTransports := make([]raft.Transport, 0, len(c.Transports))
+	newPersistences := make([]raft.Persistence, 0, len(c.Persistences))
+	newStateMachines := make([]raft.StateMachine, 0, len(c.StateMachines))
+
+	for i, node := range c.Nodes {
+		// Check if this is the node to remove
+		// We need to get the node's ID from its config
+		if node != nil {
+			// Try to identify the node by checking if it matches the nodeID
+			// This is a bit tricky since we don't have direct access to the ID
+			// We'll keep all nodes except the one at the position matching nodeID
+			// This assumes nodes are added in order, which is true for our test setup
+			if i != nodeID {
+				newNodes = append(newNodes, node)
+				if i < len(c.Transports) {
+					newTransports = append(newTransports, c.Transports[i])
+				}
+				if i < len(c.Persistences) {
+					newPersistences = append(newPersistences, c.Persistences[i])
+				}
+				if i < len(c.StateMachines) {
+					newStateMachines = append(newStateMachines, c.StateMachines[i])
+				}
+			}
+		}
+	}
+
+	c.Nodes = newNodes
+	c.Transports = newTransports
+	c.Persistences = newPersistences
+	c.StateMachines = newStateMachines
+}
+
+// WaitForLeader waits for a leader to be elected and returns its ID
+func (c *TestCluster) WaitForLeader(timeout time.Duration) (int, error) {
+	c.t.Helper()
+	c.mu.RLock()
+	nodes := c.Nodes
+	c.mu.RUnlock()
+	leaderID := WaitForLeader(c.t, nodes, timeout)
+	return leaderID, nil
+}
+
+// WaitForCommitIndex waits for all nodes to reach at least the specified commit index
+func (c *TestCluster) WaitForCommitIndex(index int, timeout time.Duration) error {
+	c.t.Helper()
+	c.mu.RLock()
+	nodes := c.Nodes
+	c.mu.RUnlock()
+	WaitForCommitIndex(c.t, nodes, index, timeout)
+	return nil
+}
+
+// WaitForStableCluster waits for the cluster to stabilize with a leader
+func (c *TestCluster) WaitForStableCluster(timeout time.Duration) {
+	c.t.Helper()
+	// Wait for a leader to be elected
+	c.mu.RLock()
+	nodes := c.Nodes
+	c.mu.RUnlock()
+	WaitForLeader(c.t, nodes, timeout)
 }

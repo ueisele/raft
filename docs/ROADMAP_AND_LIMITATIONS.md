@@ -46,6 +46,16 @@ This document consolidates all known limitations, unimplemented features, and fu
 - Doesn't actually execute the promotion
 - Requires manual intervention to complete
 
+### 6. Concurrent Configuration Changes Prevention
+**Status**: Not implemented  
+**Impact**: Medium - violates Raft safety guarantees  
+**Details**:
+- Multiple configuration changes can be submitted concurrently to the log
+- Should only allow one configuration change at a time (per Raft paper Section 6)
+- Leader should check for uncommitted configuration changes before allowing new ones
+- Current implementation allows both AddServer calls to succeed when made concurrently
+- **Test Reference**: `TestConcurrentMembershipChanges` in `integration/cluster/membership_test.go` is skipped due to this limitation
+
 ## Performance Limitations
 
 ### Current Limitations
@@ -141,6 +151,7 @@ This document consolidates all known limitations, unimplemented features, and fu
 2. Add gRPC transport option
 3. Improve replication performance under load
 4. Add authentication mechanism
+5. Fix concurrent configuration changes to prevent multiple pending changes
 
 ### Low Priority
 1. Joint consensus (complexity vs benefit trade-off)

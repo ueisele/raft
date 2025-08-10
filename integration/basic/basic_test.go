@@ -7,10 +7,28 @@ import (
 	"time"
 
 	"github.com/ueisele/raft"
+	"github.com/ueisele/raft/integration/helpers"
 )
 
 // TestBasicNodeCreation tests creating a single node
 func TestBasicNodeCreation(t *testing.T) {
+	// Create a standalone node using TestNode helper - automatic cleanup!
+	node := helpers.CreateStandaloneTestNode(t, helpers.WithAutoStart())
+
+	// Wait for the single node to become leader
+	// Single node should become leader quickly (within a few election timeouts)
+	node.WaitForLeader(400 * time.Millisecond)
+
+	// Verify it became leader
+	term, isLeader := node.Node.GetState()
+	t.Logf("Node is leader: term=%d, isLeader=%v", term, isLeader)
+
+	// Node will automatically stop when test ends - no manual cleanup needed!
+}
+
+// TestBasicNodeCreationOldWay shows the old manual approach for comparison
+func TestBasicNodeCreationOldWay(t *testing.T) {
+	// OLD WAY - lots of manual setup and cleanup
 	// Create configuration
 	config := &raft.Config{
 		ID:                 1,
@@ -18,6 +36,7 @@ func TestBasicNodeCreation(t *testing.T) {
 		ElectionTimeoutMin: 100 * time.Millisecond,
 		ElectionTimeoutMax: 200 * time.Millisecond,
 		HeartbeatInterval:  50 * time.Millisecond,
+		Logger:             raft.NewTestLogger(t),
 	}
 
 	// Create simple in-memory transport
