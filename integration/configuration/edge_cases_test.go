@@ -20,6 +20,7 @@ func TestSimultaneousConfigChanges(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
+	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader election
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -76,6 +77,7 @@ func TestConfigChangeRollback(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
+	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -206,6 +208,7 @@ func TestConfigChangeWithNodeFailures(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
+	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -320,6 +323,7 @@ func TestJointConsensusEdgeCases(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
+	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -377,6 +381,7 @@ func TestMaximumClusterSize(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
+	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -455,6 +460,7 @@ func TestConfigChangeTimeout(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
+	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)

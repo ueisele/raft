@@ -18,6 +18,7 @@ func TestLeaderElection(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
+	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader election
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -55,6 +56,7 @@ func TestLeaderFailover(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
+	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for initial leader
 	initialLeaderID, err := cluster.WaitForLeader(2 * time.Second)

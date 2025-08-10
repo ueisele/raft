@@ -18,6 +18,7 @@ func TestLogReplication(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
+	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -76,6 +77,7 @@ func TestReplicationWithFollowerFailure(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
+	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -140,6 +142,7 @@ func TestReplicationConsistency(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
+	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
