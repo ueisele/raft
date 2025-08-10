@@ -31,14 +31,14 @@ func TestLogReplicationWithFailures(t *testing.T) {
 			ElectionTimeoutMin: 150 * time.Millisecond,
 			ElectionTimeoutMax: 300 * time.Millisecond,
 			HeartbeatInterval:  50 * time.Millisecond,
-			Logger:             raft.NewSafeTestLogger(t),
+			Logger:             raft.NewTestLogger(t),
 		}
 
 		transport := &failureTransport{
 			id:          i,
 			registry:    registry,
 			failureRate: 0.1, // 10% failure rate
-			logger:      raft.NewSafeTestLogger(t),
+			logger:      raft.NewTestLogger(t),
 		}
 		transports[i] = transport
 
@@ -61,7 +61,8 @@ func TestLogReplicationWithFailures(t *testing.T) {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
-		defer node.Stop() //nolint:errcheck // test cleanup
+		nodeCopy := node                      // Capture loop variable
+		t.Cleanup(func() { nodeCopy.Stop() }) //nolint:errcheck // test cleanup
 	}
 
 	// Wait for leader election
@@ -356,7 +357,7 @@ func TestReplicationWithSlowFollowers(t *testing.T) {
 			ElectionTimeoutMin: 150 * time.Millisecond,
 			ElectionTimeoutMax: 300 * time.Millisecond,
 			HeartbeatInterval:  50 * time.Millisecond,
-			Logger:             raft.NewSafeTestLogger(t),
+			Logger:             raft.NewTestLogger(t),
 		}
 
 		// Make some followers slow
@@ -389,7 +390,8 @@ func TestReplicationWithSlowFollowers(t *testing.T) {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
-		defer node.Stop() //nolint:errcheck // test cleanup
+		nodeCopy := node                      // Capture loop variable
+		t.Cleanup(func() { nodeCopy.Stop() }) //nolint:errcheck // test cleanup
 	}
 
 	// Wait for leader

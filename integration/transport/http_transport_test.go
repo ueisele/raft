@@ -102,14 +102,11 @@ func TestHTTPTransportBasicCluster(t *testing.T) {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
+		nodeCopy := node // Capture loop variable
+		t.Cleanup(func() {
+			nodeCopy.Stop() //nolint:errcheck // test cleanup
+		})
 	}
-
-	// Clean up
-	defer func() {
-		for _, node := range nodes {
-			node.Stop()
-		}
-	}()
 
 	// Wait for leader election
 	time.Sleep(1 * time.Second)
@@ -213,14 +210,11 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
+		nodeCopy := node // Capture loop variable
+		t.Cleanup(func() {
+			nodeCopy.Stop() //nolint:errcheck // test cleanup
+		})
 	}
-
-	// Clean up
-	defer func() {
-		for _, node := range nodes {
-			node.Stop()
-		}
-	}()
 
 	// Wait for leader election
 	time.Sleep(1 * time.Second)
@@ -351,14 +345,11 @@ func TestHTTPTransportHighLoad(t *testing.T) {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
+		nodeCopy := node // Capture loop variable
+		t.Cleanup(func() {
+			nodeCopy.Stop() //nolint:errcheck // test cleanup
+		})
 	}
-
-	// Clean up
-	defer func() {
-		for _, node := range nodes {
-			node.Stop()
-		}
-	}()
 
 	// Wait for leader election
 	time.Sleep(1 * time.Second)

@@ -64,7 +64,7 @@ func testNewVotingServerSafety(t *testing.T) {
 			ElectionTimeoutMin: 100 * time.Millisecond,
 			ElectionTimeoutMax: 200 * time.Millisecond,
 			HeartbeatInterval:  30 * time.Millisecond,
-			Logger:             raft.NewSafeTestLogger(t),
+			Logger:             raft.NewTestLogger(t),
 		}
 
 		transport := helpers.NewPartitionableTransport(i, registry)
@@ -227,7 +227,7 @@ func testImmediateVotingDanger(t *testing.T) {
 			ElectionTimeoutMin: 150 * time.Millisecond,
 			ElectionTimeoutMax: 300 * time.Millisecond,
 			HeartbeatInterval:  50 * time.Millisecond,
-			Logger:             raft.NewSafeTestLogger(t),
+			Logger:             raft.NewTestLogger(t),
 		}
 
 		transport := helpers.NewMultiNodeTransport(i, registry)

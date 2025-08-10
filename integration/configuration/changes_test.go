@@ -14,7 +14,7 @@ import (
 func TestBasicConfigurationChange(t *testing.T) {
 	// Create 4 nodes but only include 3 in initial configuration
 	nodes := make([]raft.Node, 4)
-	registry := helpers.NewDebugNodeRegistry(raft.NewSafeTestLogger(t))
+	registry := helpers.NewDebugNodeRegistry(raft.NewTestLogger(t))
 
 	for i := 0; i < 4; i++ {
 		// Initial configuration only includes nodes 0, 1, 2
@@ -26,10 +26,10 @@ func TestBasicConfigurationChange(t *testing.T) {
 			ElectionTimeoutMin: 150 * time.Millisecond,
 			ElectionTimeoutMax: 300 * time.Millisecond,
 			HeartbeatInterval:  50 * time.Millisecond,
-			Logger:             raft.NewSafeTestLogger(t),
+			Logger:             raft.NewTestLogger(t),
 		}
 
-		transport := helpers.NewDebugTransport(i, registry, raft.NewSafeTestLogger(t))
+		transport := helpers.NewDebugTransport(i, registry, raft.NewTestLogger(t))
 
 		stateMachine := raft.NewMockStateMachine()
 
@@ -48,7 +48,11 @@ func TestBasicConfigurationChange(t *testing.T) {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
-		defer node.Stop() //nolint:errcheck // test cleanup
+		// Use t.Cleanup instead of defer to ensure test is still active during cleanup
+		nodeCopy := node // Capture loop variable
+		t.Cleanup(func() {
+			nodeCopy.Stop() //nolint:errcheck // test cleanup
+		})
 	}
 
 	// Wait for leader election

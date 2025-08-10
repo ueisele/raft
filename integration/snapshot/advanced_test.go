@@ -163,7 +163,7 @@ func TestSnapshotOfSnapshotIndex(t *testing.T) {
 		ElectionTimeoutMin: 150 * time.Millisecond,
 		ElectionTimeoutMax: 300 * time.Millisecond,
 		HeartbeatInterval:  50 * time.Millisecond,
-		Logger:             raft.NewSafeTestLogger(t),
+		Logger:             raft.NewTestLogger(t),
 	}
 
 	transport := raft.NewMockTransport(0)
@@ -178,7 +178,7 @@ func TestSnapshotOfSnapshotIndex(t *testing.T) {
 	if err := node.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node: %v", err)
 	}
-	defer node.Stop() //nolint:errcheck // test cleanup
+	t.Cleanup(func() { node.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for node to become leader
 	helpers.WaitForLeader(t, []raft.Node{node}, 2*time.Second)
@@ -405,7 +405,7 @@ func TestPersistenceWithRapidSnapshots(t *testing.T) {
 		ElectionTimeoutMin: 150 * time.Millisecond,
 		ElectionTimeoutMax: 300 * time.Millisecond,
 		HeartbeatInterval:  50 * time.Millisecond,
-		Logger:             raft.NewSafeTestLogger(t),
+		Logger:             raft.NewTestLogger(t),
 		MaxLogSize:         5, // Very small to trigger many snapshots
 	}
 
@@ -422,7 +422,7 @@ func TestPersistenceWithRapidSnapshots(t *testing.T) {
 	if err := node.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node: %v", err)
 	}
-	defer node.Stop() //nolint:errcheck // test cleanup
+	t.Cleanup(func() { node.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	helpers.WaitForLeader(t, []raft.Node{node}, 2*time.Second)

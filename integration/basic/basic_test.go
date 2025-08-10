@@ -41,7 +41,7 @@ func TestBasicNodeCreation(t *testing.T) {
 	if err := node.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node: %v", err)
 	}
-	defer node.Stop() //nolint:errcheck // test cleanup
+	t.Cleanup(func() { node.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for the single node to become leader using proper synchronization
 	// Single node should become leader quickly (within a few election timeouts)

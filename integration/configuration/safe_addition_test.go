@@ -136,7 +136,8 @@ func TestSafeServerAddition(t *testing.T) {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
-		defer node.Stop() //nolint:errcheck // test cleanup
+		nodeCopy := node                      // Capture loop variable
+		t.Cleanup(func() { nodeCopy.Stop() }) //nolint:errcheck // test cleanup
 	}
 
 	// Wait for leader election

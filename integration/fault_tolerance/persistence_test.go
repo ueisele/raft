@@ -144,7 +144,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 			ElectionTimeoutMin: 150 * time.Millisecond,
 			ElectionTimeoutMax: 300 * time.Millisecond,
 			HeartbeatInterval:  50 * time.Millisecond,
-			Logger:             raft.NewSafeTestLogger(t),
+			Logger:             raft.NewTestLogger(t),
 		}
 
 		transport := helpers.NewMultiNodeTransport(i, registry)
@@ -171,7 +171,8 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
-		defer node.Stop() //nolint:errcheck // test cleanup
+		nodeCopy := node                      // Capture loop variable
+		t.Cleanup(func() { nodeCopy.Stop() }) //nolint:errcheck // test cleanup
 	}
 
 	// Wait for leader election
@@ -212,7 +213,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 			ElectionTimeoutMin: 150 * time.Millisecond,
 			ElectionTimeoutMax: 300 * time.Millisecond,
 			HeartbeatInterval:  50 * time.Millisecond,
-			Logger:             raft.NewSafeTestLogger(t),
+			Logger:             raft.NewTestLogger(t),
 		}
 
 		transport := helpers.NewMultiNodeTransport(i, newRegistry)
@@ -237,7 +238,8 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to restart node %d: %v", i, err)
 		}
-		defer node.Stop() //nolint:errcheck // test cleanup
+		nodeCopy := node                      // Capture loop variable
+		t.Cleanup(func() { nodeCopy.Stop() }) //nolint:errcheck // test cleanup
 	}
 
 	t.Log("Restarted all nodes")
@@ -499,7 +501,7 @@ func createPersistentCluster(t *testing.T, tempDir string, size int) *persistent
 			ElectionTimeoutMin: 150 * time.Millisecond,
 			ElectionTimeoutMax: 300 * time.Millisecond,
 			HeartbeatInterval:  50 * time.Millisecond,
-			Logger:             raft.NewSafeTestLogger(t),
+			Logger:             raft.NewTestLogger(t),
 		}
 
 		transport := helpers.NewMultiNodeTransport(i, registry)
@@ -549,7 +551,7 @@ func restartNode(t *testing.T, ctx context.Context, cluster *persistentCluster, 
 		ElectionTimeoutMin: 150 * time.Millisecond,
 		ElectionTimeoutMax: 300 * time.Millisecond,
 		HeartbeatInterval:  50 * time.Millisecond,
-		Logger:             raft.NewSafeTestLogger(t),
+		Logger:             raft.NewTestLogger(t),
 	}
 
 	transport := helpers.NewMultiNodeTransport(nodeID, cluster.registry)
