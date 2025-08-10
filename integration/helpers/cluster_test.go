@@ -11,12 +11,7 @@ import (
 // TestClusterAutoCleanup verifies that TestCluster automatically cleans up
 func TestClusterAutoCleanup(t *testing.T) {
 	// Create a test cluster
-	cluster := helpers.NewTestCluster(t, 3)
-	
-	// Start it
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
 	
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)

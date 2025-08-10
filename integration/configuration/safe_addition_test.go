@@ -316,12 +316,7 @@ promoted:
 // TestSafeConfigurationMetrics tests metric collection during safe configuration changes
 func TestSafeConfigurationMetrics(t *testing.T) {
 	// Create a small cluster for testing metrics
-	cluster := helpers.NewTestCluster(t, 3)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)

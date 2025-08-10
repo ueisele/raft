@@ -14,12 +14,7 @@ import (
 // TestConcurrentClients tests multiple concurrent client operations
 func TestConcurrentClients(t *testing.T) {
 	// Create 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -85,12 +80,7 @@ func TestConcurrentClients(t *testing.T) {
 // TestConcurrentReadsAndWrites tests concurrent read and write operations
 func TestConcurrentReadsAndWrites(t *testing.T) {
 	// Create 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -163,12 +153,7 @@ func TestConcurrentReadsAndWrites(t *testing.T) {
 // TestClientConnectionStress tests client behavior under connection stress
 func TestClientConnectionStress(t *testing.T) {
 	// Create 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -221,12 +206,7 @@ func TestClientConnectionStress(t *testing.T) {
 // TestConcurrentConfigurationChanges tests client operations during configuration changes
 func TestConcurrentConfigurationChanges(t *testing.T) {
 	// Create initial 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -299,12 +279,7 @@ func TestConcurrentConfigurationChanges(t *testing.T) {
 // TestConcurrentLeaderFailure tests concurrent client behavior during leader failure
 func TestConcurrentLeaderFailure(t *testing.T) {
 	// Create 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	initialLeaderID, err := cluster.WaitForLeader(2 * time.Second)

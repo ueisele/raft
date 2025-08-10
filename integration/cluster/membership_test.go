@@ -16,12 +16,7 @@ import (
 // occasional failures when nodes haven't caught up with the latest entries.
 func TestBasicMembershipChange(t *testing.T) {
 	// Create initial 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -197,12 +192,7 @@ func TestConcurrentMembershipChanges(t *testing.T) {
 	t.Skip("Test assumes blocking at configuration manager level, but implementation allows multiple pending entries")
 
 	// Create 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -325,12 +315,7 @@ func TestConcurrentMembershipChanges(t *testing.T) {
 // TestRemoveLeaderNode tests removing the current leader from configuration
 func TestRemoveLeaderNode(t *testing.T) {
 	// Create 5-node cluster for better stability
-	cluster := helpers.NewTestCluster(t, 5)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)

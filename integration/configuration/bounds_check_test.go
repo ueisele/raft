@@ -14,12 +14,7 @@ import (
 // reduce the cluster size
 func TestCommitIndexBoundsWithConfigChange(t *testing.T) {
 	// Start with a 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -122,12 +117,7 @@ func TestCommitIndexBoundsWithConfigChange(t *testing.T) {
 // is properly bounded when accessed after removing servers
 func TestMatchIndexBoundsAfterConfigChange(t *testing.T) {
 	// Create a 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)

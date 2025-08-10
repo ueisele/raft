@@ -14,12 +14,7 @@ import (
 // TestLeaderAppendOnly verifies that a leader only appends to its log, never overwrites
 func TestLeaderAppendOnly(t *testing.T) {
 	// Create 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -112,12 +107,7 @@ func TestLeaderAppendOnly(t *testing.T) {
 // TestConcurrentClientRequests tests handling of concurrent client requests
 func TestConcurrentClientRequests(t *testing.T) {
 	// Create 5-node cluster for better stability
-	cluster := helpers.NewTestCluster(t, 5)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -183,12 +173,7 @@ func TestConcurrentClientRequests(t *testing.T) {
 // TestLogReplicationUnderPartitions tests log replication during network partitions
 func TestLogReplicationUnderPartitions(t *testing.T) {
 	// Create 5-node cluster with partitionable transport
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport())
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -323,12 +308,7 @@ func TestLogReplicationUnderPartitions(t *testing.T) {
 // TestRapidLeadershipChanges tests safety under rapid leadership changes
 func TestRapidLeadershipChanges(t *testing.T) {
 	// Create 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for initial leader
 	initialLeader, err := cluster.WaitForLeader(2 * time.Second)
@@ -424,12 +404,7 @@ func TestRapidLeadershipChanges(t *testing.T) {
 // TestCommitIndexMonotonicity verifies commit index never decreases
 func TestCommitIndexMonotonicity(t *testing.T) {
 	// Create 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)

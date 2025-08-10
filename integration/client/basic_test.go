@@ -14,12 +14,7 @@ import (
 // TestExampleClientInteraction shows how clients should properly interact with Raft
 func TestExampleClientInteraction(t *testing.T) {
 	// Setup a 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
 
 	// Find the leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -100,11 +95,7 @@ func TestExampleClientInteraction(t *testing.T) {
 
 // TestClientRetryLogic demonstrates proper client retry patterns
 func TestClientRetryLogic(t *testing.T) {
-	cluster := helpers.NewTestCluster(t, 5)
-
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
 
 	// Simulate a smart client that tracks leader
 	type SmartClient struct {
@@ -229,11 +220,7 @@ func TestClientRetryLogic(t *testing.T) {
 
 // TestClientLinearizability demonstrates linearizable reads
 func TestClientLinearizability(t *testing.T) {
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithPartitionableTransport())
-
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 3, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
 
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
 	if err != nil {
@@ -336,11 +323,7 @@ func TestClientLinearizability(t *testing.T) {
 
 // TestClientBatching demonstrates how clients can batch commands
 func TestClientBatching(t *testing.T) {
-	cluster := helpers.NewTestCluster(t, 3)
-
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
 
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
 	if err != nil {
@@ -429,11 +412,7 @@ func TestClientBatching(t *testing.T) {
 
 // TestClientSessionManagement demonstrates session-based client interactions
 func TestClientSessionManagement(t *testing.T) {
-	cluster := helpers.NewTestCluster(t, 5)
-
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader election
 	_, err := cluster.WaitForLeader(2 * time.Second)

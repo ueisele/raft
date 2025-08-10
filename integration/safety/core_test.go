@@ -13,12 +13,7 @@ import (
 // TestElectionSafety verifies that at most one leader can be elected in a given term
 func TestElectionSafety(t *testing.T) {
 	// Create a 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
 
 	// Run for several terms
 	testDuration := 3 * time.Second
@@ -80,12 +75,7 @@ func TestElectionSafety(t *testing.T) {
 // TestLogMatching verifies the Log Matching property
 func TestLogMatching(t *testing.T) {
 	// Create a 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -146,12 +136,7 @@ func TestLogMatching(t *testing.T) {
 // TestLeaderCompleteness verifies that committed entries appear in all future leaders' logs
 func TestLeaderCompleteness(t *testing.T) {
 	// Create a 5-node cluster with partitionable transport
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport())
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
 
 	// Wait for initial leader
 	initialLeader, err := cluster.WaitForLeader(2 * time.Second)
@@ -238,12 +223,7 @@ func TestLeaderCompleteness(t *testing.T) {
 // TestStateMachineSafety verifies that all state machines execute the same commands in the same order
 func TestStateMachineSafety(t *testing.T) {
 	// Create a 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3)
-
-	// Start cluster
-	if err := cluster.Start(); err != nil {
-		t.Fatalf("Failed to start cluster: %v", err)
-	}
+	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
