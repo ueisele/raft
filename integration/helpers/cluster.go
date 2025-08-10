@@ -343,8 +343,6 @@ func (c *TestCluster) WaitForStableCluster(timeout time.Duration) {
 	c.t.Helper()
 	// Wait for a leader to be elected
 	WaitForLeader(c.t, c.Nodes, timeout)
-	// Give it a bit more time to ensure stability
-	time.Sleep(100 * time.Millisecond)
 }
 
 // GetPersistence returns the persistence for a specific node
