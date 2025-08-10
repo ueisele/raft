@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -119,5 +120,123 @@ func TestConfigDefaultsValidation(t *testing.T) {
 	if cfg.ElectionTimeoutMax != cfg.ElectionTimeoutMin {
 		t.Errorf("ElectionTimeoutMax should equal ElectionTimeoutMin when max < min: got max=%v, min=%v",
 			cfg.ElectionTimeoutMax, cfg.ElectionTimeoutMin)
+	}
+}
+
+// TestStopBeforeStart tests that Stop() can be called safely before Start()
+func TestStopBeforeStart(t *testing.T) {
+	config := &Config{
+		ID:                 0,
+		Peers:              []int{0},
+		ElectionTimeoutMin: 150 * time.Millisecond,
+		ElectionTimeoutMax: 300 * time.Millisecond,
+		HeartbeatInterval:  50 * time.Millisecond,
+		Logger:             NewTestLogger(t),
+	}
+
+	transport := NewMockTransport(0)
+	stateMachine := NewMockStateMachine()
+
+	node, err := NewNode(config, transport, nil, stateMachine)
+	if err != nil {
+		t.Fatalf("Failed to create node: %v", err)
+	}
+
+	// Call Stop without calling Start
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	err = node.Stop(ctx)
+	if err != nil {
+		t.Errorf("Stop() before Start() returned error: %v", err)
+	}
+
+	// Should be safe to call Stop again
+	err = node.Stop(ctx)
+	if err != nil {
+		t.Errorf("Second Stop() call returned error: %v", err)
+	}
+}
+
+// TestDoubleStop tests that Stop() can be called multiple times safely
+func TestDoubleStop(t *testing.T) {
+	config := &Config{
+		ID:                 0,
+		Peers:              []int{0},
+		ElectionTimeoutMin: 150 * time.Millisecond,
+		ElectionTimeoutMax: 300 * time.Millisecond,
+		HeartbeatInterval:  50 * time.Millisecond,
+		Logger:             NewTestLogger(t),
+	}
+
+	transport := NewMockTransport(0)
+	stateMachine := NewMockStateMachine()
+
+	node, err := NewNode(config, transport, nil, stateMachine)
+	if err != nil {
+		t.Fatalf("Failed to create node: %v", err)
+	}
+
+	// Start the node
+	ctx := context.Background()
+	if err := node.Start(ctx); err != nil {
+		t.Fatalf("Failed to start node: %v", err)
+	}
+
+	// Stop the node
+	stopCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	err = node.Stop(stopCtx)
+	if err != nil {
+		t.Errorf("First Stop() returned error: %v", err)
+	}
+
+	// Stop again - should be safe
+	err = node.Stop(stopCtx)
+	if err != nil {
+		t.Errorf("Second Stop() returned error: %v", err)
+	}
+}
+
+// TestStopStartStop tests Stop-Start-Stop sequence
+func TestStopStartStop(t *testing.T) {
+	config := &Config{
+		ID:                 0,
+		Peers:              []int{0},
+		ElectionTimeoutMin: 150 * time.Millisecond,
+		ElectionTimeoutMax: 300 * time.Millisecond,
+		HeartbeatInterval:  50 * time.Millisecond,
+		Logger:             NewTestLogger(t),
+	}
+
+	transport := NewMockTransport(0)
+	stateMachine := NewMockStateMachine()
+
+	node, err := NewNode(config, transport, nil, stateMachine)
+	if err != nil {
+		t.Fatalf("Failed to create node: %v", err)
+	}
+
+	ctx := context.Background()
+	stopCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	// Stop before start
+	if err := node.Stop(stopCtx); err != nil {
+		t.Errorf("Stop before Start returned error: %v", err)
+	}
+
+	// Start
+	if err := node.Start(ctx); err != nil {
+		t.Fatalf("Failed to start node: %v", err)
+	}
+
+	// Let it run briefly
+	time.Sleep(100 * time.Millisecond)
+
+	// Stop after start
+	if err := node.Stop(stopCtx); err != nil {
+		t.Errorf("Stop after Start returned error: %v", err)
 	}
 }
