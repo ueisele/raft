@@ -34,6 +34,7 @@ type clusterConfig struct {
 	persistence        []raft.Persistence
 	stateMachines      []raft.StateMachine
 	maxLogSize         int
+	autoStart          bool
 }
 
 // WithElectionTimeout sets the election timeout range
@@ -84,6 +85,13 @@ func WithStateMachines(stateMachines []raft.StateMachine) ClusterOption {
 func WithMaxLogSize(size int) ClusterOption {
 	return func(c *clusterConfig) {
 		c.maxLogSize = size
+	}
+}
+
+// WithClusterAutoStart automatically starts all nodes after creation
+func WithClusterAutoStart() ClusterOption {
+	return func(c *clusterConfig) {
+		c.autoStart = true
 	}
 }
 
@@ -201,6 +209,13 @@ func NewTestCluster(t *testing.T, size int, opts ...ClusterOption) *TestCluster 
 		cluster.Stop()
 	})
 
+	// Auto-start if requested
+	if config.autoStart {
+		if err := cluster.Start(); err != nil {
+			t.Fatalf("Failed to auto-start cluster: %v", err)
+		}
+	}
+
 	return cluster
 }
 
@@ -231,16 +246,9 @@ func (c *TestCluster) Stop() {
 
 // WaitForLeader waits for a leader to be elected and returns its ID
 func (c *TestCluster) WaitForLeader(timeout time.Duration) (int, error) {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		for i, node := range c.Nodes {
-			if node.IsLeader() {
-				return i, nil
-			}
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	return -1, fmt.Errorf("no leader elected within %v", timeout)
+	c.t.Helper()
+	leaderID := WaitForLeader(c.t, c.Nodes, timeout)
+	return leaderID, nil
 }
 
 // GetLeader returns the current leader node and its ID
@@ -304,22 +312,9 @@ func (c *TestCluster) CreatePartition(group1, group2 []int) {
 
 // WaitForCommitIndex waits for all nodes to reach at least the specified commit index
 func (c *TestCluster) WaitForCommitIndex(index int, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		allReached := true
-		for i, node := range c.Nodes {
-			if node.GetCommitIndex() < index {
-				allReached = false
-				c.t.Logf("Node %d commit index: %d (waiting for %d)", i, node.GetCommitIndex(), index)
-				break
-			}
-		}
-		if allReached {
-			return nil
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	return fmt.Errorf("not all nodes reached commit index %d within %v", index, timeout)
+	c.t.Helper()
+	WaitForCommitIndex(c.t, c.Nodes, index, timeout)
+	return nil
 }
 
 // SubmitCommand submits a command to the leader
@@ -343,18 +338,13 @@ func (c *TestCluster) GetLeaderNode() raft.Node {
 	return leader
 }
 
-// WaitForStableCluster waits for the cluster to stabilize
+// WaitForStableCluster waits for the cluster to stabilize with a leader
 func (c *TestCluster) WaitForStableCluster(timeout time.Duration) {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		// Check if we have a leader
-		if leader, _ := c.GetLeader(); leader != nil {
-			// Give it a bit more time to ensure stability
-			time.Sleep(100 * time.Millisecond)
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	c.t.Helper()
+	// Wait for a leader to be elected
+	WaitForLeader(c.t, c.Nodes, timeout)
+	// Give it a bit more time to ensure stability
+	time.Sleep(100 * time.Millisecond)
 }
 
 // GetPersistence returns the persistence for a specific node

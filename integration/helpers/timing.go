@@ -40,14 +40,22 @@ func FastTimingConfig() TimingConfig {
 // WaitForCondition waits for a condition to become true
 func WaitForCondition(t *testing.T, condition func() bool, timeout time.Duration, description string) {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	for {
 		if condition() {
 			return
 		}
-		time.Sleep(10 * time.Millisecond)
+
+		select {
+		case <-ctx.Done():
+			t.Fatalf("Timeout waiting for %s after %v", description, timeout)
+			return
+		case <-time.After(10 * time.Millisecond):
+			// Continue checking
+		}
 	}
-	t.Fatalf("Timeout waiting for %s after %v", description, timeout)
 }
 
 // WaitForConditionWithProgress waits for a condition with progress updates
@@ -91,24 +99,27 @@ func WaitForConditionWithProgress(t *testing.T, condition func() (bool, string),
 }
 
 // WaitForLeader waits for a leader to be elected
+// Uses WaitForCondition since this is a binary state (has single leader vs not)
 func WaitForLeader(t *testing.T, nodes []raft.Node, timeout time.Duration) int {
 	t.Helper()
 	var leaderID = -1
-	WaitForConditionWithProgress(t, func() (bool, string) {
+	WaitForCondition(t, func() bool {
 		leaderCount := 0
+		leaderID = -1
 		for i, node := range nodes {
 			if node.IsLeader() {
 				leaderID = i
 				leaderCount++
 			}
 		}
-		return leaderCount == 1, fmt.Sprintf("%d leaders", leaderCount)
+		return leaderCount == 1
 	}, timeout, "leader election")
 	return leaderID
 }
 
-// WaitForNoLeader waits for no leader to exist
-func WaitForNoLeader(t *testing.T, nodes []raft.Node, timeout time.Duration) {
+// WaitForFollower waits for all nodes to become followers (no leader)
+// Uses WaitForCondition since this is a binary state (leader vs follower)
+func WaitForFollower(t *testing.T, nodes []raft.Node, timeout time.Duration) {
 	t.Helper()
 	WaitForCondition(t, func() bool {
 		for _, node := range nodes {
@@ -117,7 +128,7 @@ func WaitForNoLeader(t *testing.T, nodes []raft.Node, timeout time.Duration) {
 			}
 		}
 		return true
-	}, timeout, "no leader")
+	}, timeout, "all nodes to become followers")
 }
 
 // WaitForCommitIndex waits for nodes to reach a specific commit index
@@ -148,6 +159,7 @@ func WaitForCommitIndex(t *testing.T, nodes []raft.Node, targetIndex int, timeou
 }
 
 // WaitForServers waits for a specific server configuration
+// Uses WaitForConditionWithProgress since server counts are measurable
 func WaitForServers(t *testing.T, nodes []raft.Node, expectedServers []int, timeout time.Duration) {
 	t.Helper()
 	WaitForConditionWithProgress(t, func() (bool, string) {
@@ -174,29 +186,74 @@ func WaitForServers(t *testing.T, nodes []raft.Node, expectedServers []int, time
 	}, timeout, "server configuration")
 }
 
+// WaitForTerm waits for nodes to reach at least a specific term
+// Uses WaitForConditionWithProgress since term numbers are measurable progress
+func WaitForTerm(t *testing.T, nodes []raft.Node, targetTerm int, timeout time.Duration) {
+	t.Helper()
+	WaitForConditionWithProgress(t, func() (bool, string) {
+		minTerm := int(^uint(0) >> 1) // MaxInt
+		maxTerm := 0
+		terms := make([]int, len(nodes))
+
+		for i, node := range nodes {
+			term, _ := node.GetState()
+			terms[i] = term
+			if term < minTerm {
+				minTerm = term
+			}
+			if term > maxTerm {
+				maxTerm = term
+			}
+		}
+
+		allReached := minTerm >= targetTerm
+		progress := fmt.Sprintf("terms: %v (min: %d, max: %d, target: %d)",
+			terms, minTerm, maxTerm, targetTerm)
+
+		return allReached, progress
+	}, timeout, fmt.Sprintf("reach term %d", targetTerm))
+}
+
 // Eventually asserts that a condition eventually becomes true
 func Eventually(t *testing.T, condition func() bool, timeout time.Duration, message string) {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	for {
 		if condition() {
 			return
 		}
-		time.Sleep(10 * time.Millisecond)
+
+		select {
+		case <-ctx.Done():
+			t.Errorf("Eventually failed: %s", message)
+			return
+		case <-time.After(10 * time.Millisecond):
+			// Continue checking
+		}
 	}
-	t.Errorf("Eventually failed: %s", message)
 }
 
 // Consistently asserts that a condition remains true for a duration
 func Consistently(t *testing.T, condition func() bool, duration time.Duration, message string) {
 	t.Helper()
-	deadline := time.Now().Add(duration)
-	for time.Now().Before(deadline) {
+	ctx, cancel := context.WithTimeout(context.Background(), duration)
+	defer cancel()
+
+	for {
 		if !condition() {
 			t.Errorf("Consistently failed: %s", message)
 			return
 		}
-		time.Sleep(10 * time.Millisecond)
+
+		select {
+		case <-ctx.Done():
+			// Successfully remained true for the entire duration
+			return
+		case <-time.After(10 * time.Millisecond):
+			// Continue checking
+		}
 	}
 }
 
