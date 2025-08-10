@@ -93,11 +93,11 @@ func testNewVotingServerSafety(t *testing.T) {
 	}
 
 	// Ensure cleanup
-	defer func() {
+	t.Cleanup(func() {
 		for _, node := range nodes {
-			node.Stop()
+			node.Stop() //nolint:errcheck // test cleanup
 		}
-	}()
+	})
 
 	// Wait for initial leader election
 	leaderID := helpers.WaitForLeader(t, nodes, 2*time.Second)
@@ -127,25 +127,25 @@ func testNewVotingServerSafety(t *testing.T) {
 	transports[2].Block(0)
 	t.Log("Partitioned node 0 from nodes 1 and 2")
 
-	// Wait for new leader among nodes 1 and 2
-	// Give time for nodes to detect the missing leader
-	time.Sleep(300 * time.Millisecond)
-
+	// Wait for new leader election among nodes 1 and 2
 	var newLeaderID int
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
+	helpers.WaitForCondition(t, func() bool {
+		// Check if old leader has stepped down
+		_, oldIsLeader := nodes[0].GetState()
+		if oldIsLeader {
+			return false // Wait for old leader to step down first
+		}
+		
+		// Now check for new leader among nodes 1 and 2
 		for i := 1; i <= 2; i++ {
 			_, isLeader := nodes[i].GetState()
 			if isLeader {
 				newLeaderID = i
-				break
+				return true
 			}
 		}
-		if newLeaderID != 0 {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return false
+	}, 3*time.Second, "new leader election after partition")
 
 	if newLeaderID == 0 {
 		t.Fatal("No new leader elected among nodes 1 and 2")
@@ -262,11 +262,11 @@ func testImmediateVotingDanger(t *testing.T) {
 	}
 
 	// Ensure cleanup
-	defer func() {
+	t.Cleanup(func() {
 		for _, node := range nodes {
-			node.Stop()
+			node.Stop() //nolint:errcheck // test cleanup
 		}
-	}()
+	})
 
 	// Wait for leader
 	leaderID := helpers.WaitForLeader(t, nodes, 2*time.Second)
