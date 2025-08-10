@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Consolidated documentation to eliminate redundancy between README and IMPLEMENTATION
 - Improved test reliability by replacing ~350 time.Sleep calls with proper synchronization
 - Achieved 100% test pass rate across all packages
+- Simplified replication code by removing special cases for single-node clusters
+- Unified code path for all cluster sizes (single-node is just 0 followers)
 
 ### Fixed
 - **Vote Denial**: Added check to deny votes if heard from leader within election timeout
@@ -28,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Leader Step-Down**: Leaders step down when removed from configuration
 - **Test Reliability**: Fixed all 12 failing tests across different test suites
 - **Import Cycles**: Resolved import cycle issues in test helpers
+- **Race Conditions**: Fixed concurrent access to peers in ElectionManager.StartElection()
+- **Test Logger Race**: Fixed TestLogger accessing testing.T after test completion
+- **Replication Deadlocks**: Fixed nested lock acquisition in handleAppendEntriesReply
+- **Single-Node Optimization**: Single-node clusters now commit immediately in Submit()
+- **Linting Issues**: Fixed all golangci-lint staticcheck warnings (SA5011, QF1011, QF1008)
 
 ### Removed
 - Obsolete backup directories containing ~15,000 lines of outdated code

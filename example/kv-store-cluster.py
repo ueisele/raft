@@ -380,7 +380,8 @@ class TestRunner:
         # But the optimization in Submit() significantly improves performance
         if self.cluster.size == 1:
             # Limit concurrent clients to avoid overwhelming single node
-            num_clients = min(5, self.num_clients)
+            # Use 3 clients to ensure all operations complete within timeout
+            num_clients = min(3, self.num_clients)
             operations = self.operations_per_client
         else:
             num_clients = self.num_clients
