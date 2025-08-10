@@ -254,8 +254,17 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 		t.Errorf("Term went backwards: %d -> %d", leaderTerm, newLeaderTerm)
 	}
 
-	// Wait for nodes to recover
-	time.Sleep(1 * time.Second)
+	// Wait for nodes to stabilize after restart
+	helpers.WaitForCondition(t, func() bool {
+		// Check if any node has become leader
+		for _, node := range newNodes {
+			_, isLeader := node.GetState()
+			if isLeader {
+				return true
+			}
+		}
+		return false
+	}, 3*time.Second, "leader election after restart")
 
 	// Verify committed entries were preserved
 	for i, node := range newNodes {

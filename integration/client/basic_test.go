@@ -56,19 +56,20 @@ func TestExampleClientInteraction(t *testing.T) {
 		t.Logf("Stopped leader %d to simulate failure", leaderID)
 
 		// Wait for new leader
-		time.Sleep(500 * time.Millisecond)
-
-		newLeaderID := -1
-		for i, node := range cluster.Nodes {
-			if i == leaderID {
-				continue
+		var newLeaderID = -1
+		helpers.WaitForCondition(t, func() bool {
+			for i, node := range cluster.Nodes {
+				if i == leaderID {
+					continue
+				}
+				_, isLeader := node.GetState()
+				if isLeader {
+					newLeaderID = i
+					return true
+				}
 			}
-			_, isLeader := node.GetState()
-			if isLeader {
-				newLeaderID = i
-				break
-			}
-		}
+			return false
+		}, 2*time.Second, "new leader election after leader failure")
 
 		if newLeaderID == -1 {
 			t.Fatal("No new leader elected")
@@ -202,8 +203,8 @@ func TestClientRetryLogic(t *testing.T) {
 			close(done)
 		}()
 
-		// Cause leader failure during submit
-		time.Sleep(50 * time.Millisecond)
+		// Give submit a chance to start
+		time.Sleep(50 * time.Millisecond) // Small delay to let submit start
 		client.mu.Lock()
 		if client.lastLeaderID != -1 {
 			cluster.Nodes[client.lastLeaderID].Stop()

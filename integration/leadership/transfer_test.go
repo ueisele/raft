@@ -56,23 +56,24 @@ func TestLeadershipTransfer(t *testing.T) {
 	t.Log("Stopped current leader to trigger new election")
 
 	// Wait for new leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Check if leadership transferred
-	// Any node could become leader, but term should increase
 	var newLeader = -1
 	var newTerm int
-	for i, node := range cluster.Nodes {
-		if i == initialLeader {
-			continue
+	helpers.WaitForCondition(t, func() bool {
+		// Check if leadership transferred
+		// Any node could become leader, but term should increase
+		for i, node := range cluster.Nodes {
+			if i == initialLeader {
+				continue
+			}
+			term, isLeader := node.GetState()
+			if isLeader && term > initialTerm {
+				newLeader = i
+				newTerm = term
+				return true
+			}
 		}
-		term, isLeader := node.GetState()
-		if isLeader && term > initialTerm {
-			newLeader = i
-			newTerm = term
-			break
-		}
-	}
+		return false
+	}, 2*time.Second, "new leader election with higher term")
 
 	if newLeader == -1 {
 		t.Fatal("No new leader elected after leadership transfer attempt")

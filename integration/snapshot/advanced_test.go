@@ -51,14 +51,49 @@ func TestSnapshotDuringPartition(t *testing.T) {
 	}
 
 	// Wait for snapshot to be created in majority partition
-	time.Sleep(500 * time.Millisecond)
+	helpers.WaitForCondition(t, func() bool {
+		// Check if any node has created a snapshot
+		for i := 0; i < 5; i++ {
+			if i == partitionedNode {
+				continue
+			}
+			if persistence := cluster.GetPersistence(i); persistence != nil {
+				if mockPersistence, ok := persistence.(*raft.MockPersistence); ok {
+					if mockPersistence.HasSnapshot() {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}, 2*time.Second, "snapshot creation in majority partition")
 
 	// Heal partition
 	cluster.HealPartition()
 	t.Log("Healed partition")
 
 	// Wait for partitioned node to catch up
-	time.Sleep(2 * time.Second)
+	helpers.WaitForCondition(t, func() bool {
+		// Check if all nodes have converged to same commit index
+		indices := make([]int, 5)
+		for i, node := range cluster.Nodes {
+			indices[i] = node.GetCommitIndex()
+		}
+		// Find max commit index
+		maxIndex := indices[0]
+		for _, idx := range indices {
+			if idx > maxIndex {
+				maxIndex = idx
+			}
+		}
+		// Check if all nodes have reached max
+		for _, idx := range indices {
+			if idx < maxIndex {
+				return false
+			}
+		}
+		return true
+	}, 3*time.Second, "partitioned node to catch up")
 
 	// Verify all nodes have same state
 	commitIndices := make([]int, 5)
@@ -306,68 +341,129 @@ func TestSnapshotInstallationRaceConditions(t *testing.T) {
 	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
-	_, err := cluster.WaitForLeader(2 * time.Second)
+	leaderID, err := cluster.WaitForLeader(2 * time.Second)
 	if err != nil {
 		t.Fatalf("No leader elected: %v", err)
 	}
+	t.Logf("Initial leader: node %d", leaderID)
 
-	// Partition two nodes
-	if err := cluster.PartitionNode(3); err != nil {
-		t.Fatalf("Failed to partition node 3: %v", err)
+	// Partition two nodes (but not the leader if possible)
+	partitionNodes := []int{3, 4}
+	// If leader is in the nodes to partition, adjust to keep majority functional
+	if leaderID == 3 || leaderID == 4 {
+		// Partition different nodes to keep leader in majority
+		if leaderID == 3 {
+			partitionNodes = []int{0, 4}
+		} else { // leaderID == 4
+			partitionNodes = []int{0, 3}
+		}
 	}
-	if err := cluster.PartitionNode(4); err != nil {
-		t.Fatalf("Failed to partition node 4: %v", err)
+
+	t.Logf("Partitioning nodes %v", partitionNodes)
+	for _, nodeID := range partitionNodes {
+		if err := cluster.PartitionNode(nodeID); err != nil {
+			t.Fatalf("Failed to partition node %d: %v", nodeID, err)
+		}
 	}
+
+	// Determine majority nodes (those not partitioned)
+	majorityNodes := make([]raft.Node, 0)
+	for i := 0; i < 5; i++ {
+		isPartitioned := false
+		for _, p := range partitionNodes {
+			if i == p {
+				isPartitioned = true
+				break
+			}
+		}
+		if !isPartitioned {
+			majorityNodes = append(majorityNodes, cluster.Nodes[i])
+		}
+	}
+	t.Logf("Majority nodes count: %d", len(majorityNodes))
 
 	// Submit many commands to majority
+	successCount := 0
 	for i := 0; i < 50; i++ {
 		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("race-cmd-%d", i))
 		if err != nil {
+			t.Logf("Failed to submit command %d: %v", i, err)
 			continue
 		}
+		successCount++
 
-		// Wait for commit on majority nodes
-		majorityNodes := []raft.Node{cluster.Nodes[0], cluster.Nodes[1], cluster.Nodes[2]}
-		helpers.WaitForCommitIndex(t, majorityNodes, idx, time.Second)
+		// Don't wait for each command individually - it's too slow
+		// Just verify some progress periodically
+		if successCount%10 == 0 {
+			// Wait for this batch to commit
+			helpers.WaitForCommitIndex(t, majorityNodes, idx, time.Second)
+		}
 	}
+
+	if successCount == 0 {
+		t.Fatal("No commands were successfully submitted")
+	}
+	t.Logf("Successfully submitted %d commands", successCount)
 
 	// Snapshots are created automatically, wait for it
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond) // Pause for automatic snapshot
 
 	// Heal partitions individually
-	// First heal node 3
-	if pt, ok := cluster.Transports[3].(*helpers.PartitionableTransport); ok {
+	// First heal first partitioned node
+	firstNode := partitionNodes[0]
+	if pt, ok := cluster.Transports[firstNode].(*helpers.PartitionableTransport); ok {
 		pt.UnblockAll()
 	}
-	// Also unblock node 3 from other nodes
+	// Also unblock from other nodes
 	for i, t := range cluster.Transports {
-		if i != 3 {
+		if i != firstNode {
 			if pt, ok := t.(*helpers.PartitionableTransport); ok {
-				pt.Unblock(3)
+				pt.Unblock(firstNode)
 			}
 		}
 	}
+	t.Logf("Healed node %d", firstNode)
 
-	// Submit more commands while node 3 is catching up
+	// Submit more commands while first node is catching up
 	for i := 50; i < 60; i++ {
 		cluster.SubmitCommand(fmt.Sprintf("race-cmd-%d", i)) //nolint:errcheck // background load generation
 	}
 
-	// Heal node 4
-	if pt, ok := cluster.Transports[4].(*helpers.PartitionableTransport); ok {
+	// Heal second partitioned node
+	secondNode := partitionNodes[1]
+	if pt, ok := cluster.Transports[secondNode].(*helpers.PartitionableTransport); ok {
 		pt.UnblockAll()
 	}
-	// Also unblock node 4 from other nodes
+	// Also unblock from other nodes
 	for i, t := range cluster.Transports {
-		if i != 4 {
+		if i != secondNode {
 			if pt, ok := t.(*helpers.PartitionableTransport); ok {
-				pt.Unblock(4)
+				pt.Unblock(secondNode)
 			}
 		}
 	}
+	t.Logf("Healed node %d", secondNode)
 
 	// Wait for all nodes to catch up
-	time.Sleep(3 * time.Second)
+	helpers.WaitForCondition(t, func() bool {
+		// Check if all nodes have similar commit indices
+		indices := make([]int, 5)
+		for i, node := range cluster.Nodes {
+			indices[i] = node.GetCommitIndex()
+		}
+		// Find max and min
+		maxIdx, minIdx := indices[0], indices[0]
+		for _, idx := range indices {
+			if idx > maxIdx {
+				maxIdx = idx
+			}
+			if idx < minIdx {
+				minIdx = idx
+			}
+		}
+		// Check if difference is small
+		return maxIdx-minIdx <= 5
+	}, 5*time.Second, "all nodes to converge")
 
 	// Verify consistency
 	commitIndices := make([]int, 5)

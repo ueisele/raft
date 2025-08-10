@@ -30,8 +30,16 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 		t.Fatalf("No leader elected: %v", err)
 	}
 
-	// Give the cluster time to stabilize
-	time.Sleep(200 * time.Millisecond)
+	// Wait for cluster to stabilize
+	helpers.WaitForCondition(t, func() bool {
+		// Check if we have a stable leader
+		for _, node := range cluster.Nodes {
+			if node.IsLeader() {
+				return true
+			}
+		}
+		return false
+	}, 1*time.Second, "cluster stabilization")
 
 	// Find current leader (may have changed)
 	var leader raft.Node
@@ -96,7 +104,7 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 	}()
 
 	// Small delay to ensure first request is processing
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // Intentional small delay for race condition test
 
 	// Try second config change immediately (should be blocked)
 	err2Ch := make(chan error, 1)
@@ -204,12 +212,22 @@ func TestConfigChangeLeadershipTransfer(t *testing.T) {
 	}()
 
 	// Force leadership change during config change
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) // Small delay to let config change start
 	cluster.Nodes[leaderID].Stop()
 	t.Logf("Stopped leader %d during config change", leaderID)
 
 	// Wait for new leader
-	time.Sleep(1 * time.Second)
+	helpers.WaitForCondition(t, func() bool {
+		for i, node := range cluster.Nodes {
+			if i == leaderID {
+				continue
+			}
+			if node.IsLeader() {
+				return true
+			}
+		}
+		return false
+	}, 3*time.Second, "new leader election after config change")
 
 	// Check result
 	select {
@@ -323,7 +341,7 @@ func TestEdgeCaseScenarios(t *testing.T) {
 			cluster.Nodes[leaderID].Stop()
 			t.Logf("Stopped leader %d", leaderID)
 
-			time.Sleep(200 * time.Millisecond)
+			time.Sleep(200 * time.Millisecond) // Brief pause between rapid leader changes
 		}
 
 		// Count remaining active nodes
@@ -483,8 +501,8 @@ func TestExtremeTiming(t *testing.T) {
 			t.Log("✓ Leader elected with very short timeouts")
 		}
 
-		// Check for election thrashing
-		time.Sleep(2 * time.Second)
+		// Wait and check for election thrashing
+		time.Sleep(2 * time.Second) // Observation period for election stability
 
 		termCounts := make(map[int]int)
 		for i, node := range cluster.Nodes {

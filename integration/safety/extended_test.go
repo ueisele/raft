@@ -69,7 +69,7 @@ func TestLeaderAppendOnly(t *testing.T) {
 		}
 
 		// Give time for local append
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond) // Small delay for log append
 	}
 
 	// Take final snapshot
@@ -234,7 +234,12 @@ func TestLogReplicationUnderPartitions(t *testing.T) {
 	_, _, isLeader := cluster.Nodes[leaderID].Submit("during-partition-minority")
 	if isLeader {
 		// Command accepted but shouldn't commit without majority
-		time.Sleep(500 * time.Millisecond)
+		// Wait briefly to ensure no commit happens
+		helpers.WaitForCondition(t, func() bool {
+			// We're waiting to ensure NO change happens
+			return cluster.Nodes[leaderID].GetCommitIndex() == initialCommitIndex
+		}, 1*time.Second, "verify no commit in minority partition")
+
 		newCommitIndex := cluster.Nodes[leaderID].GetCommitIndex()
 		if newCommitIndex > initialCommitIndex {
 			t.Error("Minority partition committed new entries!")
@@ -242,16 +247,17 @@ func TestLogReplicationUnderPartitions(t *testing.T) {
 	}
 
 	// Wait for new leader in majority
-	time.Sleep(500 * time.Millisecond)
-
 	var newLeaderID = -1
-	for _, nodeID := range majorityNodes {
-		_, isLeader := cluster.Nodes[nodeID].GetState()
-		if isLeader {
-			newLeaderID = nodeID
-			break
+	helpers.WaitForCondition(t, func() bool {
+		for _, nodeID := range majorityNodes {
+			_, isLeader := cluster.Nodes[nodeID].GetState()
+			if isLeader {
+				newLeaderID = nodeID
+				return true
+			}
 		}
-	}
+		return false
+	}, 2*time.Second, "new leader election in majority partition")
 
 	if newLeaderID == -1 {
 		t.Fatal("No leader elected in majority partition")
@@ -282,7 +288,16 @@ func TestLogReplicationUnderPartitions(t *testing.T) {
 	t.Log("Healed partition")
 
 	// Wait for minority nodes to catch up
-	time.Sleep(2 * time.Second)
+	helpers.WaitForCondition(t, func() bool {
+		// Check if minority nodes have caught up
+		maxCommit := cluster.Nodes[newLeaderID].GetCommitIndex()
+		for _, nodeID := range minorityNodes {
+			if cluster.Nodes[nodeID].GetCommitIndex() < maxCommit-5 {
+				return false
+			}
+		}
+		return true
+	}, 3*time.Second, "minority nodes to catch up after partition heal")
 
 	// Verify all nodes have the same log
 	finalCommitIndex := cluster.Nodes[newLeaderID].GetCommitIndex()
@@ -351,21 +366,22 @@ func TestRapidLeadershipChanges(t *testing.T) {
 		t.Logf("Stopped leader %d", currentLeader)
 
 		// Wait for new leader
-		time.Sleep(500 * time.Millisecond)
-
 		newLeader := -1
 		newTerm := 0
-		for j, node := range cluster.Nodes {
-			if j == currentLeader {
-				continue
+		helpers.WaitForCondition(t, func() bool {
+			for j, node := range cluster.Nodes {
+				if j == currentLeader {
+					continue
+				}
+				term, isLeader := node.GetState()
+				if isLeader && term > currentTerm {
+					newLeader = j
+					newTerm = term
+					return true
+				}
 			}
-			term, isLeader := node.GetState()
-			if isLeader && term > currentTerm {
-				newLeader = j
-				newTerm = term
-				break
-			}
-		}
+			return false
+		}, 2*time.Second, "new leader election in round "+fmt.Sprintf("%d", i))
 
 		if newLeader == -1 {
 			t.Logf("Warning: No new leader elected in round %d", i)

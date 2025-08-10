@@ -44,20 +44,20 @@ func TestClusterHealing(t *testing.T) {
 	t.Logf("Stopped initial leader %d", initialLeader)
 
 	// Wait for new leader election
-	time.Sleep(500 * time.Millisecond)
-
-	// Find new leader
 	newLeader := -1
-	for i, node := range cluster.Nodes {
-		if i == initialLeader {
-			continue
+	helpers.WaitForCondition(t, func() bool {
+		for i, node := range cluster.Nodes {
+			if i == initialLeader {
+				continue
+			}
+			_, isLeader := node.GetState()
+			if isLeader {
+				newLeader = i
+				return true
+			}
 		}
-		_, isLeader := node.GetState()
-		if isLeader {
-			newLeader = i
-			break
-		}
-	}
+		return false
+	}, 2*time.Second, "new leader election after stopping initial leader")
 
 	if newLeader == -1 {
 		t.Fatal("No new leader elected after disruption")
@@ -103,7 +103,20 @@ func TestClusterHealing(t *testing.T) {
 	t.Logf("Restarted old leader %d", initialLeader)
 
 	// Wait for healing - old leader should catch up
-	time.Sleep(2 * time.Second)
+	helpers.WaitForCondition(t, func() bool {
+		// Check if all nodes have converged to same commit index
+		indices := make([]int, len(cluster.Nodes))
+		for i, node := range cluster.Nodes {
+			indices[i] = node.GetCommitIndex()
+		}
+		// Check if all are the same
+		for i := 1; i < len(indices); i++ {
+			if indices[i] != indices[0] {
+				return false
+			}
+		}
+		return true
+	}, 3*time.Second, "all nodes to converge to same commit index")
 
 	// Verify all nodes have converged
 	commitIndices := make([]int, len(cluster.Nodes))

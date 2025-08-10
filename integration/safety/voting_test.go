@@ -135,7 +135,7 @@ func testNewVotingServerSafety(t *testing.T) {
 		if oldIsLeader {
 			return false // Wait for old leader to step down first
 		}
-		
+
 		// Now check for new leader among nodes 1 and 2
 		for i := 1; i <= 2; i++ {
 			_, isLeader := nodes[i].GetState()

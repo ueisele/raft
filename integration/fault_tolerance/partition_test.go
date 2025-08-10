@@ -526,7 +526,7 @@ func TestCascadingPartitions(t *testing.T) {
 
 	// Heal node 4 first (now have 3 nodes: 4, 5, 6)
 	cluster.HealPartition()
-	
+
 	// Wait for nodes to detect healing but not necessarily elect leader yet (still no quorum)
 	helpers.WaitForCondition(t, func() bool {
 		// Just ensure nodes can communicate
@@ -535,7 +535,7 @@ func TestCascadingPartitions(t *testing.T) {
 
 	// Continue healing
 	cluster.HealPartition()
-	
+
 	// Now wait for cluster to stabilize with majority restored
 	helpers.WaitForCondition(t, func() bool {
 		// Check if any node has become leader

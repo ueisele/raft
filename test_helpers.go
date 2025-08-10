@@ -205,7 +205,6 @@ func (l *TestLogger) Error(format string, args ...interface{}) {
 	l.t.Errorf("[ERROR] "+format, args...)
 }
 
-
 // MockPersistence is a mock implementation of Persistence for testing
 type MockPersistence struct {
 	mu             sync.Mutex

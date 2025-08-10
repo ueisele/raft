@@ -48,11 +48,8 @@ func TestLeaderCommitIndexPreservation(t *testing.T) {
 	t.Logf("Stopped leader %d", initialLeader)
 
 	// Wait for new leader
-	time.Sleep(500 * time.Millisecond)
-
 	var newLeader = -1
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
+	helpers.WaitForCondition(t, func() bool {
 		for i, node := range cluster.Nodes {
 			if i == initialLeader {
 				continue
@@ -60,14 +57,11 @@ func TestLeaderCommitIndexPreservation(t *testing.T) {
 			_, isLeader := node.GetState()
 			if isLeader {
 				newLeader = i
-				break
+				return true
 			}
 		}
-		if newLeader != -1 {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+		return false
+	}, 3*time.Second, "new leader election after leader failure")
 
 	if newLeader == -1 {
 		t.Fatal("No new leader elected")
