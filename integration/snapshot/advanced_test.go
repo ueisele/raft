@@ -22,7 +22,6 @@ func TestSnapshotDuringPartition(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader election
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -122,7 +121,6 @@ func TestSnapshotDuringLeadershipChange(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	initialLeader, err := cluster.WaitForLeader(2 * time.Second)
@@ -261,7 +259,6 @@ func TestConcurrentSnapshotAndReplication(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -346,7 +343,6 @@ func TestSnapshotInstallationRaceConditions(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -590,7 +586,6 @@ func TestSnapshotTransmissionFailure(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)

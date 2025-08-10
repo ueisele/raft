@@ -19,7 +19,6 @@ func TestSnapshotCreation(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leadership
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -86,7 +85,6 @@ func TestSnapshotInstallation(t *testing.T) {
 	// For this test, we'll simply verify snapshot functionality works
 	// without the complexity of stopping/starting nodes
 	cluster := helpers.NewTestCluster(t, 3, helpers.WithMaxLogSize(10))
-	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Start cluster
 	if err := cluster.Start(); err != nil {
@@ -176,7 +174,6 @@ func TestSnapshotWithConcurrentWrites(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader election
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -305,7 +302,6 @@ func TestSnapshotFailure(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leadership
 	_, err := cluster.WaitForLeader(2 * time.Second)

@@ -20,7 +20,6 @@ func TestLeadershipTransfer(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for initial leader
 	initialLeader, err := cluster.WaitForLeader(2 * time.Second)
@@ -105,7 +104,6 @@ func TestGracefulLeadershipHandoff(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	currentLeader, err := cluster.WaitForLeader(2 * time.Second)
@@ -219,7 +217,6 @@ func TestLeadershipTransferToSpecificNode(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	currentLeader, err := cluster.WaitForLeader(2 * time.Second)
@@ -298,7 +295,6 @@ func TestLeadershipTransferDuringLoad(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	initialLeader, err := cluster.WaitForLeader(2 * time.Second)
@@ -424,7 +420,6 @@ func TestPreventedLeadershipTransfer(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
