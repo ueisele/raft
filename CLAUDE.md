@@ -231,10 +231,40 @@ func TestCluster_LeaderElection(t *testing.T) {
 ```go
 // Use descriptive helper functions
 cluster := helpers.CreateCluster(t, 3)
-defer cluster.Stop()
+t.Cleanup(func() { cluster.Stop() })
 
 helpers.WaitForLeader(t, cluster, 5*time.Second)
 helpers.AssertSameTerm(t, cluster)
+```
+
+### Defer vs t.Cleanup() Decision Tree for Tests
+
+**IMPORTANT**: In test files, use this decision tree to determine when to use `defer` vs `t.Cleanup()`:
+
+```
+Is this defer statement in a test file?
+├─ No → Keep defer (production code)
+└─ Yes → Is it cleaning up test infrastructure?
+    ├─ Yes → Use t.Cleanup() instead
+    │   Examples:
+    │   - cluster.Stop()
+    │   - node.Stop()
+    │   - transport.Stop()
+    │   - os.RemoveAll(tempDir)
+    │   - server.Close()
+    │   - testDB.Close()
+    └─ No → Keep defer for these patterns:
+        ├─ Mutex unlock (defer mu.Unlock())
+        ├─ WaitGroup.Done() (defer wg.Done())
+        ├─ Panic recovery (defer func() { recover() }())
+        ├─ Ticker.Stop() (defer ticker.Stop())
+        ├─ Context cancel (defer cancel())
+        ├─ Channel close (defer close(ch))
+        └─ Other resource cleanup that's part of code logic
+
+Key Principle:
+- Use t.Cleanup() for: Test infrastructure that must be torn down when test ends
+- Use defer for: Normal Go resource management patterns that are part of the code's logic
 ```
 
 ## Concurrency Patterns
