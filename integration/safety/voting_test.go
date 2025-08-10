@@ -55,6 +55,7 @@ func testNewVotingServerSafety(t *testing.T) {
 	// Create a 3-node cluster with partitionable transport
 	numNodes := 3
 	nodes := make([]raft.Node, numNodes)
+	transports := make([]*helpers.PartitionableTransport, numNodes)
 	registry := helpers.NewPartitionRegistry()
 
 	for i := 0; i < numNodes; i++ {
@@ -68,6 +69,7 @@ func testNewVotingServerSafety(t *testing.T) {
 		}
 
 		transport := helpers.NewPartitionableTransport(i, registry)
+		transports[i] = transport
 
 		stateMachine := raft.NewMockStateMachine()
 
@@ -116,14 +118,18 @@ func testNewVotingServerSafety(t *testing.T) {
 	// In real implementation, this would be done through configuration change
 	// For demonstration, we'll partition the network
 
-	// Partition node 0 (potential old leader) from the rest
-	// In the test environment, we'll simulate partition by blocking transport
-	// This test demonstrates the concept rather than full implementation
-	t.Log("Would partition node 0 from nodes 1 and 2 (simulation)")
+	// Actually partition node 0 from the rest
+	// Block communication from node 0 to others
+	transports[0].Block(1)
+	transports[0].Block(2)
+	// Block communication from others to node 0
+	transports[1].Block(0)
+	transports[2].Block(0)
+	t.Log("Partitioned node 0 from nodes 1 and 2")
 
 	// Wait for new leader among nodes 1 and 2
-	// Give some time for the leader to realize it's partitioned
-	time.Sleep(150 * time.Millisecond)
+	// Give time for nodes to detect the missing leader
+	time.Sleep(300 * time.Millisecond)
 
 	var newLeaderID int
 	deadline := time.Now().Add(3 * time.Second)
