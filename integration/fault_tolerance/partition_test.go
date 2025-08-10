@@ -346,7 +346,9 @@ func TestPartitionDuringConfigChange(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
-		cluster.WaitForCommitIndex(idx, time.Second) //nolint:errcheck // best effort wait
+		if err := cluster.WaitForCommitIndex(idx, time.Second); err != nil {
+			t.Logf("Warning: WaitForCommitIndex failed for initial command %d: %v", i, err)
+		}
 	}
 
 	t.Log("Starting configuration change...")
@@ -431,7 +433,9 @@ func TestCascadingPartitions(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
-		cluster.WaitForCommitIndex(idx, time.Second) //nolint:errcheck // best effort wait
+		if err := cluster.WaitForCommitIndex(idx, time.Second); err != nil {
+			t.Logf("Warning: WaitForCommitIndex failed for initial command %d: %v", i, err)
+		}
 	}
 
 	// Cascading partition scenario:

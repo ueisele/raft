@@ -45,7 +45,9 @@ func TestSnapshotCreation(t *testing.T) {
 	}
 
 	// Wait for entries to be applied first
-	cluster.WaitForCommitIndex(15, time.Second) //nolint:errcheck // best effort wait
+	if err := cluster.WaitForCommitIndex(15, time.Second); err != nil {
+		t.Logf("Warning: WaitForCommitIndex failed for bulk commands: %v", err)
+	}
 
 	// Get commit index to verify entries are committed
 	commitIndex := node.GetCommitIndex()
