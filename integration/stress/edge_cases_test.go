@@ -22,7 +22,7 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	defer cluster.Stop() //nolint:errcheck // test cleanup
+	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	// Wait for leader election and stability
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -66,7 +66,7 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 	if err := node3.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node 3: %v", err)
 	}
-	defer node3.Stop() //nolint:errcheck // test cleanup
+	t.Cleanup(func() { node3.Stop() }) //nolint:errcheck // test cleanup
 
 	// Create node 4
 	config4 := &raft.Config{
@@ -86,7 +86,7 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 	if err := node4.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node 4: %v", err)
 	}
-	defer node4.Stop() //nolint:errcheck // test cleanup
+	t.Cleanup(func() { node4.Stop() }) //nolint:errcheck // test cleanup
 
 	// Start first config change to add node 3
 	err1Ch := make(chan error, 1)
@@ -254,7 +254,7 @@ func TestEdgeCaseScenarios(t *testing.T) {
 		if err := cluster.Start(); err != nil {
 			t.Fatalf("Failed to start cluster: %v", err)
 		}
-		defer cluster.Stop() //nolint:errcheck // test cleanup
+		t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 		leaderID, err := cluster.WaitForLeader(time.Second)
 		if err != nil {
@@ -278,7 +278,7 @@ func TestEdgeCaseScenarios(t *testing.T) {
 		if err := cluster.Start(); err != nil {
 			t.Fatalf("Failed to start cluster: %v", err)
 		}
-		defer cluster.Stop() //nolint:errcheck // test cleanup
+		t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 		leaderID, err := cluster.WaitForLeader(time.Second)
 		if err != nil {
@@ -304,7 +304,7 @@ func TestEdgeCaseScenarios(t *testing.T) {
 		if err := cluster.Start(); err != nil {
 			t.Fatalf("Failed to start cluster: %v", err)
 		}
-		defer cluster.Stop() //nolint:errcheck // test cleanup
+		t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 		// Force rapid leader changes
 		for i := 0; i < 3; i++ {
@@ -345,7 +345,7 @@ func TestConcurrentOperations(t *testing.T) {
 	if err := cluster.Start(); err != nil {
 		t.Fatalf("Failed to start cluster: %v", err)
 	}
-	defer cluster.Stop() //nolint:errcheck // test cleanup
+	t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 	_, err := cluster.WaitForLeader(2 * time.Second)
 	if err != nil {
@@ -470,7 +470,7 @@ func TestExtremeTiming(t *testing.T) {
 				t.Fatalf("Failed to start node: %v", err)
 			}
 		}
-		defer cluster.Stop() //nolint:errcheck // test cleanup
+		t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 		// Should still elect leader despite aggressive timing
 		_, err := cluster.WaitForLeader(1 * time.Second)
@@ -525,7 +525,7 @@ func TestExtremeTiming(t *testing.T) {
 				t.Fatalf("Failed to start node: %v", err)
 			}
 		}
-		defer cluster.Stop() //nolint:errcheck // test cleanup
+		t.Cleanup(func() { cluster.Stop() }) //nolint:errcheck // test cleanup
 
 		// Should still elect leader but take longer
 		_, err := cluster.WaitForLeader(5 * time.Second)

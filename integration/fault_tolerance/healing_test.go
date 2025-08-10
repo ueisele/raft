@@ -97,7 +97,7 @@ func TestClusterHealing(t *testing.T) {
 	if err := oldNode.Start(ctx); err != nil {
 		t.Fatalf("Failed to restart old leader: %v", err)
 	}
-	defer oldNode.Stop() //nolint:errcheck // test cleanup
+	t.Cleanup(func() { oldNode.Stop() }) //nolint:errcheck // test cleanup
 
 	t.Logf("Restarted old leader %d", initialLeader)
 

@@ -124,7 +124,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir) //nolint:errcheck // test cleanup
+	t.Cleanup(func() { os.RemoveAll(tempDir) }) //nolint:errcheck // test cleanup
 
 	// Clear persistence store
 	persistenceStore.mu.Lock()
@@ -293,7 +293,7 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir) //nolint:errcheck // test cleanup
+	t.Cleanup(func() { os.RemoveAll(tempDir) }) //nolint:errcheck // test cleanup
 
 	// Clear persistence store
 	persistenceStore.mu.Lock()
@@ -414,7 +414,7 @@ func TestPersistenceWithSnapshots(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir) //nolint:errcheck // test cleanup
+	t.Cleanup(func() { os.RemoveAll(tempDir) }) //nolint:errcheck // test cleanup
 
 	// Clear persistence store
 	persistenceStore.mu.Lock()
