@@ -381,17 +381,17 @@ go vet ./...
 golangci-lint run ./...
 
 # 6. TEST KV STORE EXAMPLE (MANDATORY when changes affect core Raft or example/)
-# NOTE: Must be run from example/ directory, then return to root
-cd example && uv run python kv-store-cluster.py --run-tests && cd ..
+# NOTE: Uses subshell to run from example/ directory without changing current directory
+(cd example && uv run python kv-store-cluster.py --run-tests)
 ```
 
 **BEFORE COMMITTING**: Re-run all the above commands to ensure nothing is broken!
 
 **PYTHON TEST SETUP**:
 - The KV store tests use `uv` for Python dependency management
-- **First time only**: Run `cd example && uv sync && cd ..` to install dependencies
-- **Every time**: Tests MUST be run from the `example/` directory
-- **Every time**: MUST return to root directory after tests (`cd ..`)
+- **First time only**: Run `(cd example && uv sync)` to install dependencies
+- **Subshell execution**: Tests run in a subshell, automatically returning to current directory
+- **No manual directory changes needed**: The subshell handles directory navigation
 - Tests verify: cluster formation, leader election, consistency, and fault tolerance
 - See `example/README.md` for detailed documentation
 
