@@ -55,7 +55,7 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 		ElectionTimeoutMin: 150 * time.Millisecond,
 		ElectionTimeoutMax: 300 * time.Millisecond,
 		HeartbeatInterval:  50 * time.Millisecond,
-		Logger:             raft.NewTestLogger(t),
+		Logger:             raft.NewSafeTestLogger(t),
 	}
 	transport3 := helpers.NewMultiNodeTransport(3, cluster.Registry.(*helpers.NodeRegistry))
 	node3, err := raft.NewNode(config3, transport3, nil, raft.NewMockStateMachine())
@@ -75,7 +75,7 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 		ElectionTimeoutMin: 150 * time.Millisecond,
 		ElectionTimeoutMax: 300 * time.Millisecond,
 		HeartbeatInterval:  50 * time.Millisecond,
-		Logger:             raft.NewTestLogger(t),
+		Logger:             raft.NewSafeTestLogger(t),
 	}
 	transport4 := helpers.NewMultiNodeTransport(4, cluster.Registry.(*helpers.NodeRegistry))
 	node4, err := raft.NewNode(config4, transport4, nil, raft.NewMockStateMachine())

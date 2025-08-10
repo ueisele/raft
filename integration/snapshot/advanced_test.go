@@ -163,7 +163,7 @@ func TestSnapshotOfSnapshotIndex(t *testing.T) {
 		ElectionTimeoutMin: 150 * time.Millisecond,
 		ElectionTimeoutMax: 300 * time.Millisecond,
 		HeartbeatInterval:  50 * time.Millisecond,
-		Logger:             raft.NewTestLogger(t),
+		Logger:             raft.NewSafeTestLogger(t),
 	}
 
 	transport := raft.NewMockTransport(0)
@@ -405,7 +405,7 @@ func TestPersistenceWithRapidSnapshots(t *testing.T) {
 		ElectionTimeoutMin: 150 * time.Millisecond,
 		ElectionTimeoutMax: 300 * time.Millisecond,
 		HeartbeatInterval:  50 * time.Millisecond,
-		Logger:             raft.NewTestLogger(t),
+		Logger:             raft.NewSafeTestLogger(t),
 		MaxLogSize:         5, // Very small to trigger many snapshots
 	}
 

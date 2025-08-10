@@ -14,7 +14,7 @@ import (
 func TestBasicConfigurationChange(t *testing.T) {
 	// Create 4 nodes but only include 3 in initial configuration
 	nodes := make([]raft.Node, 4)
-	registry := helpers.NewDebugNodeRegistry(raft.NewTestLogger(t))
+	registry := helpers.NewDebugNodeRegistry(raft.NewSafeTestLogger(t))
 
 	for i := 0; i < 4; i++ {
 		// Initial configuration only includes nodes 0, 1, 2
@@ -26,10 +26,10 @@ func TestBasicConfigurationChange(t *testing.T) {
 			ElectionTimeoutMin: 150 * time.Millisecond,
 			ElectionTimeoutMax: 300 * time.Millisecond,
 			HeartbeatInterval:  50 * time.Millisecond,
-			Logger:             raft.NewTestLogger(t),
+			Logger:             raft.NewSafeTestLogger(t),
 		}
 
-		transport := helpers.NewDebugTransport(i, registry, raft.NewTestLogger(t))
+		transport := helpers.NewDebugTransport(i, registry, raft.NewSafeTestLogger(t))
 
 		stateMachine := raft.NewMockStateMachine()
 

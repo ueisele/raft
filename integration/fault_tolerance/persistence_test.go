@@ -144,7 +144,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 			ElectionTimeoutMin: 150 * time.Millisecond,
 			ElectionTimeoutMax: 300 * time.Millisecond,
 			HeartbeatInterval:  50 * time.Millisecond,
-			Logger:             raft.NewTestLogger(t),
+			Logger:             raft.NewSafeTestLogger(t),
 		}
 
 		transport := helpers.NewMultiNodeTransport(i, registry)
@@ -212,7 +212,7 @@ func TestNodeRestartWithPersistence(t *testing.T) {
 			ElectionTimeoutMin: 150 * time.Millisecond,
 			ElectionTimeoutMax: 300 * time.Millisecond,
 			HeartbeatInterval:  50 * time.Millisecond,
-			Logger:             raft.NewTestLogger(t),
+			Logger:             raft.NewSafeTestLogger(t),
 		}
 
 		transport := helpers.NewMultiNodeTransport(i, newRegistry)
@@ -499,7 +499,7 @@ func createPersistentCluster(t *testing.T, tempDir string, size int) *persistent
 			ElectionTimeoutMin: 150 * time.Millisecond,
 			ElectionTimeoutMax: 300 * time.Millisecond,
 			HeartbeatInterval:  50 * time.Millisecond,
-			Logger:             raft.NewTestLogger(t),
+			Logger:             raft.NewSafeTestLogger(t),
 		}
 
 		transport := helpers.NewMultiNodeTransport(i, registry)
@@ -549,7 +549,7 @@ func restartNode(t *testing.T, ctx context.Context, cluster *persistentCluster, 
 		ElectionTimeoutMin: 150 * time.Millisecond,
 		ElectionTimeoutMax: 300 * time.Millisecond,
 		HeartbeatInterval:  50 * time.Millisecond,
-		Logger:             raft.NewTestLogger(t),
+		Logger:             raft.NewSafeTestLogger(t),
 	}
 
 	transport := helpers.NewMultiNodeTransport(nodeID, cluster.registry)

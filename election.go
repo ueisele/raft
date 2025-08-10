@@ -59,11 +59,15 @@ func (em *ElectionManager) StartElection() bool {
 
 	lastIndex := em.logManager.GetLastIndex()
 	lastTerm := em.logManager.GetLastTerm()
+
+	// Make a copy of peers while holding the lock to avoid race conditions
+	peersCopy := make([]int, len(em.peers))
+	copy(peersCopy, em.peers)
 	em.mu.Unlock()
 
 	// Request votes from all other servers in parallel
 	votesReceived := 1 // Already voted for self
-	votesNeeded := (len(em.peers) / 2) + 1
+	votesNeeded := (len(peersCopy) / 2) + 1
 
 	// Check if already have enough votes (single node case)
 	if votesReceived >= votesNeeded {
@@ -76,13 +80,13 @@ func (em *ElectionManager) StartElection() bool {
 		granted bool
 		term    int
 	}
-	resultChan := make(chan voteResult, len(em.peers))
+	resultChan := make(chan voteResult, len(peersCopy))
 
 	if em.config.Logger != nil {
-		em.config.Logger.Debug("Starting election with peers: %v", em.peers)
+		em.config.Logger.Debug("Starting election with peers: %v", peersCopy)
 	}
 
-	for _, peerID := range em.peers {
+	for _, peerID := range peersCopy {
 		if peerID == em.serverID {
 			continue
 		}
@@ -112,7 +116,7 @@ func (em *ElectionManager) StartElection() bool {
 	timer := time.NewTimer(em.config.ElectionTimeoutMin)
 	defer timer.Stop()
 
-	for i := 0; i < len(em.peers)-1; i++ {
+	for i := 0; i < len(peersCopy)-1; i++ {
 		select {
 		case result := <-resultChan:
 			// Check if we discovered a higher term

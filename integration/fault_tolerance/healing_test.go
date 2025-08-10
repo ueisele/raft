@@ -79,7 +79,7 @@ func TestClusterHealing(t *testing.T) {
 		ElectionTimeoutMin: 150 * time.Millisecond,
 		ElectionTimeoutMax: 300 * time.Millisecond,
 		HeartbeatInterval:  50 * time.Millisecond,
-		Logger:             raft.NewTestLogger(t),
+		Logger:             raft.NewSafeTestLogger(t),
 	}
 
 	// Use the same transport type
@@ -240,7 +240,7 @@ func TestEventualConsistency(t *testing.T) {
 						ElectionTimeoutMin: 150 * time.Millisecond,
 						ElectionTimeoutMax: 300 * time.Millisecond,
 						HeartbeatInterval:  50 * time.Millisecond,
-						Logger:             raft.NewTestLogger(t),
+						Logger:             raft.NewSafeTestLogger(t),
 					}
 
 					// Create transport based on cluster type

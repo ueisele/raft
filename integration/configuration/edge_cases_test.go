@@ -284,7 +284,7 @@ func TestConfigChangeWithNodeFailures(t *testing.T) {
 				ElectionTimeoutMin: 150 * time.Millisecond,
 				ElectionTimeoutMax: 300 * time.Millisecond,
 				HeartbeatInterval:  50 * time.Millisecond,
-				Logger:             raft.NewTestLogger(t),
+				Logger:             raft.NewSafeTestLogger(t),
 			}
 
 			transport := helpers.NewMultiNodeTransport(followerToStop, cluster.Registry.(*helpers.NodeRegistry))
@@ -398,7 +398,7 @@ func TestMaximumClusterSize(t *testing.T) {
 			ElectionTimeoutMin: 150 * time.Millisecond,
 			ElectionTimeoutMax: 300 * time.Millisecond,
 			HeartbeatInterval:  50 * time.Millisecond,
-			Logger:             raft.NewTestLogger(t),
+			Logger:             raft.NewSafeTestLogger(t),
 		}
 
 		transport := helpers.NewMultiNodeTransport(newNodeID, cluster.Registry.(*helpers.NodeRegistry))

@@ -31,14 +31,14 @@ func TestLogReplicationWithFailures(t *testing.T) {
 			ElectionTimeoutMin: 150 * time.Millisecond,
 			ElectionTimeoutMax: 300 * time.Millisecond,
 			HeartbeatInterval:  50 * time.Millisecond,
-			Logger:             raft.NewTestLogger(t),
+			Logger:             raft.NewSafeTestLogger(t),
 		}
 
 		transport := &failureTransport{
 			id:          i,
 			registry:    registry,
 			failureRate: 0.1, // 10% failure rate
-			logger:      raft.NewTestLogger(t),
+			logger:      raft.NewSafeTestLogger(t),
 		}
 		transports[i] = transport
 
@@ -356,7 +356,7 @@ func TestReplicationWithSlowFollowers(t *testing.T) {
 			ElectionTimeoutMin: 150 * time.Millisecond,
 			ElectionTimeoutMax: 300 * time.Millisecond,
 			HeartbeatInterval:  50 * time.Millisecond,
-			Logger:             raft.NewTestLogger(t),
+			Logger:             raft.NewSafeTestLogger(t),
 		}
 
 		// Make some followers slow
