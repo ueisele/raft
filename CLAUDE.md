@@ -333,6 +333,26 @@ case Leader:
 
 ## Common Tasks
 
+### Directory Navigation Best Practices
+
+**ALWAYS use subshells when changing directories:**
+```bash
+# ✅ GOOD - Using subshell
+(cd example && go build -o kv_store kv_store.go)
+(cd integration && go test -v ./...)
+(cd docs && grep -r "pattern" .)
+
+# ❌ BAD - Manual directory changes  
+cd example && go build -o kv_store kv_store.go && cd ..
+cd integration && go test -v ./... && cd ..
+
+# Why subshells are better:
+# 1. Automatic return to original directory
+# 2. Works correctly even if command fails
+# 3. No risk of getting "lost" in wrong directory
+# 4. Cleaner and more maintainable
+```
+
 ### Running Tests
 ```bash
 # Run all tests with proper flags
@@ -360,6 +380,7 @@ go test ./integration/... -v
 3. **Backwards Compatibility**: Maintain interface compatibility
 4. **Thread Safety**: All public methods must be thread-safe
 5. **Error Context**: Always provide context in error messages
+6. **Use Subshells for Directory Changes**: ALWAYS use subshells `(cd dir && command)` instead of `cd dir && command && cd ..` to ensure the working directory is preserved even if commands fail
 
 ## 🚨 MANDATORY Commands to Run
 
