@@ -237,6 +237,64 @@ helpers.WaitForLeader(t, cluster, 5*time.Second)
 helpers.AssertSameTerm(t, cluster)
 ```
 
+### Waiting for Asynchronous Operations in Integration Tests
+
+**ALWAYS use condition-based waiting instead of fixed sleeps:**
+
+```go
+// ✅ GOOD - Wait for specific condition with WaitForCondition
+helpers.WaitForCondition(t, func() bool {
+    // Check if old leader has stepped down
+    _, oldIsLeader := nodes[0].GetState()
+    if oldIsLeader {
+        return false // Wait for old leader to step down first
+    }
+    
+    // Now check for new leader
+    for i := 1; i <= 2; i++ {
+        _, isLeader := nodes[i].GetState()
+        if isLeader {
+            newLeaderID = i
+            return true
+        }
+    }
+    return false
+}, 3*time.Second, "new leader election after partition")
+
+// ❌ BAD - Fixed sleep that may be too short or unnecessarily long
+time.Sleep(300 * time.Millisecond)
+```
+
+**Benefits of condition-based waiting:**
+1. **More reliable** - Waits for actual state changes, not arbitrary delays
+2. **Faster tests** - Returns immediately when condition is met  
+3. **Clearer intent** - Explicitly states what we're waiting for
+4. **Less flaky** - Eliminates timing-dependent failures
+
+**Common patterns:**
+```go
+// Wait for leader election
+helpers.WaitForLeader(t, nodes, 2*time.Second)
+
+// Wait for commit index
+helpers.WaitForCommitIndex(t, nodes, expectedIndex, 2*time.Second)
+
+// Wait for custom condition
+helpers.WaitForCondition(t, func() bool {
+    return cluster.IsStable()
+}, 5*time.Second, "cluster stabilization")
+
+// Wait for eventual consistency across nodes
+helpers.Eventually(t, func() bool {
+    for _, node := range nodes {
+        if node.GetCommitIndex() != expectedIndex {
+            return false
+        }
+    }
+    return true
+}, 3*time.Second, "all nodes reach same commit index")
+```
+
 ### Defer vs t.Cleanup() Decision Tree for Tests
 
 **IMPORTANT**: In test files, use this decision tree to determine when to use `defer` vs `t.Cleanup()`:
