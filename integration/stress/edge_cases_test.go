@@ -74,7 +74,11 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 	if err := node3.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node 3: %v", err)
 	}
-	t.Cleanup(func() { node3.Stop() }) //nolint:errcheck // test cleanup
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		node3.Stop(ctx) //nolint:errcheck // test cleanup
+	})
 
 	// Create node 4
 	config4 := &raft.Config{
@@ -94,7 +98,11 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 	if err := node4.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node 4: %v", err)
 	}
-	t.Cleanup(func() { node4.Stop() }) //nolint:errcheck // test cleanup
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		node4.Stop(ctx) //nolint:errcheck // test cleanup
+	})
 
 	// Start first config change to add node 3
 	err1Ch := make(chan error, 1)
@@ -213,7 +221,9 @@ func TestConfigChangeLeadershipTransfer(t *testing.T) {
 
 	// Force leadership change during config change
 	time.Sleep(100 * time.Millisecond) // Small delay to let config change start
-	cluster.Nodes[leaderID].Stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cluster.Nodes[leaderID].Stop(ctx) //nolint:errcheck // intentional stop for test
+	cancel()
 	t.Logf("Stopped leader %d during config change", leaderID)
 
 	// Wait for new leader
@@ -338,7 +348,9 @@ func TestEdgeCaseScenarios(t *testing.T) {
 			cluster.Nodes[leaderID].Submit(fmt.Sprintf("rapid-%d", i))
 
 			// Immediately stop leader
-			cluster.Nodes[leaderID].Stop()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			cluster.Nodes[leaderID].Stop(ctx) //nolint:errcheck // intentional stop for test
+			cancel()
 			t.Logf("Stopped leader %d", leaderID)
 
 			time.Sleep(200 * time.Millisecond) // Brief pause between rapid leader changes

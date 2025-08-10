@@ -34,7 +34,8 @@ type Node interface {
 	Start(ctx context.Context) error
 
 	// Stop gracefully shuts down the Raft node
-	Stop()
+	// The context can be used to set a timeout for graceful shutdown
+	Stop(ctx context.Context) error
 
 	// IsLeader returns true if this node is the current leader
 	IsLeader() bool

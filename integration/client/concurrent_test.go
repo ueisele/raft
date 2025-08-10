@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -364,7 +365,9 @@ func TestConcurrentLeaderFailure(t *testing.T) {
 
 	// Kill the leader
 	atomic.StoreInt64(&leaderFailed, 1)
-	cluster.Nodes[initialLeaderID].Stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cluster.Nodes[initialLeaderID].Stop(ctx) //nolint:errcheck // intentional stop for test
+	cancel()
 	t.Logf("Stopped leader %d", initialLeaderID)
 
 	// Continue for a while to test recovery

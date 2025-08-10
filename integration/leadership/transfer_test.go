@@ -52,7 +52,9 @@ func TestLeadershipTransfer(t *testing.T) {
 	// and the target node starting an election with a higher term
 
 	// Stop the current leader
-	cluster.Nodes[initialLeader].Stop() //nolint:errcheck // intentional stop for test
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cluster.Nodes[initialLeader].Stop(ctx) //nolint:errcheck // intentional stop for test
+	cancel()
 	t.Log("Stopped current leader to trigger new election")
 
 	// Wait for new leader election
@@ -162,7 +164,9 @@ func TestGracefulLeadershipHandoff(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// Stop current leader
-	cluster.Nodes[currentLeader].Stop() //nolint:errcheck // intentional stop for test
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cluster.Nodes[currentLeader].Stop(stopCtx) //nolint:errcheck // intentional stop for test
+	stopCancel()
 	t.Logf("Gracefully stopped leader %d", currentLeader)
 
 	// Continue submitting commands during transition
@@ -257,7 +261,9 @@ func TestLeadershipTransferToSpecificNode(t *testing.T) {
 	// 4. Target immediately starts election with pre-vote
 
 	// For this test, we simulate by stopping current leader
-	cluster.Nodes[currentLeader].Stop() //nolint:errcheck // intentional stop for test
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cluster.Nodes[currentLeader].Stop(ctx) //nolint:errcheck // intentional stop for test
+	cancel()
 
 	// Wait for election
 	time.Sleep(500 * time.Millisecond)
@@ -350,7 +356,9 @@ func TestLeadershipTransferDuringLoad(t *testing.T) {
 	transferTime := time.Now()
 	t.Logf("Initiating leadership transfer at %v", transferTime)
 
-	cluster.Nodes[initialLeader].Stop() //nolint:errcheck // intentional stop for test
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cluster.Nodes[initialLeader].Stop(stopCtx) //nolint:errcheck // intentional stop for test
+	stopCancel()
 
 	// Continue load during transfer
 	time.Sleep(1 * time.Second)
@@ -467,9 +475,11 @@ func TestPreventedLeadershipTransfer(t *testing.T) {
 
 	// Scenario 3: No transfer if no suitable target
 	// Stop all followers
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	for i, node := range cluster.Nodes {
 		if i != leaderID {
-			node.Stop() //nolint:errcheck // test cleanup
+			node.Stop(ctx) //nolint:errcheck // test cleanup
 		}
 	}
 

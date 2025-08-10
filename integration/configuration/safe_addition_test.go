@@ -136,8 +136,12 @@ func TestSafeServerAddition(t *testing.T) {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
-		nodeCopy := node                      // Capture loop variable
-		t.Cleanup(func() { nodeCopy.Stop() }) //nolint:errcheck // test cleanup
+		nodeCopy := node // Capture loop variable
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			nodeCopy.Stop(ctx) //nolint:errcheck // test cleanup
+		})
 	}
 
 	// Wait for leader election
@@ -191,7 +195,11 @@ func TestSafeServerAddition(t *testing.T) {
 	if err := newNode.Start(ctx); err != nil {
 		t.Fatalf("Failed to start new node: %v", err)
 	}
-	t.Cleanup(func() { newNode.Stop() }) //nolint:errcheck // test cleanup
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		newNode.Stop(ctx) //nolint:errcheck // test cleanup
+	})
 
 	// Now add the server to configuration (it can immediately start receiving logs)
 	err = leader.AddServerSafely(newServerID, fmt.Sprintf("server-%d", newServerID))
@@ -368,7 +376,11 @@ func TestSafeConfigurationMetrics(t *testing.T) {
 	if err := newNode.Start(ctx); err != nil {
 		t.Fatalf("Failed to start new node: %v", err)
 	}
-	t.Cleanup(func() { newNode.Stop() }) //nolint:errcheck // test cleanup
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		newNode.Stop(ctx) //nolint:errcheck // test cleanup
+	})
 
 	// Measure configuration change time
 	configStart := time.Now()

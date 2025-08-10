@@ -61,8 +61,12 @@ func TestLogReplicationWithFailures(t *testing.T) {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
-		nodeCopy := node                      // Capture loop variable
-		t.Cleanup(func() { nodeCopy.Stop() }) //nolint:errcheck // test cleanup
+		nodeCopy := node // Capture loop variable
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			nodeCopy.Stop(ctx) //nolint:errcheck // test cleanup
+		})
 	}
 
 	// Wait for leader election
@@ -405,8 +409,12 @@ func TestReplicationWithSlowFollowers(t *testing.T) {
 		if err := node.Start(ctx); err != nil {
 			t.Fatalf("Failed to start node %d: %v", i, err)
 		}
-		nodeCopy := node                      // Capture loop variable
-		t.Cleanup(func() { nodeCopy.Stop() }) //nolint:errcheck // test cleanup
+		nodeCopy := node // Capture loop variable
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			nodeCopy.Stop(ctx) //nolint:errcheck // test cleanup
+		})
 	}
 
 	// Wait for leader

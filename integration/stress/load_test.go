@@ -1,6 +1,7 @@
 package stress
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -290,7 +291,9 @@ func TestLoadWithNodeFailures(t *testing.T) {
 	// Stop a follower
 	followerID := (initialLeaderID + 1) % 5
 	t.Logf("Stopping follower node %d", followerID)
-	cluster.Nodes[followerID].Stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cluster.Nodes[followerID].Stop(ctx) //nolint:errcheck // intentional stop for test
+	cancel()
 
 	// Continue load for a bit
 	time.Sleep(2 * time.Second)
@@ -298,7 +301,9 @@ func TestLoadWithNodeFailures(t *testing.T) {
 	// Stop another follower
 	followerID2 := (initialLeaderID + 2) % 5
 	t.Logf("Stopping follower node %d", followerID2)
-	cluster.Nodes[followerID2].Stop()
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+	cluster.Nodes[followerID2].Stop(ctx2) //nolint:errcheck // intentional stop for test
+	cancel2()
 
 	// Continue load - should still work with 3 nodes
 	time.Sleep(2 * time.Second)

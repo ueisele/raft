@@ -13,8 +13,10 @@ import (
 
 // TestSnapshotDuringPartition tests snapshot creation and installation during network partition
 func TestSnapshotDuringPartition(t *testing.T) {
-	// Create 5-node cluster with partitionable transport
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport())
+	// Create 5-node cluster with partitionable transport and small log size to trigger snapshots
+	cluster := helpers.NewTestCluster(t, 5,
+		helpers.WithPartitionableTransport(),
+		helpers.WithMaxLogSize(10))
 
 	// Start cluster
 	if err := cluster.Start(); err != nil {
@@ -140,7 +142,9 @@ func TestSnapshotDuringLeadershipChange(t *testing.T) {
 	}
 
 	// Stop current leader to trigger new election
-	cluster.Nodes[initialLeader].Stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cluster.Nodes[initialLeader].Stop(ctx) //nolint:errcheck // intentional stop for test
+	cancel()
 	t.Logf("Stopped leader %d", initialLeader)
 
 	// Wait for new leader
@@ -213,7 +217,11 @@ func TestSnapshotOfSnapshotIndex(t *testing.T) {
 	if err := node.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node: %v", err)
 	}
-	t.Cleanup(func() { node.Stop() }) //nolint:errcheck // test cleanup
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		node.Stop(ctx) //nolint:errcheck // test cleanup
+	})
 
 	// Wait for node to become leader
 	helpers.WaitForLeader(t, []raft.Node{node}, 2*time.Second)
@@ -518,7 +526,11 @@ func TestPersistenceWithRapidSnapshots(t *testing.T) {
 	if err := node.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node: %v", err)
 	}
-	t.Cleanup(func() { node.Stop() }) //nolint:errcheck // test cleanup
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		node.Stop(ctx) //nolint:errcheck // test cleanup
+	})
 
 	// Wait for leader
 	helpers.WaitForLeader(t, []raft.Node{node}, 2*time.Second)

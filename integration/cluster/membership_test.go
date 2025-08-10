@@ -72,7 +72,11 @@ func TestBasicMembershipChange(t *testing.T) {
 	if err := newNode.Start(ctx); err != nil {
 		t.Fatalf("Failed to start new node: %v", err)
 	}
-	t.Cleanup(func() { newNode.Stop() }) //nolint:errcheck // test cleanup
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		newNode.Stop(ctx) //nolint:errcheck // test cleanup
+	})
 
 	// Add server to configuration
 	err = leader.AddServer(3, "server-3", true)
@@ -147,7 +151,9 @@ func TestBasicMembershipChange(t *testing.T) {
 	helpers.WaitForServers(t, remainingNodes, expectedServers, 5*time.Second)
 
 	// Stop removed node
-	cluster.Nodes[nodeToRemove].Stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cluster.Nodes[nodeToRemove].Stop(ctx) //nolint:errcheck // test cleanup
+	cancel()
 
 	// Verify cluster still works
 	cmd = "after-remove-server"
@@ -247,12 +253,20 @@ func TestConcurrentMembershipChanges(t *testing.T) {
 	if err := node3.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node 3: %v", err)
 	}
-	t.Cleanup(func() { node3.Stop() }) //nolint:errcheck // test cleanup
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		node3.Stop(ctx) //nolint:errcheck // test cleanup
+	})
 
 	if err := node4.Start(ctx); err != nil {
 		t.Fatalf("Failed to start node 4: %v", err)
 	}
-	t.Cleanup(func() { node4.Stop() }) //nolint:errcheck // test cleanup
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		node4.Stop(ctx) //nolint:errcheck // test cleanup
+	})
 
 	// Try to add two servers concurrently
 	errChan := make(chan error, 2)

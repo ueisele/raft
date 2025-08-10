@@ -856,8 +856,12 @@ func main() {
 		log.Printf("HTTP server shutdown error: %v", err)
 	}
 
-	// Stop Raft node
-	raftNode.Stop()
+	// Stop Raft node with timeout
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer stopCancel()
+	if err := raftNode.Stop(stopCtx); err != nil {
+		log.Printf("Warning: failed to stop Raft node cleanly: %v", err)
+	}
 
 	log.Println("Shutdown complete")
 }

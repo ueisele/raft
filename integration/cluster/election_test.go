@@ -81,17 +81,19 @@ func TestLeaderFailover(t *testing.T) {
 	}
 
 	// Stop the leader
-	cluster.Nodes[initialLeaderID].Stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cluster.Nodes[initialLeaderID].Stop(ctx) //nolint:errcheck // intentional stop for test
+	cancel()
 	t.Logf("Stopped leader node %d", initialLeaderID)
 
 	// Wait for new leader election
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer waitCancel()
 
 	var newLeaderID int
 	for {
 		select {
-		case <-ctx.Done():
+		case <-waitCtx.Done():
 			t.Fatal("Timeout waiting for new leader")
 		case <-time.After(100 * time.Millisecond):
 			// Check for new leader

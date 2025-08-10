@@ -218,7 +218,9 @@ func TestConfigChangeWithNodeFailures(t *testing.T) {
 
 	// Stop a follower node
 	followerToStop := (leaderID + 1) % 5
-	cluster.Nodes[followerToStop].Stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cluster.Nodes[followerToStop].Stop(ctx) //nolint:errcheck // intentional stop for test
+	cancel()
 	t.Logf("Stopped follower node %d", followerToStop)
 
 	// Try to remove the stopped node
@@ -422,7 +424,9 @@ func TestMaximumClusterSize(t *testing.T) {
 		err = cluster.Nodes[leaderID].AddServer(newNodeID, fmt.Sprintf("server-%d", newNodeID), true)
 		if err != nil {
 			t.Logf("Failed to add node %d at size %d: %v", newNodeID, currentSize, err)
-			node.Stop()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			node.Stop(ctx) //nolint:errcheck // cleanup on error
+			cancel()
 			break
 		}
 

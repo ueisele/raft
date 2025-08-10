@@ -100,17 +100,30 @@ func TestSnapshotInstallation(t *testing.T) {
 	}
 
 	// Submit enough commands to trigger snapshot
-	// Don't wait for each one individually
+	// Wait for some commands to ensure progress
+	lastIdx := 0
 	for i := 0; i < 20; i++ {
 		cmd := fmt.Sprintf("command-%d", i)
-		_, _, err := cluster.SubmitCommand(cmd)
+		idx, _, err := cluster.SubmitCommand(cmd)
 		if err != nil {
 			t.Logf("Failed to submit command %d: %v", i, err)
+			continue
+		}
+		lastIdx = idx
+		// Wait for every 5th command to ensure progress
+		if i%5 == 4 && lastIdx > 0 {
+			if err := cluster.WaitForCommitIndex(lastIdx, time.Second); err != nil {
+				t.Logf("Warning: Failed to wait for commit index %d: %v", lastIdx, err)
+			}
 		}
 	}
 
-	// Give some time for commands to be processed
-	time.Sleep(2 * time.Second)
+	// Wait for final command to be committed
+	if lastIdx > 0 {
+		if err := cluster.WaitForCommitIndex(lastIdx, 2*time.Second); err != nil {
+			t.Logf("Warning: Final commands might not be committed: %v", err)
+		}
+	}
 
 	// Verify snapshot was created on at least one node
 	snapshotCreated := false
@@ -302,7 +315,11 @@ func TestSnapshotFailure(t *testing.T) {
 
 	// Submit some commands
 	for i := 0; i < 7; i++ {
-		cluster.SubmitCommand(fmt.Sprintf("cmd%d", i)) //nolint:errcheck // background commands
+		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("cmd%d", i))
+		if err == nil && i == 6 {
+			// Wait for last command before setting up failure
+			cluster.WaitForCommitIndex(idx, time.Second) //nolint:errcheck // best effort
+		}
 	}
 
 	// Simulate snapshot save failure
@@ -310,17 +327,20 @@ func TestSnapshotFailure(t *testing.T) {
 		mockPersistence.FailNextSave()
 	}
 
-	// Submit more commands to trigger snapshot
+	// Submit more commands to trigger snapshot (log size > 5)
 	for i := 7; i < 10; i++ {
 		cluster.SubmitCommand(fmt.Sprintf("cmd%d", i)) //nolint:errcheck // background commands
 	}
 
-	// Wait for snapshot attempt
+	// Wait for snapshot attempt or log growth
 	helpers.WaitForCondition(t, func() bool {
-		// Check if snapshot was attempted (it will fail)
-		logLength := cluster.Nodes[0].GetLogLength()
-		return logLength >= 10
-	}, 2*time.Second, "snapshot trigger")
+		// With MaxLogSize of 5, snapshot should be triggered when log exceeds 5
+		// Check if persistence has recorded a save attempt (even if failed)
+		if mockPersistence, ok := cluster.GetPersistence(0).(*raft.MockPersistence); ok {
+			return mockPersistence.GetSaveCount() > 0
+		}
+		return false
+	}, 2*time.Second, "snapshot save attempt")
 
 	// Node should still be functional despite snapshot failure
 	if !cluster.Nodes[0].IsLeader() {

@@ -65,7 +65,9 @@ func TestExampleClientInteraction(t *testing.T) {
 
 		// Simulate leader crash immediately after submit
 		// (In real scenario, this might happen after partial replication)
-		leader.Stop()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		leader.Stop(ctx) //nolint:errcheck // intentional stop for test
+		cancel()
 
 		// Wait for new leader
 		timing := DefaultTimingConfig()
@@ -199,7 +201,9 @@ func setupTestCluster(t *testing.T, size int) ([]Node, func()) {
 
 	cleanup := func() {
 		for _, node := range nodes {
-			node.Stop()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			node.Stop(ctx) //nolint:errcheck // test cleanup
+			cancel()
 		}
 	}
 

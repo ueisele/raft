@@ -66,6 +66,9 @@ type raftNode struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// Track running goroutines for graceful shutdown
+	wg sync.WaitGroup
 }
 
 // NewNode creates a new Raft node
@@ -147,16 +150,24 @@ func (n *raftNode) Start(ctx context.Context) error {
 	}
 
 	// Start the main loop
-	go n.run()
+	n.wg.Add(1)
+	go func() {
+		defer n.wg.Done()
+		n.run()
+	}()
 
 	// Start the apply loop
-	go n.applyLoop()
+	n.wg.Add(1)
+	go func() {
+		defer n.wg.Done()
+		n.applyLoop()
+	}()
 
 	return nil
 }
 
 // Stop gracefully shuts down the Raft node
-func (n *raftNode) Stop() {
+func (n *raftNode) Stop(ctx context.Context) error {
 	// Try to acquire lock with timeout to avoid deadlock during shutdown
 	lockAcquired := make(chan struct{})
 	go func() {
@@ -169,7 +180,7 @@ func (n *raftNode) Stop() {
 		// Got the lock, proceed with normal shutdown
 		if n.stopped {
 			n.mu.Unlock()
-			return
+			return nil
 		}
 		n.stopped = true
 
@@ -185,8 +196,18 @@ func (n *raftNode) Stop() {
 		}
 		n.mu.Unlock()
 
+	case <-ctx.Done():
+		// Context timeout - force shutdown
+		if n.config.Logger != nil {
+			n.config.Logger.Warn("Stop() context cancelled - forcing shutdown")
+		}
+		if n.cancel != nil {
+			n.cancel()
+		}
+		return ctx.Err()
+
 	case <-time.After(2 * time.Second):
-		// Timeout - force shutdown without lock
+		// Fallback timeout - force shutdown without lock
 		if n.config.Logger != nil {
 			n.config.Logger.Warn("Stop() timeout - forcing shutdown without lock")
 		}
@@ -218,7 +239,34 @@ func (n *raftNode) Stop() {
 		// Channel might still be open but we can't safely close it
 	}
 
-	n.transport.Stop() //nolint:errcheck // best effort cleanup on context cancellation
+	// Stop transport
+	if err := n.transport.Stop(); err != nil {
+		if n.config.Logger != nil {
+			n.config.Logger.Warn("Failed to stop transport: %v", err)
+		}
+	}
+
+	// Wait for all goroutines to finish with context timeout
+	done := make(chan struct{})
+	go func() {
+		n.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// All goroutines finished cleanly
+		if n.config.Logger != nil {
+			n.config.Logger.Info("Node %d: all goroutines stopped cleanly", n.config.ID)
+		}
+		return nil
+	case <-ctx.Done():
+		// Context cancelled/timeout before goroutines finished
+		if n.config.Logger != nil {
+			n.config.Logger.Error("Node %d: timeout waiting for goroutines to stop", n.config.ID)
+		}
+		return ctx.Err()
+	}
 }
 
 // Submit submits a command to the Raft cluster

@@ -44,7 +44,9 @@ func TestLeaderCommitIndexPreservation(t *testing.T) {
 	t.Logf("Initial leader %d has commit index %d", initialLeader, commitIndexBefore)
 
 	// Force leader change by stopping current leader
-	cluster.Nodes[initialLeader].Stop() //nolint:errcheck // intentional stop for test
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cluster.Nodes[initialLeader].Stop(stopCtx) //nolint:errcheck // intentional stop for test
+	stopCancel()
 	t.Logf("Stopped leader %d", initialLeader)
 
 	// Wait for new leader
@@ -323,7 +325,9 @@ func TestMultipleLeaderTransitions(t *testing.T) {
 		}
 
 		// Stop current leader
-		cluster.Nodes[currentLeader].Stop() //nolint:errcheck // intentional stop for test
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		cluster.Nodes[currentLeader].Stop(stopCtx) //nolint:errcheck // intentional stop for test
+		stopCancel()
 		stoppedNodes[currentLeader] = true
 		t.Logf("Stopped leader %d", currentLeader)
 

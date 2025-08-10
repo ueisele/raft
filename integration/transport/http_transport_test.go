@@ -104,7 +104,9 @@ func TestHTTPTransportBasicCluster(t *testing.T) {
 		}
 		nodeCopy := node // Capture loop variable
 		t.Cleanup(func() {
-			nodeCopy.Stop() //nolint:errcheck // test cleanup
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			nodeCopy.Stop(ctx) //nolint:errcheck // test cleanup
 		})
 	}
 
@@ -212,7 +214,9 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 		}
 		nodeCopy := node // Capture loop variable
 		t.Cleanup(func() {
-			nodeCopy.Stop() //nolint:errcheck // test cleanup
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			nodeCopy.Stop(ctx) //nolint:errcheck // test cleanup
 		})
 	}
 
@@ -347,7 +351,9 @@ func TestHTTPTransportHighLoad(t *testing.T) {
 		}
 		nodeCopy := node // Capture loop variable
 		t.Cleanup(func() {
-			nodeCopy.Stop() //nolint:errcheck // test cleanup
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			nodeCopy.Stop(ctx) //nolint:errcheck // test cleanup
 		})
 	}
 

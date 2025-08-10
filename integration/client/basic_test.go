@@ -52,7 +52,9 @@ func TestExampleClientInteraction(t *testing.T) {
 	// Example 2: Handling leader changes
 	t.Run("HandlingLeaderChanges", func(t *testing.T) {
 		// Simulate leader change by stopping current leader
-		leader.Stop()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		leader.Stop(ctx) //nolint:errcheck // intentional stop for test
+		cancel()
 		t.Logf("Stopped leader %d to simulate failure", leaderID)
 
 		// Wait for new leader
@@ -207,7 +209,9 @@ func TestClientRetryLogic(t *testing.T) {
 		time.Sleep(50 * time.Millisecond) // Small delay to let submit start
 		client.mu.Lock()
 		if client.lastLeaderID != -1 {
-			cluster.Nodes[client.lastLeaderID].Stop()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			cluster.Nodes[client.lastLeaderID].Stop(ctx) //nolint:errcheck // intentional stop for test
+			cancel()
 			t.Logf("Stopped leader %d during submit", client.lastLeaderID)
 		}
 		client.mu.Unlock()

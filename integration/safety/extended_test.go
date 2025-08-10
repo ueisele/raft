@@ -362,7 +362,9 @@ func TestRapidLeadershipChanges(t *testing.T) {
 
 		// Stop current leader
 		currentLeader := leaderChanges[len(leaderChanges)-1].leaderID
-		cluster.Nodes[currentLeader].Stop()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		cluster.Nodes[currentLeader].Stop(ctx) //nolint:errcheck // intentional stop for test
+		cancel()
 		t.Logf("Stopped leader %d", currentLeader)
 
 		// Wait for new leader

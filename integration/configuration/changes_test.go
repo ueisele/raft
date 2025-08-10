@@ -51,7 +51,9 @@ func TestBasicConfigurationChange(t *testing.T) {
 		// Use t.Cleanup instead of defer to ensure test is still active during cleanup
 		nodeCopy := node // Capture loop variable
 		t.Cleanup(func() {
-			nodeCopy.Stop() //nolint:errcheck // test cleanup
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			nodeCopy.Stop(ctx) //nolint:errcheck // test cleanup
 		})
 	}
 

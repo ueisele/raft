@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -251,7 +252,9 @@ func TestClientRetries(t *testing.T) {
 	}
 
 	// Stop the leader to trigger election
-	cluster.Nodes[initialLeaderID].Stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cluster.Nodes[initialLeaderID].Stop(ctx) //nolint:errcheck // intentional stop for test
+	cancel()
 	t.Logf("Stopped leader %d", initialLeaderID)
 
 	// Retry submitting commands with backoff

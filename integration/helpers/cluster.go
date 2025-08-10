@@ -217,8 +217,15 @@ func (c *TestCluster) Start() error {
 // Stop stops all nodes in the cluster
 func (c *TestCluster) Stop() {
 	c.cancel()
-	for _, node := range c.Nodes {
-		node.Stop()
+	// Use a timeout context for stopping nodes
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	for i, node := range c.Nodes {
+		if err := node.Stop(ctx); err != nil {
+			// Log error but continue stopping other nodes
+			c.t.Logf("Warning: failed to stop node %d: %v", i, err)
+		}
 	}
 }
 

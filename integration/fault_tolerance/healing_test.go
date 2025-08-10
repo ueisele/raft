@@ -40,7 +40,9 @@ func TestClusterHealing(t *testing.T) {
 	}
 
 	// Cause disruption by stopping leader
-	cluster.Nodes[initialLeader].Stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cluster.Nodes[initialLeader].Stop(ctx) //nolint:errcheck // intentional stop for test
+	cancel()
 	t.Logf("Stopped initial leader %d", initialLeader)
 
 	// Wait for new leader election
@@ -94,11 +96,15 @@ func TestClusterHealing(t *testing.T) {
 	cluster.Nodes[initialLeader] = oldNode
 	cluster.Registry.(*helpers.NodeRegistry).Register(initialLeader, oldNode.(raft.RPCHandler))
 
-	ctx := context.Background()
-	if err := oldNode.Start(ctx); err != nil {
+	startCtx := context.Background()
+	if err := oldNode.Start(startCtx); err != nil {
 		t.Fatalf("Failed to restart old leader: %v", err)
 	}
-	t.Cleanup(func() { oldNode.Stop() }) //nolint:errcheck // test cleanup
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		oldNode.Stop(cleanupCtx) //nolint:errcheck // test cleanup
+	})
 
 	t.Logf("Restarted old leader %d", initialLeader)
 
@@ -231,7 +237,9 @@ func TestEventualConsistency(t *testing.T) {
 		for i, node := range cluster.Nodes {
 			_, isLeader := node.GetState()
 			if isLeader {
-				node.Stop()
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				node.Stop(ctx) //nolint:errcheck // test cleanup
+				cancel()
 				t.Logf("Stopped leader %d", i)
 				break
 			}

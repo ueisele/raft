@@ -1,6 +1,7 @@
 package safety
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -323,7 +324,9 @@ func TestSplitVoteScenario(t *testing.T) {
 	t.Logf("Initial leader: node %d, term %d", initialLeader, initialTerm)
 
 	// Stop the leader to trigger election
-	cluster.Nodes[initialLeader].Stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cluster.Nodes[initialLeader].Stop(ctx) //nolint:errcheck // intentional stop for test
+	cancel()
 
 	// Wait for new election (should resolve despite potential split votes)
 	time.Sleep(500 * time.Millisecond)
