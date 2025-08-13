@@ -374,7 +374,7 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 	for _, node := range cluster.GetNodes() {
 		nodesList = append(nodesList, node)
 	}
-	helpers.VerifyClusterConsistency(t, nodesList)
+	helpers.AssertClusterConsistency(t, nodesList)
 
 	// Scenario 2: Multiple followers crash during replication
 	t.Log("\nScenario 2: Multiple followers crash during replication")

@@ -186,9 +186,9 @@ func AssertLogConsistency(t *testing.T, nodes []raft.Node, upToIndex int) {
 	}
 }
 
-// VerifyClusterConsistency verifies that cluster nodes have consistent state
+// AssertClusterConsistency verifies that cluster nodes have consistent state
 // It checks commit indices and log consistency up to the minimum commit index
-func VerifyClusterConsistency(t *testing.T, nodes []raft.Node) {
+func AssertClusterConsistency(t *testing.T, nodes []raft.Node) {
 	t.Helper()
 
 	// Get commit indices
