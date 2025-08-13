@@ -15,7 +15,7 @@ import (
 // TestSnapshotDuringPartition tests snapshot creation and installation during network partition
 func TestSnapshotDuringPartition(t *testing.T) {
 	// Create 5-node cluster with partitionable transport and small log size to trigger snapshots
-	cluster := helpers.NewTestCluster(t, 5,
+	cluster := helpers.NewTestClusterOfSize(t, 5,
 		helpers.WithPartitionableTransport(),
 		helpers.WithMaxLogSize(10),
 		helpers.WithClusterAutoStart())
@@ -112,7 +112,7 @@ func TestSnapshotDuringPartition(t *testing.T) {
 // TestSnapshotDuringLeadershipChange tests snapshot behavior during leadership change
 func TestSnapshotDuringLeadershipChange(t *testing.T) {
 	// Create 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	initialLeader, err := cluster.WaitForLeader(2 * time.Second)
@@ -245,7 +245,7 @@ func TestSnapshotOfSnapshotIndex(t *testing.T) {
 // TestConcurrentSnapshotAndReplication tests concurrent snapshot creation and log replication
 func TestConcurrentSnapshotAndReplication(t *testing.T) {
 	// Create 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -324,7 +324,7 @@ func TestConcurrentSnapshotAndReplication(t *testing.T) {
 // TestSnapshotInstallationRaceConditions tests race conditions during snapshot installation
 func TestSnapshotInstallationRaceConditions(t *testing.T) {
 	// Create 5-node cluster with partitionable transport
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -563,7 +563,7 @@ func TestSnapshotTransmissionFailure(t *testing.T) {
 	// This test would require a custom transport that can simulate failures
 	// For now, we'll use partition/heal to simulate transmission issues
 
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)

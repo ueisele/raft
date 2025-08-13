@@ -169,7 +169,7 @@ func TestAsymmetricPartition(t *testing.T) {
 // TestRapidPartitionChanges tests system behavior with rapidly changing partitions
 func TestRapidPartitionChanges(t *testing.T) {
 	// Create 5-node cluster with partitionable transport
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
 
 	// Wait for initial leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -325,7 +325,7 @@ func TestRapidPartitionChanges(t *testing.T) {
 // TestPartitionDuringConfigChange tests partition during configuration change
 func TestPartitionDuringConfigChange(t *testing.T) {
 	// Create initial 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -406,7 +406,7 @@ func TestPartitionDuringConfigChange(t *testing.T) {
 // TestCascadingPartitions tests cascading network failures
 func TestCascadingPartitions(t *testing.T) {
 	// Create 7-node cluster for complex partition scenarios
-	cluster := helpers.NewTestCluster(t, 7, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 7, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
 
 	// Wait for initial leader
 	_, err := cluster.WaitForLeader(2 * time.Second)

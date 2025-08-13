@@ -15,7 +15,7 @@ import (
 // TestSimultaneousConfigChanges tests handling of concurrent configuration changes
 func TestSimultaneousConfigChanges(t *testing.T) {
 	// Create a 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader election
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -66,7 +66,7 @@ func TestSimultaneousConfigChanges(t *testing.T) {
 // TestConfigChangeRollback tests configuration change behavior when leader is partitioned
 func TestConfigChangeRollback(t *testing.T) {
 	// Create 5-node cluster with partitionable transport
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -191,7 +191,7 @@ func TestConfigChangeRollback(t *testing.T) {
 // TestConfigChangeWithNodeFailures tests configuration changes with node failures
 func TestConfigChangeWithNodeFailures(t *testing.T) {
 	// Create 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)

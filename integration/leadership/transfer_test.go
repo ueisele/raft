@@ -14,7 +14,7 @@ import (
 // TestLeadershipTransfer tests orderly leadership transfer
 func TestLeadershipTransfer(t *testing.T) {
 	// Create a 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for initial leader
 	initialLeader, err := cluster.WaitForLeader(2 * time.Second)
@@ -93,7 +93,7 @@ func TestLeadershipTransfer(t *testing.T) {
 // TestGracefulLeadershipHandoff tests graceful handoff without disruption
 func TestGracefulLeadershipHandoff(t *testing.T) {
 	// Create 5-node cluster for better stability
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	currentLeader, err := cluster.WaitForLeader(2 * time.Second)
@@ -201,7 +201,7 @@ func TestGracefulLeadershipHandoff(t *testing.T) {
 // TestLeadershipTransferToSpecificNode tests transferring leadership to a specific node
 func TestLeadershipTransferToSpecificNode(t *testing.T) {
 	// This test simulates what would happen with a proper TransferLeadership RPC
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	currentLeader, err := cluster.WaitForLeader(2 * time.Second)
@@ -274,7 +274,7 @@ func TestLeadershipTransferToSpecificNode(t *testing.T) {
 
 // TestLeadershipTransferDuringLoad tests transfer while handling client requests
 func TestLeadershipTransferDuringLoad(t *testing.T) {
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	initialLeader, err := cluster.WaitForLeader(2 * time.Second)
@@ -394,7 +394,7 @@ func TestLeadershipTransferDuringLoad(t *testing.T) {
 // TestPreventedLeadershipTransfer tests scenarios where transfer should be prevented
 func TestPreventedLeadershipTransfer(t *testing.T) {
 	// Create 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)

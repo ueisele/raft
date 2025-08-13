@@ -168,7 +168,7 @@ func TestLogReplicationWithFailures(t *testing.T) {
 // TestReplicationPerformance tests replication performance under load
 func TestReplicationPerformance(t *testing.T) {
 	// Create 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -234,7 +234,7 @@ func TestReplicationPerformance(t *testing.T) {
 
 // TestReplicationPatterns tests various replication patterns
 func TestReplicationPatterns(t *testing.T) {
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithClusterAutoStart())
 
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
 	if err != nil {

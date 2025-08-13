@@ -15,7 +15,7 @@ import (
 // TestLeaderCommitIndexPreservation tests that leader preserves commit index across terms
 func TestLeaderCommitIndexPreservation(t *testing.T) {
 	// Create 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for initial leader
 	initialLeader, err := cluster.WaitForLeader(2 * time.Second)
@@ -106,7 +106,7 @@ func TestLeaderCommitIndexPreservation(t *testing.T) {
 // TestLeaderHeartbeatStability tests that leader maintains stable heartbeats
 func TestLeaderHeartbeatStability(t *testing.T) {
 	// Create 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -174,7 +174,7 @@ func TestLeaderHeartbeatStability(t *testing.T) {
 // TestLeaderRecoveryAfterBriefPartition tests leader recovery after brief network issues
 func TestLeaderRecoveryAfterBriefPartition(t *testing.T) {
 	// Create 5-node cluster with partitionable transport
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -237,7 +237,7 @@ func TestLeaderRecoveryAfterBriefPartition(t *testing.T) {
 // TestMultipleLeaderTransitions tests stability across multiple leader changes
 func TestMultipleLeaderTransitions(t *testing.T) {
 	// Create 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithClusterAutoStart())
 
 	// Track leader history
 	type LeaderChange struct {
@@ -392,7 +392,7 @@ func TestMultipleLeaderTransitions(t *testing.T) {
 // TestLeadershipWithHighLoad tests leadership stability under high load
 func TestLeadershipWithHighLoad(t *testing.T) {
 	// Create 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)

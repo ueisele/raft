@@ -12,7 +12,7 @@ import (
 // TestLogReplication tests basic log replication
 func TestLogReplication(t *testing.T) {
 	// Create a 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -65,7 +65,7 @@ func TestLogReplication(t *testing.T) {
 // TestReplicationWithFollowerFailure tests replication when a follower fails
 func TestReplicationWithFollowerFailure(t *testing.T) {
 	// Create a 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -124,7 +124,7 @@ func TestReplicationWithFollowerFailure(t *testing.T) {
 // TestReplicationConsistency tests that logs remain consistent across failures
 func TestReplicationConsistency(t *testing.T) {
 	// Create a 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)

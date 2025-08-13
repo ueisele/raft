@@ -17,7 +17,7 @@ import (
 // TestPendingConfigChangeBlocking tests that pending config changes block new ones
 func TestPendingConfigChangeBlocking(t *testing.T) {
 	// Create 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader election and stability
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -182,7 +182,7 @@ func TestPendingConfigChangeBlocking(t *testing.T) {
 // TestConfigChangeLeadershipTransfer tests config changes during leadership transfer
 func TestConfigChangeLeadershipTransfer(t *testing.T) {
 	// Create 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)

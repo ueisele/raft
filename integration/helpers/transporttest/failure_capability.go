@@ -49,4 +49,3 @@ func ResetFailureStats(provider TransportProvider) {
 		}
 	}
 }
-

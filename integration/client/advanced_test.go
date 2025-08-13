@@ -14,7 +14,7 @@ import (
 // TestLinearizableReads tests linearizable read operations
 func TestLinearizableReads(t *testing.T) {
 	// Create 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -58,7 +58,7 @@ func TestLinearizableReads(t *testing.T) {
 // TestIdempotentOperations tests idempotent operation handling
 func TestIdempotentOperations(t *testing.T) {
 	// Create 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -95,7 +95,7 @@ func TestIdempotentOperations(t *testing.T) {
 // TestClientTimeouts tests client timeout scenarios
 func TestClientTimeouts(t *testing.T) {
 	// Create 5-node cluster with partitionable transport
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -173,7 +173,7 @@ func TestClientTimeouts(t *testing.T) {
 // TestClientRedirection tests client request redirection to leader
 func TestClientRedirection(t *testing.T) {
 	// Create 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -208,7 +208,7 @@ func TestClientRedirection(t *testing.T) {
 // TestClientRetries tests client retry mechanisms
 func TestClientRetries(t *testing.T) {
 	// Create 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	initialLeaderID, err := cluster.WaitForLeader(2 * time.Second)

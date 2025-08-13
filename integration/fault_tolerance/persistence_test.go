@@ -324,49 +324,79 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 	// Scenario 1: Leader crashes after accepting but before committing
 	t.Log("Scenario 1: Leader crash before commit")
 
-	// Create cluster
-	cluster := createPersistentCluster(t, tempDir, 5)
-
-	// Start nodes
-	ctx := context.Background()
-	startCluster(t, ctx, cluster)
+	// Create cluster with custom persistence
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2, 3, 4},
+		helpers.WithPersistenceFactory(func(nodeID int) (raft.Persistence, error) {
+			nodeDir := filepath.Join(tempDir, fmt.Sprintf("node-%d", nodeID))
+			return newFilePersistence(nodeDir), nil
+		}),
+		helpers.WithClusterAutoStart(),
+	)
 
 	// Find leader
-	leaderID := helpers.WaitForLeader(t, cluster.nodes, 2*time.Second)
+	leaderID, err := cluster.WaitForLeader(2 * time.Second)
+	if err != nil {
+		t.Fatalf("Failed to elect leader: %v", err)
+	}
 
 	// Submit command but crash leader immediately
-	cluster.nodes[leaderID].Submit("uncommitted-cmd")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	cluster.nodes[leaderID].Stop(ctx) //nolint:errcheck // intentional crash for test
-	cancel()
+	cluster.SubmitToNode("uncommitted-cmd", leaderID)
+	cluster.StopNode(leaderID)
 	t.Logf("Crashed leader %d after accepting command", leaderID)
 
 	// Wait for new leader
-	time.Sleep(1 * time.Second)
+	helpers.WaitForCondition(t, func() bool {
+		nodes := cluster.GetNodes()
+		for nodeID, node := range nodes {
+			if nodeID != leaderID && node.IsLeader() {
+				return true
+			}
+		}
+		return false
+	}, 3*time.Second, "new leader election")
 
 	// Restart crashed node
-	restartNode(t, ctx, cluster, leaderID)
+	cluster.RestartNode(leaderID)
+
+	// Wait for cluster to stabilize and verify consistency
+	helpers.WaitForCondition(t, func() bool {
+		nodes := cluster.GetNodes()
+		for _, node := range nodes {
+			if node.GetCommitIndex() < 1 {
+				return false
+			}
+		}
+		return true
+	}, 3*time.Second, "cluster consistency")
 
 	// Verify cluster consistency
-	time.Sleep(2 * time.Second)
-	verifyClusterConsistency(t, cluster.nodes)
-
-	// Stop cluster
-	stopCluster(cluster)
+	nodesList := make([]raft.Node, 0)
+	for _, node := range cluster.GetNodes() {
+		nodesList = append(nodesList, node)
+	}
+	helpers.VerifyClusterConsistency(t, nodesList)
 
 	// Scenario 2: Multiple followers crash during replication
 	t.Log("\nScenario 2: Multiple followers crash during replication")
 
 	// Create new cluster
-	cluster2 := createPersistentCluster(t, tempDir+"2", 5)
-	startCluster(t, ctx, cluster2)
+	cluster2 := helpers.NewTestCluster(t, []int{0, 1, 2, 3, 4},
+		helpers.WithPersistenceFactory(func(nodeID int) (raft.Persistence, error) {
+			nodeDir := filepath.Join(tempDir+"2", fmt.Sprintf("node-%d", nodeID))
+			return newFilePersistence(nodeDir), nil
+		}),
+		helpers.WithClusterAutoStart(),
+	)
 
-	leaderID = helpers.WaitForLeader(t, cluster2.nodes, 2*time.Second)
+	leaderID, err = cluster2.WaitForLeader(2 * time.Second)
+	if err != nil {
+		t.Fatalf("Failed to elect leader: %v", err)
+	}
 
 	// Start submitting commands
 	go func() {
 		for i := 0; i < 10; i++ {
-			cluster2.nodes[leaderID].Submit(fmt.Sprintf("concurrent-%d", i))
+			cluster2.SubmitToNode(fmt.Sprintf("concurrent-%d", i), leaderID)
 			time.Sleep(50 * time.Millisecond)
 		}
 	}()
@@ -375,9 +405,7 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	for i := 0; i < 5; i++ {
 		if i != leaderID && i%2 == 0 {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			cluster2.nodes[i].Stop(ctx) //nolint:errcheck // intentional crash for test
-			cancel()
+			cluster2.StopNode(i)
 			t.Logf("Crashed follower %d", i)
 		}
 	}
@@ -386,51 +414,83 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	for i := 0; i < 5; i++ {
 		if i != leaderID && i%2 == 0 {
-			restartNode(t, ctx, cluster2, i)
+			cluster2.RestartNode(i)
 		}
 	}
 
 	// Verify recovery
-	time.Sleep(2 * time.Second)
-	verifyClusterConsistency(t, cluster2.nodes)
+	helpers.WaitForCondition(t, func() bool {
+		nodes := cluster2.GetNodes()
+		minCommit := 1000
+		for _, node := range nodes {
+			commit := node.GetCommitIndex()
+			if commit < minCommit {
+				minCommit = commit
+			}
+		}
+		return minCommit >= 5 // At least some commands committed
+	}, 3*time.Second, "cluster recovery")
 
-	stopCluster(cluster2)
+	nodesList2 := make([]raft.Node, 0)
+	for _, node := range cluster2.GetNodes() {
+		nodesList2 = append(nodesList2, node)
+	}
+	helpers.VerifyClusterConsistency(t, nodesList2)
 
 	// Scenario 3: Rolling restarts
 	t.Log("\nScenario 3: Rolling restarts")
 
-	cluster3 := createPersistentCluster(t, tempDir+"3", 5)
-	startCluster(t, ctx, cluster3)
+	cluster3 := helpers.NewTestCluster(t, []int{0, 1, 2, 3, 4},
+		helpers.WithPersistenceFactory(func(nodeID int) (raft.Persistence, error) {
+			nodeDir := filepath.Join(tempDir+"3", fmt.Sprintf("node-%d", nodeID))
+			return newFilePersistence(nodeDir), nil
+		}),
+		helpers.WithClusterAutoStart(),
+	)
 
 	// Submit initial data
-	leaderID = helpers.WaitForLeader(t, cluster3.nodes, 2*time.Second)
+	leaderID, err = cluster3.WaitForLeader(2 * time.Second)
+	if err != nil {
+		t.Fatalf("Failed to elect leader: %v", err)
+	}
 	for i := 0; i < 5; i++ {
-		idx, _, _ := cluster3.nodes[leaderID].Submit(fmt.Sprintf("rolling-%d", i))
-		helpers.WaitForCommitIndex(t, cluster3.nodes, idx, time.Second)
+		idx, _, err := cluster3.SubmitToLeader(fmt.Sprintf("rolling-%d", i))
+		if err != nil {
+			t.Fatalf("Failed to submit: %v", err)
+		}
+		cluster3.WaitForCommitIndex(idx, time.Second)
 	}
 
 	// Rolling restart each node
 	for i := 0; i < 5; i++ {
 		t.Logf("Rolling restart of node %d", i)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		cluster3.nodes[i].Stop(ctx) //nolint:errcheck // test cleanup
-		cancel()
-		time.Sleep(200 * time.Millisecond)
-		restartNode(t, ctx, cluster3, i)
-		time.Sleep(500 * time.Millisecond)
+		cluster3.StopNode(i)
+		helpers.WaitForCondition(t, func() bool {
+			// Wait a moment for cluster to stabilize
+			return true
+		}, 200*time.Millisecond, "stabilization")
+		cluster3.RestartNode(i)
+		helpers.WaitForCondition(t, func() bool {
+			// Wait for node to rejoin
+			if node, ok := cluster3.GetNode(i); ok {
+				return node.GetCommitIndex() > 0
+			}
+			return false
+		}, 2*time.Second, fmt.Sprintf("node %d rejoin", i))
 	}
 
 	// Verify cluster still functional
-	newLeaderID := helpers.WaitForLeader(t, cluster3.nodes, 2*time.Second)
-	idx, _, isLeader := cluster3.nodes[newLeaderID].Submit("after-rolling-restart")
-	if !isLeader {
-		t.Fatalf("Failed to submit after rolling restart: not leader")
+	_, err = cluster3.WaitForLeader(2 * time.Second)
+	if err != nil {
+		t.Fatalf("No leader after rolling restarts: %v", err)
+	}
+	idx, _, err := cluster3.SubmitToLeader("after-rolling-restart")
+	if err != nil {
+		t.Fatalf("Failed to submit after rolling restart: %v", err)
 	}
 
-	helpers.WaitForCommitIndex(t, cluster3.nodes, idx, 2*time.Second)
+	cluster3.WaitForCommitIndex(idx, 2*time.Second)
 	t.Log("✓ Cluster survived rolling restarts")
-
-	stopCluster(cluster3)
 }
 
 // TestPersistenceWithSnapshots tests persistence with snapshots
@@ -449,23 +509,30 @@ func TestPersistenceWithSnapshots(t *testing.T) {
 	persistenceStore.mu.Unlock()
 
 	// Create cluster with snapshot support
-	cluster := createPersistentCluster(t, tempDir, 3)
-
-	ctx := context.Background()
-	startCluster(t, ctx, cluster)
+	cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
+		helpers.WithPersistenceFactory(func(nodeID int) (raft.Persistence, error) {
+			nodeDir := filepath.Join(tempDir, fmt.Sprintf("node-%d", nodeID))
+			return newFilePersistence(nodeDir), nil
+		}),
+		helpers.WithMaxLogSize(50), // Smaller log to trigger snapshots
+		helpers.WithClusterAutoStart(),
+	)
 
 	// Find leader and submit many commands
-	leaderID := helpers.WaitForLeader(t, cluster.nodes, 2*time.Second)
+	_, err = cluster.WaitForLeader(2 * time.Second)
+	if err != nil {
+		t.Fatalf("Failed to elect leader: %v", err)
+	}
 
 	// Submit enough commands to trigger snapshot
 	for i := 0; i < 100; i++ {
-		idx, _, isLeader := cluster.nodes[leaderID].Submit(fmt.Sprintf("snap-cmd-%d", i))
-		if !isLeader {
-			continue
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("snap-cmd-%d", i))
+		if err != nil {
+			continue // Leader might have changed
 		}
 
 		if i%10 == 0 {
-			helpers.WaitForCommitIndex(t, cluster.nodes, idx, time.Second)
+			cluster.WaitForCommitIndex(idx, time.Second)
 		}
 	}
 
@@ -473,37 +540,52 @@ func TestPersistenceWithSnapshots(t *testing.T) {
 	t.Log("Assuming snapshots were created...")
 
 	// Stop all nodes
-	stopCluster(cluster)
+	cluster.Stop()
 
-	// Restart cluster
-	newCluster := createPersistentCluster(t, tempDir, 3)
-	startCluster(t, ctx, newCluster)
+	// Restart cluster with same persistence
+	newCluster := helpers.NewTestCluster(t, []int{0, 1, 2},
+		helpers.WithPersistenceFactory(func(nodeID int) (raft.Persistence, error) {
+			nodeDir := filepath.Join(tempDir, fmt.Sprintf("node-%d", nodeID))
+			return newFilePersistence(nodeDir), nil
+		}),
+		helpers.WithMaxLogSize(50),
+		helpers.WithClusterAutoStart(),
+	)
 
-	// Verify nodes recovered from snapshot + log
-	time.Sleep(2 * time.Second)
+	// Wait for cluster to recover
+	helpers.WaitForCondition(t, func() bool {
+		nodes := newCluster.GetNodes()
+		for _, node := range nodes {
+			if node.GetCommitIndex() >= 50 {
+				return true
+			}
+		}
+		return false
+	}, 3*time.Second, "recovery from snapshot")
 
 	// Check that nodes have data
-	for i, node := range newCluster.nodes {
+	for nodeID, node := range newCluster.GetNodes() {
 		commitIndex := node.GetCommitIndex()
-		t.Logf("Node %d recovered with commit index: %d", i, commitIndex)
+		t.Logf("Node %d recovered with commit index: %d", nodeID, commitIndex)
 
 		// Should have recovered significant progress
 		if commitIndex < 50 {
-			t.Errorf("Node %d didn't recover enough state: commit index %d", i, commitIndex)
+			t.Errorf("Node %d didn't recover enough state: commit index %d", nodeID, commitIndex)
 		}
 	}
 
 	// Verify cluster is functional
-	newLeaderID := helpers.WaitForLeader(t, newCluster.nodes, 2*time.Second)
-	idx, _, isLeader := newCluster.nodes[newLeaderID].Submit("after-snapshot-recovery")
-	if !isLeader {
-		t.Fatalf("Failed to submit after snapshot recovery: not leader")
+	_, err = newCluster.WaitForLeader(2 * time.Second)
+	if err != nil {
+		t.Fatalf("Failed to elect leader after recovery: %v", err)
+	}
+	idx, _, err := newCluster.SubmitToLeader("after-snapshot-recovery")
+	if err != nil {
+		t.Fatalf("Failed to submit after snapshot recovery: %v", err)
 	}
 
-	helpers.WaitForCommitIndex(t, newCluster.nodes, idx, 2*time.Second)
+	newCluster.WaitForCommitIndex(idx, 2*time.Second)
 	t.Log("✓ Cluster recovered from snapshots and is functional")
-
-	stopCluster(newCluster)
 }
 
 // Helper types and functions
@@ -599,36 +681,6 @@ func restartNode(t *testing.T, ctx context.Context, cluster *persistentCluster, 
 
 	if err := node.Start(ctx); err != nil {
 		t.Fatalf("Failed to restart node %d: %v", nodeID, err)
-	}
-}
-
-func verifyClusterConsistency(t *testing.T, nodes []raft.Node) {
-	// Get commit indices
-	commitIndices := make([]int, len(nodes))
-	for i, node := range nodes {
-		commitIndices[i] = node.GetCommitIndex()
-		t.Logf("Node %d commit index: %d", i, commitIndices[i])
-	}
-
-	// Find max commit index
-	maxCommit := 0
-	for _, commit := range commitIndices {
-		if commit > maxCommit {
-			maxCommit = commit
-		}
-	}
-
-	// Verify logs are consistent up to min commit index
-	minCommit := maxCommit
-	for _, commit := range commitIndices {
-		if commit < minCommit {
-			minCommit = commit
-		}
-	}
-
-	if minCommit > 0 {
-		helpers.AssertLogConsistency(t, nodes, minCommit)
-		t.Logf("✓ Logs consistent up to index %d", minCommit)
 	}
 }
 

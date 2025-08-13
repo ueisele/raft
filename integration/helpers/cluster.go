@@ -25,6 +25,11 @@ type TestCluster struct {
 	t             *testing.T
 	ctx           context.Context
 	cancel        context.CancelFunc
+
+	// Compatibility fields for tests that still use array-style access
+	// These are maintained in sync with the maps above
+	Nodes      []raft.Node
+	Transports []raft.Transport
 }
 
 // ClusterOption configures a test cluster
@@ -139,6 +144,16 @@ func WithClusterAutoStart() ClusterOption {
 	}
 }
 
+// NewTestClusterOfSize creates a test cluster with sequential node IDs from 0 to size-1
+// This is a convenience function for tests that don't need specific node IDs
+func NewTestClusterOfSize(t *testing.T, size int, opts ...ClusterOption) *TestCluster {
+	nodeIDs := make([]int, size)
+	for i := 0; i < size; i++ {
+		nodeIDs[i] = i
+	}
+	return NewTestCluster(t, nodeIDs, opts...)
+}
+
 // NewTestCluster creates a new test cluster
 func NewTestCluster(t *testing.T, nodeIDs []int, opts ...ClusterOption) *TestCluster {
 	// Apply options
@@ -187,7 +202,37 @@ func NewTestCluster(t *testing.T, nodeIDs []int, opts ...ClusterOption) *TestClu
 		}
 	}
 
+	// Sync Nodes array for compatibility
+	cluster.syncNodesArray()
+
 	return cluster
+}
+
+// syncNodesArray updates the Nodes and Transports arrays to match the maps
+// Must be called with mu held
+func (c *TestCluster) syncNodesArray() {
+	// Find max node ID to determine array size
+	maxID := -1
+	for id := range c.nodes {
+		if id > maxID {
+			maxID = id
+		}
+	}
+
+	// Create arrays with nil entries
+	if maxID >= 0 {
+		c.Nodes = make([]raft.Node, maxID+1)
+		c.Transports = make([]raft.Transport, maxID+1)
+		for id, node := range c.nodes {
+			c.Nodes[id] = node
+		}
+		for id, transport := range c.transports {
+			c.Transports[id] = transport
+		}
+	} else {
+		c.Nodes = nil
+		c.Transports = nil
+	}
 }
 
 // NodeCount returns the number of nodes in the cluster
@@ -430,6 +475,7 @@ func (c *TestCluster) addNode(nodeID int, peers []int, autoStart bool) (raft.Nod
 	c.transports[nodeID] = transport
 	c.persistences[nodeID] = persistence
 	c.stateMachines[nodeID] = stateMachine
+	c.syncNodesArray()
 	c.mu.Unlock()
 
 	// Start if requested
@@ -461,6 +507,7 @@ func (c *TestCluster) RemoveNode(nodeID int) error {
 	delete(c.transports, nodeID)
 	delete(c.persistences, nodeID)
 	delete(c.stateMachines, nodeID)
+	c.syncNodesArray()
 
 	return nil
 }
@@ -470,11 +517,11 @@ func (c *TestCluster) StartNode(nodeID int) error {
 	c.mu.RLock()
 	node, ok := c.nodes[nodeID]
 	c.mu.RUnlock()
-	
+
 	if !ok {
 		return fmt.Errorf("node %d not found", nodeID)
 	}
-	
+
 	return node.Start(c.ctx)
 }
 
@@ -483,15 +530,15 @@ func (c *TestCluster) StopNode(nodeID int) error {
 	c.mu.RLock()
 	node, ok := c.nodes[nodeID]
 	c.mu.RUnlock()
-	
+
 	if !ok {
 		return fmt.Errorf("node %d not found", nodeID)
 	}
-	
+
 	// Use a timeout context for stopping
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	return node.Stop(ctx)
 }
 
@@ -501,10 +548,10 @@ func (c *TestCluster) RestartNode(nodeID int) error {
 	if err := c.StopNode(nodeID); err != nil {
 		return fmt.Errorf("failed to stop node %d: %w", nodeID, err)
 	}
-	
+
 	// Get current peers
 	peers := c.NodeIDs()
-	
+
 	// Remove old node from maps
 	c.mu.Lock()
 	c.Registry.Unregister(nodeID)
@@ -512,14 +559,15 @@ func (c *TestCluster) RestartNode(nodeID int) error {
 	delete(c.transports, nodeID)
 	delete(c.persistences, nodeID)
 	delete(c.stateMachines, nodeID)
+	c.syncNodesArray()
 	c.mu.Unlock()
-	
+
 	// Recreate the node with same configuration
 	_, err := c.addNode(nodeID, peers, true)
 	if err != nil {
 		return fmt.Errorf("failed to restart node %d: %w", nodeID, err)
 	}
-	
+
 	return nil
 }
 
@@ -529,12 +577,12 @@ func (c *TestCluster) SubmitToNode(command interface{}, nodeID int) (int, int, e
 	if !ok {
 		return 0, 0, fmt.Errorf("node %d not found", nodeID)
 	}
-	
+
 	index, term, isLeader := node.Submit(command)
 	if !isLeader {
 		return 0, 0, fmt.Errorf("node %d is not leader", nodeID)
 	}
-	
+
 	return index, term, nil
 }
 

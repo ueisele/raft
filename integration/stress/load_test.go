@@ -20,7 +20,7 @@ func TestHighLoadSingleClient(t *testing.T) {
 	}
 
 	// Create 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -66,7 +66,7 @@ func TestHighLoadMultipleClients(t *testing.T) {
 	}
 
 	// Create 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -125,7 +125,7 @@ func TestSustainedLoad(t *testing.T) {
 	}
 
 	// Create 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -229,7 +229,7 @@ func TestLoadWithNodeFailures(t *testing.T) {
 	}
 
 	// Create 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	initialLeaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -313,7 +313,7 @@ func TestLoadWithNetworkPartitions(t *testing.T) {
 	}
 
 	// Create 5-node cluster with partitionable transport
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	_, err := cluster.WaitForLeader(2 * time.Second)

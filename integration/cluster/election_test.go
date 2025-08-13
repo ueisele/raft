@@ -12,7 +12,7 @@ import (
 // TestLeaderElection tests basic leader election
 func TestLeaderElection(t *testing.T) {
 	// Create a 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader election
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -44,7 +44,7 @@ func TestLeaderElection(t *testing.T) {
 // TestLeaderFailover tests leader failover when current leader fails
 func TestLeaderFailover(t *testing.T) {
 	// Create a 5-node cluster for better fault tolerance
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for initial leader
 	initialLeaderID, err := cluster.WaitForLeader(2 * time.Second)

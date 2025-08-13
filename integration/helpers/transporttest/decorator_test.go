@@ -158,4 +158,3 @@ func TestDecoratorOrdering(t *testing.T) {
 		t.Errorf("With 100%% failure rate, all attempts should fail: %d/%d", failures2, attempts2)
 	}
 }
-

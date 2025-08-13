@@ -168,7 +168,7 @@ func testNewVotingServerSafety(t *testing.T) {
 // testSaferApproach shows how non-voting members prevent the safety issue
 func testSaferApproach(t *testing.T) {
 	// Similar setup but with safer configuration approach
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -199,7 +199,7 @@ func testSaferApproach(t *testing.T) {
 // testVotingSafetyDemonstrationSimple demonstrates voting safety with a simple scenario
 func testVotingSafetyDemonstrationSimple(t *testing.T) {
 	// Create a small cluster to demonstrate the concept
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	initialLeader, err := cluster.WaitForLeader(2 * time.Second)
@@ -302,7 +302,7 @@ func testVotingMemberSafetyAnalysis(t *testing.T) {
 	t.Log("  - Joint consensus helps with safety")
 
 	// Demonstrate with actual test
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
 	if err != nil {
@@ -323,7 +323,7 @@ func testDangerOfImmediateVoting(t *testing.T) {
 	t.Log("=== Demonstrating Danger of Immediate Voting ===")
 
 	// Setup: 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
 
 	// Wait for stable leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -383,7 +383,7 @@ func testDangerOfImmediateVoting(t *testing.T) {
 
 func testVoteDenialWithActiveLeader(t *testing.T) {
 	// Create a 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for leader election
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)
@@ -438,7 +438,7 @@ func testVoteDenialWithActiveLeader(t *testing.T) {
 
 func testVoteGrantingAfterTimeout(t *testing.T) {
 	// Create a cluster with partitionable transport
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithPartitionableTransport())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithPartitionableTransport())
 
 	// Start cluster
 	if err := cluster.Start(); err != nil {
@@ -482,7 +482,7 @@ func testVoteGrantingAfterTimeout(t *testing.T) {
 
 func testVoteDenialPreventsUnnecessaryElections(t *testing.T) {
 	// Create a stable cluster
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithClusterAutoStart())
 
 	// Wait for leader
 	leaderID, err := cluster.WaitForLeader(2 * time.Second)

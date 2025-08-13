@@ -13,7 +13,7 @@ import (
 // TestSnapshotCreation tests creating snapshots when log grows
 func TestSnapshotCreation(t *testing.T) {
 	// Create a single node cluster
-	cluster := helpers.NewTestCluster(t, 1, helpers.WithMaxLogSize(10), helpers.WithClusterAutoStart()) // Trigger snapshot after 10 entries
+	cluster := helpers.NewTestClusterOfSize(t, 1, helpers.WithMaxLogSize(10), helpers.WithClusterAutoStart()) // Trigger snapshot after 10 entries
 
 	// Wait for leadership
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -79,7 +79,7 @@ func TestSnapshotCreation(t *testing.T) {
 func TestSnapshotInstallation(t *testing.T) {
 	// For this test, we'll simply verify snapshot functionality works
 	// without the complexity of stopping/starting nodes
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithMaxLogSize(10), helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithMaxLogSize(10), helpers.WithClusterAutoStart())
 
 	// Wait for leader election
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -158,7 +158,7 @@ func TestSnapshotInstallation(t *testing.T) {
 // TestSnapshotWithConcurrentWrites tests snapshot creation during active writes
 func TestSnapshotWithConcurrentWrites(t *testing.T) {
 	// Create a 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithMaxLogSize(20), helpers.WithClusterAutoStart()) // Small log size to trigger multiple snapshots
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithMaxLogSize(20), helpers.WithClusterAutoStart()) // Small log size to trigger multiple snapshots
 
 	// Wait for leader election
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -281,7 +281,7 @@ func TestSnapshotWithConcurrentWrites(t *testing.T) {
 // TestSnapshotFailure tests snapshot persistence failure handling
 func TestSnapshotFailure(t *testing.T) {
 	// Test snapshot persistence failure handling
-	cluster := helpers.NewTestCluster(t, 1, helpers.WithMaxLogSize(5), helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 1, helpers.WithMaxLogSize(5), helpers.WithClusterAutoStart())
 
 	// Wait for leadership
 	_, err := cluster.WaitForLeader(2 * time.Second)

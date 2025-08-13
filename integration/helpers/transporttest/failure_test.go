@@ -203,4 +203,3 @@ func TestFailureWithMultipleDecorators(t *testing.T) {
 		}
 	}
 }
-

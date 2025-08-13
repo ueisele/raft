@@ -516,34 +516,34 @@ func TestNodeSpecificMethods(t *testing.T) {
 	t.Run("StartStopNode", func(t *testing.T) {
 		// Create cluster but don't auto-start
 		cluster := helpers.NewTestCluster(t, []int{0, 1, 2})
-		
+
 		// Start nodes individually
 		for i := 0; i < 3; i++ {
 			if err := cluster.StartNode(i); err != nil {
 				t.Fatalf("Failed to start node %d: %v", i, err)
 			}
 		}
-		
+
 		// Wait for leader
 		leaderID, err := cluster.WaitForLeader(2 * time.Second)
 		if err != nil {
 			t.Fatalf("Failed to elect leader: %v", err)
 		}
 		t.Logf("Leader elected: node %d", leaderID)
-		
+
 		// Stop a follower
 		followerID := (leaderID + 1) % 3
 		if err := cluster.StopNode(followerID); err != nil {
 			t.Fatalf("Failed to stop node %d: %v", followerID, err)
 		}
 		t.Logf("Stopped follower node %d", followerID)
-		
+
 		// Cluster should still work with 2 nodes
 		idx, _, err := cluster.SubmitToLeader("test-cmd")
 		if err != nil {
 			t.Fatalf("Failed to submit after stopping node: %v", err)
 		}
-		
+
 		// Wait for commit (only on running nodes)
 		deadline := time.Now().Add(time.Second)
 		for time.Now().Before(deadline) {
@@ -563,28 +563,28 @@ func TestNodeSpecificMethods(t *testing.T) {
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
-		
+
 		// Start the follower again
 		if err := cluster.StartNode(followerID); err != nil {
 			t.Fatalf("Failed to restart node %d: %v", followerID, err)
 		}
 		t.Logf("Restarted node %d", followerID)
-		
+
 		// Wait for it to catch up
 		if err := cluster.WaitForCommitIndex(idx, 2*time.Second); err != nil {
 			t.Fatalf("Restarted node didn't catch up: %v", err)
 		}
 	})
-	
+
 	t.Run("RestartNode", func(t *testing.T) {
 		cluster := helpers.NewTestCluster(t, []int{0, 1, 2}, helpers.WithClusterAutoStart())
-		
+
 		// Wait for leader
 		leaderID, err := cluster.WaitForLeader(2 * time.Second)
 		if err != nil {
 			t.Fatalf("Failed to elect leader: %v", err)
 		}
-		
+
 		// Submit some commands
 		var lastIdx int
 		for i := 0; i < 5; i++ {
@@ -594,51 +594,51 @@ func TestNodeSpecificMethods(t *testing.T) {
 			}
 			lastIdx = idx
 		}
-		
+
 		// Wait for replication
 		cluster.WaitForCommitIndex(lastIdx, time.Second)
-		
+
 		// Restart the leader
 		oldLeaderID := leaderID
 		if err := cluster.RestartNode(oldLeaderID); err != nil {
 			t.Fatalf("Failed to restart leader: %v", err)
 		}
 		t.Logf("Restarted old leader node %d", oldLeaderID)
-		
+
 		// Wait for new leader
 		newLeaderID, err := cluster.WaitForLeader(2 * time.Second)
 		if err != nil {
 			t.Fatalf("Failed to elect new leader: %v", err)
 		}
 		t.Logf("New leader: node %d", newLeaderID)
-		
+
 		// Submit more commands
 		idx, _, err := cluster.SubmitToLeader("after-restart")
 		if err != nil {
 			t.Fatalf("Failed to submit after restart: %v", err)
 		}
-		
+
 		// Ensure all nodes including restarted one have the new command
 		cluster.WaitForCommitIndex(idx, 2*time.Second)
 		t.Log("All nodes synchronized after restart")
 	})
-	
+
 	t.Run("SubmitToNode", func(t *testing.T) {
 		cluster := helpers.NewTestCluster(t, []int{0, 1, 2}, helpers.WithClusterAutoStart())
-		
+
 		// Wait for leader
 		leaderID, err := cluster.WaitForLeader(2 * time.Second)
 		if err != nil {
 			t.Fatalf("Failed to elect leader: %v", err)
 		}
-		
+
 		// Submit to leader node directly
 		idx, term, err := cluster.SubmitToNode("leader-cmd", leaderID)
 		if err != nil {
 			t.Fatalf("Failed to submit to leader: %v", err)
 		}
 		t.Logf("Submitted to leader node %d: index=%d, term=%d", leaderID, idx, term)
-		
+
 		// Try to submit to follower (should fail)
 		followerID := (leaderID + 1) % 3
 		_, _, err = cluster.SubmitToNode("follower-cmd", followerID)
@@ -646,7 +646,7 @@ func TestNodeSpecificMethods(t *testing.T) {
 			t.Fatal("Expected error when submitting to follower")
 		}
 		t.Logf("Correctly rejected submission to follower node %d: %v", followerID, err)
-		
+
 		// Try to submit to non-existent node
 		_, _, err = cluster.SubmitToNode("invalid-cmd", 999)
 		if err == nil {
@@ -654,61 +654,61 @@ func TestNodeSpecificMethods(t *testing.T) {
 		}
 		t.Log("Correctly rejected submission to non-existent node")
 	})
-	
+
 	t.Run("NodeOperationsOnNonExistent", func(t *testing.T) {
 		cluster := helpers.NewTestCluster(t, []int{0, 1, 2}, helpers.WithClusterAutoStart())
-		
+
 		// Try operations on non-existent node
 		if err := cluster.StartNode(999); err == nil {
 			t.Fatal("Expected error starting non-existent node")
 		}
-		
+
 		if err := cluster.StopNode(999); err == nil {
 			t.Fatal("Expected error stopping non-existent node")
 		}
-		
+
 		if err := cluster.RestartNode(999); err == nil {
 			t.Fatal("Expected error restarting non-existent node")
 		}
-		
+
 		t.Log("All operations correctly rejected for non-existent node")
 	})
-	
+
 	t.Run("SubmitMethods", func(t *testing.T) {
 		cluster := helpers.NewTestCluster(t, []int{0, 1, 2}, helpers.WithClusterAutoStart())
-		
+
 		// Wait for leader
 		leaderID, err := cluster.WaitForLeader(2 * time.Second)
 		if err != nil {
 			t.Fatalf("Failed to elect leader: %v", err)
 		}
-		
+
 		// Test SubmitToLeader
 		idx1, term1, err := cluster.SubmitToLeader("submit-to-leader")
 		if err != nil {
 			t.Fatalf("SubmitToLeader failed: %v", err)
 		}
 		t.Logf("SubmitToLeader: index=%d, term=%d", idx1, term1)
-		
+
 		// Test deprecated SubmitCommand (should still work)
 		idx2, term2, err := cluster.SubmitCommand("submit-command")
 		if err != nil {
 			t.Fatalf("SubmitCommand failed: %v", err)
 		}
 		t.Logf("SubmitCommand (deprecated): index=%d, term=%d", idx2, term2)
-		
+
 		// Test SubmitToNode with leader
 		idx3, term3, err := cluster.SubmitToNode("submit-to-node", leaderID)
 		if err != nil {
 			t.Fatalf("SubmitToNode failed: %v", err)
 		}
 		t.Logf("SubmitToNode: index=%d, term=%d", idx3, term3)
-		
+
 		// Verify all commands were accepted
 		if idx2 != idx1+1 || idx3 != idx2+1 {
 			t.Errorf("Commands not sequential: %d, %d, %d", idx1, idx2, idx3)
 		}
-		
+
 		// Wait for all to commit
 		cluster.WaitForCommitIndex(idx3, time.Second)
 	})

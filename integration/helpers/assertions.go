@@ -185,3 +185,44 @@ func AssertLogConsistency(t *testing.T, nodes []raft.Node, upToIndex int) {
 		}
 	}
 }
+
+// VerifyClusterConsistency verifies that cluster nodes have consistent state
+// It checks commit indices and log consistency up to the minimum commit index
+func VerifyClusterConsistency(t *testing.T, nodes []raft.Node) {
+	t.Helper()
+
+	// Get commit indices
+	commitIndices := make([]int, len(nodes))
+	for i, node := range nodes {
+		commitIndices[i] = node.GetCommitIndex()
+		t.Logf("Node %d commit index: %d", i, commitIndices[i])
+	}
+
+	// Find max and min commit index
+	maxCommit := 0
+	minCommit := 0
+	if len(commitIndices) > 0 {
+		minCommit = commitIndices[0]
+		maxCommit = commitIndices[0]
+	}
+
+	for _, commit := range commitIndices {
+		if commit > maxCommit {
+			maxCommit = commit
+		}
+		if commit < minCommit {
+			minCommit = commit
+		}
+	}
+
+	// Verify logs are consistent up to min commit index
+	if minCommit > 0 {
+		AssertLogConsistency(t, nodes, minCommit)
+		t.Logf("✓ Logs consistent up to index %d", minCommit)
+	}
+
+	// Log the range for debugging
+	if maxCommit != minCommit {
+		t.Logf("Note: Commit indices range from %d to %d", minCommit, maxCommit)
+	}
+}

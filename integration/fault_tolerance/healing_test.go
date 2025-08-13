@@ -15,7 +15,7 @@ import (
 // TestClusterHealing verifies that a cluster eventually converges after disruptions
 func TestClusterHealing(t *testing.T) {
 	// Create 3-node cluster
-	cluster := helpers.NewTestCluster(t, 3, helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 3, helpers.WithClusterAutoStart())
 
 	// Wait for initial leader
 	initialLeader, err := cluster.WaitForLeader(2 * time.Second)
@@ -143,7 +143,7 @@ func TestClusterHealing(t *testing.T) {
 // TestEventualConsistency tests that nodes eventually converge to the same state
 func TestEventualConsistency(t *testing.T) {
 	// Create 5-node cluster with partitionable transport
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
 
 	// Wait for initial leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -307,7 +307,7 @@ func TestEventualConsistency(t *testing.T) {
 // TestHealingWithDivergentLogs tests healing when nodes have divergent logs
 func TestHealingWithDivergentLogs(t *testing.T) {
 	// Create 5-node cluster with partitionable transport
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithPartitionableTransport(), helpers.WithClusterAutoStart())
 
 	// Wait for initial leader
 	_, err := cluster.WaitForLeader(2 * time.Second)
@@ -442,7 +442,7 @@ func TestHealingWithDivergentLogs(t *testing.T) {
 // TestHealingUnderLoad tests healing while system is under load
 func TestHealingUnderLoad(t *testing.T) {
 	// Create 5-node cluster
-	cluster := helpers.NewTestCluster(t, 5, helpers.WithPartitionableTransport())
+	cluster := helpers.NewTestClusterOfSize(t, 5, helpers.WithPartitionableTransport())
 
 	// Start cluster
 	if err := cluster.Start(); err != nil {

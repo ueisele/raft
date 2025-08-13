@@ -29,7 +29,7 @@ func GetCapability[T any](provider TransportProvider, nodeID int) (T, bool) {
 			break
 		}
 	}
-	
+
 	var zero T
 	return zero, false
 }

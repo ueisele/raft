@@ -114,7 +114,7 @@ func Example_transportDecorators() {
 
 	// Create cluster with network delays and failures
 	cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
-		// Add 50ms delay to all messages  
+		// Add 50ms delay to all messages
 		helpers.WithTransportDecorators(
 			func(nodeID int, wrapped raft.Transport) raft.Transport {
 				// For simplicity, we'll use a different approach
@@ -254,30 +254,30 @@ func Example_faultTolerance() {
 	t := &testing.T{}
 
 	cluster := helpers.NewTestCluster(t, []int{0, 1, 2, 3, 4}, helpers.WithClusterAutoStart())
-	
+
 	// Get initial leader
 	initialLeader, _ := cluster.WaitForLeader(time.Second)
-	
+
 	// Submit some commands
 	cluster.SubmitToLeader("cmd-1")
 	cluster.SubmitToLeader("cmd-2")
-	
+
 	// Kill the leader
 	cluster.StopNode(initialLeader)
 	fmt.Printf("Stopped leader node %d\n", initialLeader)
-	
+
 	// New leader should be elected
 	newLeader, _ := cluster.WaitForLeader(2 * time.Second)
 	fmt.Printf("New leader elected: node %d\n", newLeader)
-	
+
 	// Cluster should still accept commands
 	index, _, _ := cluster.SubmitToLeader("after-failure")
 	cluster.WaitForCommitIndex(index, time.Second)
-	
+
 	// Restart old leader - it becomes follower
 	cluster.RestartNode(initialLeader)
 	fmt.Printf("Restarted old leader as follower\n")
-	
+
 	// Old leader catches up
 	cluster.WaitForCommitIndex(index, time.Second)
 	fmt.Println("All nodes synchronized")
