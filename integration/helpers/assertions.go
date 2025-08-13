@@ -7,16 +7,36 @@ import (
 	"github.com/ueisele/raft"
 )
 
-// AssertLeaderCount verifies exactly one leader exists
+// AssertLeaderCount verifies exactly one leader exists and returns its ID
 func AssertLeaderCount(t *testing.T, nodes []raft.Node) int {
 	t.Helper()
 	leaderCount := 0
 	leaderID := -1
-
-	for i, node := range nodes {
+	
+	for _, node := range nodes {
 		if node.IsLeader() {
 			leaderCount++
-			leaderID = i
+			leaderID = node.GetID()
+		}
+	}
+
+	if leaderCount != 1 {
+		t.Errorf("Expected exactly 1 leader, found %d", leaderCount)
+	}
+
+	return leaderID
+}
+
+// AssertLeaderCountMap verifies exactly one leader exists and returns its ID
+func AssertLeaderCountMap(t *testing.T, nodes map[int]raft.Node) int {
+	t.Helper()
+	leaderCount := 0
+	leaderID := -1
+
+	for nodeID, node := range nodes {
+		if node.IsLeader() {
+			leaderCount++
+			leaderID = nodeID
 		}
 	}
 
@@ -30,9 +50,10 @@ func AssertLeaderCount(t *testing.T, nodes []raft.Node) int {
 // AssertNoLeader verifies no leader exists
 func AssertNoLeader(t *testing.T, nodes []raft.Node) {
 	t.Helper()
-	for i, node := range nodes {
+	for _, node := range nodes {
 		if node.IsLeader() {
-			t.Errorf("Expected no leader, but node %d is leader", i)
+			t.Errorf("Expected no leader, but node %d is leader", node.GetID())
+			return
 		}
 	}
 }
@@ -45,10 +66,10 @@ func AssertSameTerm(t *testing.T, nodes []raft.Node) int {
 	}
 
 	expectedTerm := nodes[0].GetCurrentTerm()
-	for i, node := range nodes {
+	for _, node := range nodes {
 		term := node.GetCurrentTerm()
 		if term != expectedTerm {
-			t.Errorf("Node %d has term %d, expected %d", i, term, expectedTerm)
+			t.Errorf("Node %d has term %d, expected %d", node.GetID(), term, expectedTerm)
 		}
 	}
 
@@ -67,22 +88,22 @@ func AssertCommitIndex(t *testing.T, node raft.Node, expectedIndex int) {
 // AssertMinCommitIndex verifies all nodes have at least a minimum commit index
 func AssertMinCommitIndex(t *testing.T, nodes []raft.Node, minIndex int) {
 	t.Helper()
-	for i, node := range nodes {
+	for _, node := range nodes {
 		index := node.GetCommitIndex()
 		if index < minIndex {
-			t.Errorf("Node %d has commit index %d, expected at least %d", i, index, minIndex)
+			t.Errorf("Node %d has commit index %d, expected at least %d", node.GetID(), index, minIndex)
 		}
 	}
 }
 
-// AssertConfiguration verifies nodes have the expected configuration
+// AssertConfiguration verifies nodes have the expected configuration  
 func AssertConfiguration(t *testing.T, nodes []raft.Node, expectedServers []int) {
 	t.Helper()
-	for i, node := range nodes {
+	for _, node := range nodes {
 		config := node.GetConfiguration()
 		if len(config.Servers) != len(expectedServers) {
-			t.Errorf("Node %d has %d servers, expected %d",
-				i, len(config.Servers), len(expectedServers))
+			t.Errorf("Node %d has %d servers, expected %d", node.GetID(),
+				len(config.Servers), len(expectedServers))
 			continue
 		}
 
@@ -94,7 +115,7 @@ func AssertConfiguration(t *testing.T, nodes []raft.Node, expectedServers []int)
 
 		for _, expectedID := range expectedServers {
 			if !serverMap[expectedID] {
-				t.Errorf("Node %d missing server %d in configuration", i, expectedID)
+				t.Errorf("Node %d missing server %d in configuration", node.GetID(), expectedID)
 			}
 		}
 	}
@@ -132,19 +153,19 @@ func AssertConsistentlyTrue(t *testing.T, condition func() bool, message string)
 // AssertElectionSafety verifies at most one leader per term
 func AssertElectionSafety(t *testing.T, nodes []raft.Node) {
 	t.Helper()
-	leadersByTerm := make(map[int][]int)
+	leadersByTerm := make(map[int]int) // term -> count of leaders
 
-	for i, node := range nodes {
+	for _, node := range nodes {
 		if node.IsLeader() {
 			term := node.GetCurrentTerm()
-			leadersByTerm[term] = append(leadersByTerm[term], i)
+			leadersByTerm[term]++
 		}
 	}
 
-	for term, leaders := range leadersByTerm {
-		if len(leaders) > 1 {
-			t.Errorf("Term %d has %d leaders: %v (violates election safety)",
-				term, len(leaders), leaders)
+	for term, count := range leadersByTerm {
+		if count > 1 {
+			t.Errorf("Term %d has %d leaders (violates election safety)",
+				term, count)
 		}
 	}
 }
@@ -158,29 +179,30 @@ func AssertLogConsistency(t *testing.T, nodes []raft.Node, upToIndex int) {
 
 	// Use first node as reference
 	referenceNode := nodes[0]
+	referenceID := referenceNode.GetID()
 
 	for i := 1; i <= upToIndex; i++ {
 		referenceEntry := referenceNode.GetLogEntry(i)
 		if referenceEntry == nil {
-			t.Errorf("Reference node missing log entry at index %d", i)
+			t.Errorf("Reference node %d missing log entry at index %d", referenceID, i)
 			continue
 		}
 
-		for j := 1; j < len(nodes); j++ {
-			entry := nodes[j].GetLogEntry(i)
+		for _, node := range nodes[1:] {
+			entry := node.GetLogEntry(i)
 			if entry == nil {
-				t.Errorf("Node %d missing log entry at index %d", j, i)
+				t.Errorf("Node %d missing log entry at index %d", node.GetID(), i)
 				continue
 			}
 
 			if entry.Term != referenceEntry.Term {
-				t.Errorf("Log inconsistency at index %d: node 0 has term %d, node %d has term %d",
-					i, referenceEntry.Term, j, entry.Term)
+				t.Errorf("Log inconsistency at index %d: node %d has term %d, node %d has term %d",
+					i, referenceID, referenceEntry.Term, node.GetID(), entry.Term)
 			}
 
 			if !reflect.DeepEqual(entry.Command, referenceEntry.Command) {
-				t.Errorf("Log inconsistency at index %d: commands differ between node 0 and node %d",
-					i, j)
+				t.Errorf("Log inconsistency at index %d: commands differ between node %d and node %d",
+					i, referenceID, node.GetID())
 			}
 		}
 	}
@@ -192,10 +214,11 @@ func AssertClusterConsistency(t *testing.T, nodes []raft.Node) {
 	t.Helper()
 
 	// Get commit indices
-	commitIndices := make([]int, len(nodes))
-	for i, node := range nodes {
-		commitIndices[i] = node.GetCommitIndex()
-		t.Logf("Node %d commit index: %d", i, commitIndices[i])
+	commitIndices := make([]int, 0, len(nodes))
+	for _, node := range nodes {
+		commitIndex := node.GetCommitIndex()
+		commitIndices = append(commitIndices, commitIndex)
+		t.Logf("Node %d commit index: %d", node.GetID(), commitIndex)
 	}
 
 	// Find max and min commit index

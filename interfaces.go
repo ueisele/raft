@@ -23,6 +23,9 @@ type StateMachine interface {
 
 // Node is the main interface exposed to users of the library
 type Node interface {
+	// GetID returns the unique identifier of this node
+	GetID() int
+
 	// Submit submits a command to the Raft cluster
 	// Returns (index, term, isLeader)
 	Submit(command interface{}) (int, int, bool)

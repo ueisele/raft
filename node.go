@@ -384,6 +384,11 @@ func (n *raftNode) GetState() (int, bool) {
 	return n.state.GetCurrentTerm(), state == Leader
 }
 
+// GetID returns the unique identifier of this node
+func (n *raftNode) GetID() int {
+	return n.config.ID
+}
+
 // IsLeader returns true if this node is the current leader
 func (n *raftNode) IsLeader() bool {
 	n.mu.RLock()

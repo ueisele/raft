@@ -3,6 +3,8 @@ package helpers
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -269,6 +271,15 @@ func (c *TestCluster) GetNodes() map[int]raft.Node {
 	return result
 }
 
+// GetNodesSlice returns all nodes as a slice for use with assertion helpers
+// The nodes are returned in an unspecified order
+func (c *TestCluster) GetNodesSlice() []raft.Node {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return slices.Collect(maps.Values(c.nodes))
+}
+
 // GetNode returns a specific node by ID
 func (c *TestCluster) GetNode(nodeID int) (raft.Node, bool) {
 	c.mu.RLock()
@@ -290,6 +301,15 @@ func (c *TestCluster) GetTransports() map[int]raft.Transport {
 		result[k] = v
 	}
 	return result
+}
+
+// GetTransportsSlice returns all transports as a slice
+// The transports are returned in an unspecified order
+func (c *TestCluster) GetTransportsSlice() []raft.Transport {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return slices.Collect(maps.Values(c.transports))
 }
 
 // GetTransport returns the transport for a specific node
