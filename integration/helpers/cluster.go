@@ -302,17 +302,6 @@ func (c *TestCluster) GetStateMachine(nodeID int) (raft.StateMachine, bool) {
 	return sm, ok
 }
 
-// GetMockStateMachine returns the mock state machine for a specific node
-func (c *TestCluster) GetMockStateMachine(nodeID int) (*raft.MockStateMachine, bool) {
-	sm, ok := c.GetStateMachine(nodeID)
-	if !ok {
-		return nil, false
-	}
-
-	mock, ok := sm.(*raft.MockStateMachine)
-	return mock, ok
-}
-
 // Start starts all nodes in the cluster
 func (c *TestCluster) Start() error {
 	c.mu.RLock()
