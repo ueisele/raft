@@ -435,7 +435,7 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 	for _, node := range cluster2.GetNodes() {
 		nodesList2 = append(nodesList2, node)
 	}
-	helpers.VerifyClusterConsistency(t, nodesList2)
+	helpers.AssertClusterConsistency(t, nodesList2)
 
 	// Scenario 3: Rolling restarts
 	t.Log("\nScenario 3: Rolling restarts")

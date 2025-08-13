@@ -12,7 +12,7 @@ import (
 // TestAsymmetricPartitionRefactored tests asymmetric network partitions using transport decorators
 func TestAsymmetricPartitionRefactored(t *testing.T) {
 	// Create cluster with partitionable transport
-	cluster := helpers.NewTestCluster(t, []int{0, 1, 2},
+	cluster := helpers.NewTestClusterOfSize(t, 3,
 		helpers.WithPartitionableTransport(),
 		helpers.WithClusterAutoStart(),
 	)
