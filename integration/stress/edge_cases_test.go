@@ -192,7 +192,7 @@ func TestConfigChangeLeadershipTransfer(t *testing.T) {
 
 	// Submit some commands
 	for i := 0; i < 5; i++ {
-		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("cmd-%d", i))
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("cmd-%d", i))
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -387,7 +387,7 @@ func TestConcurrentOperations(t *testing.T) {
 
 				for op := 0; op < numOpsPerClient; op++ {
 					cmd := fmt.Sprintf("client-%d-op-%d", clientID, op)
-					_, _, err := cluster.SubmitCommand(cmd)
+					_, _, err := cluster.SubmitToLeader(cmd)
 
 					mu.Lock()
 					if err != nil {
@@ -427,7 +427,7 @@ func TestConcurrentOperations(t *testing.T) {
 			go func(writerID int) {
 				defer wg.Done()
 				for j := 0; j < 50; j++ {
-					cluster.SubmitCommand(fmt.Sprintf("write-%d-%d", writerID, j)) //nolint:errcheck // concurrent write test
+					cluster.SubmitToLeader(fmt.Sprintf("write-%d-%d", writerID, j)) //nolint:errcheck // concurrent write test
 					writeCount.Add(1)
 				}
 			}(i)

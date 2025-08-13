@@ -26,7 +26,7 @@ func TestFailureDecorator(t *testing.T) {
 	// Submit some commands to generate traffic
 	var lastIndex int
 	for i := 0; i < 10; i++ {
-		idx, _, err := cluster.SubmitCommand(i)
+		idx, _, err := cluster.SubmitToLeader(i)
 		if err == nil && idx > lastIndex {
 			lastIndex = idx
 		}
@@ -56,7 +56,7 @@ func TestFailureDecorator(t *testing.T) {
 	beforeAttempts, beforeFailures := transporttest.GetFailureStats(cluster)
 	lastIndex = 0
 	for i := 0; i < 10; i++ {
-		idx, _, err := cluster.SubmitCommand(i)
+		idx, _, err := cluster.SubmitToLeader(i)
 		if err == nil && idx > lastIndex {
 			lastIndex = idx
 		}
@@ -106,7 +106,7 @@ func TestFailureRateAdjustment(t *testing.T) {
 	// Generate some traffic
 	var lastIdx int
 	for i := 0; i < 20; i++ {
-		idx, _, err := cluster.SubmitCommand(i)
+		idx, _, err := cluster.SubmitToLeader(i)
 		if err == nil && idx > lastIdx {
 			lastIdx = idx
 		}
@@ -144,7 +144,7 @@ func TestFailureStatsReset(t *testing.T) {
 	// Generate some traffic
 	var lastIdx int
 	for i := 0; i < 10; i++ {
-		idx, _, err := cluster.SubmitCommand(i)
+		idx, _, err := cluster.SubmitToLeader(i)
 		if err == nil && idx > lastIdx {
 			lastIdx = idx
 		}

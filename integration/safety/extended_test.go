@@ -128,7 +128,7 @@ func TestConcurrentClientRequests(t *testing.T) {
 			defer wg.Done()
 			for req := 0; req < numRequestsPerClient; req++ {
 				cmd := fmt.Sprintf("client-%d-req-%d", clientID, req)
-				_, _, err := cluster.SubmitCommand(cmd)
+				_, _, err := cluster.SubmitToLeader(cmd)
 				if err != nil {
 					failures <- cmd
 				} else {
@@ -158,7 +158,7 @@ func TestConcurrentClientRequests(t *testing.T) {
 
 	// Verify cluster is still functional
 	testCmd := "final-test-command"
-	idx, _, err := cluster.SubmitCommand(testCmd)
+	idx, _, err := cluster.SubmitToLeader(testCmd)
 	if err != nil {
 		t.Fatalf("Failed to submit test command after concurrent load: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestLogReplicationUnderPartitions(t *testing.T) {
 
 	// Submit initial commands
 	for i := 0; i < 5; i++ {
-		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("before-partition-%d", i))
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("before-partition-%d", i))
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -332,7 +332,7 @@ func TestRapidLeadershipChanges(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		// Submit a command with current leader
 		cmd := fmt.Sprintf("leader-%d-cmd", len(leaderChanges)-1)
-		if _, _, err := cluster.SubmitCommand(cmd); err != nil {
+		if _, _, err := cluster.SubmitToLeader(cmd); err != nil {
 			t.Logf("Failed to submit command during leader change: %v", err)
 		}
 
@@ -449,7 +449,7 @@ func TestCommitIndexMonotonicity(t *testing.T) {
 
 	// Submit commands over time
 	for i := 0; i < 20; i++ {
-		cluster.SubmitCommand(fmt.Sprintf("cmd-%d", i)) //nolint:errcheck // background load generation
+		cluster.SubmitToLeader(fmt.Sprintf("cmd-%d", i)) //nolint:errcheck // background load generation
 		time.Sleep(50 * time.Millisecond)
 	}
 

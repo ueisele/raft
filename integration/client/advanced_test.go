@@ -24,7 +24,7 @@ func TestLinearizableReads(t *testing.T) {
 
 	// Submit a write
 	writeCmd := "SET key1 value1"
-	writeIndex, _, err := cluster.SubmitCommand(writeCmd)
+	writeIndex, _, err := cluster.SubmitToLeader(writeCmd)
 	if err != nil {
 		t.Fatalf("Failed to submit write: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestLinearizableReads(t *testing.T) {
 
 	// Perform linearizable read from leader
 	readCmd := "GET key1"
-	readIndex, _, err := cluster.SubmitCommand(readCmd)
+	readIndex, _, err := cluster.SubmitToLeader(readCmd)
 	if err != nil {
 		t.Fatalf("Failed to submit read: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestIdempotentOperations(t *testing.T) {
 	indices := make([]int, 3)
 
 	for i := 0; i < 3; i++ {
-		index, _, err := cluster.SubmitCommand(cmd)
+		index, _, err := cluster.SubmitToLeader(cmd)
 		if err != nil {
 			t.Fatalf("Failed to submit command %d: %v", i, err)
 		}
@@ -162,7 +162,7 @@ func TestClientTimeouts(t *testing.T) {
 	}
 
 	// Verify cluster is functional
-	_, _, err = cluster.SubmitCommand("post-timeout-test")
+	_, _, err = cluster.SubmitToLeader("post-timeout-test")
 	if err != nil {
 		t.Errorf("Failed to submit command after healing: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestClientRetries(t *testing.T) {
 	}
 
 	// Submit command successfully
-	successIndex, _, err := cluster.SubmitCommand("pre-failure-cmd")
+	successIndex, _, err := cluster.SubmitToLeader("pre-failure-cmd")
 	if err != nil {
 		t.Fatalf("Failed to submit initial command: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestClientRetries(t *testing.T) {
 
 	for retryCount < maxRetries {
 		// Try to submit command
-		_, _, err := cluster.SubmitCommand(fmt.Sprintf("retry-cmd-%d", retryCount))
+		_, _, err := cluster.SubmitToLeader(fmt.Sprintf("retry-cmd-%d", retryCount))
 		if err == nil {
 			t.Logf("Command succeeded after %d retries", retryCount)
 			break
@@ -273,7 +273,7 @@ func TestClientRetries(t *testing.T) {
 	}
 
 	// Verify cluster continues to work
-	finalIndex, _, err := cluster.SubmitCommand("post-retry-cmd")
+	finalIndex, _, err := cluster.SubmitToLeader("post-retry-cmd")
 	if err != nil {
 		t.Errorf("Failed to submit final command: %v", err)
 	}

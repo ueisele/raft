@@ -57,7 +57,7 @@ func TestLeaderFailover(t *testing.T) {
 
 	// Submit some commands to establish leadership
 	for i := 0; i < 5; i++ {
-		idx, _, err := cluster.SubmitCommand(i)
+		idx, _, err := cluster.SubmitToLeader(i)
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -113,7 +113,7 @@ elected:
 	}
 
 	// Verify the new leader can process commands
-	idx, _, err := cluster.SubmitCommand("test-after-failover")
+	idx, _, err := cluster.SubmitToLeader("test-after-failover")
 	if err != nil {
 		t.Fatalf("New leader failed to accept command: %v", err)
 	}

@@ -30,7 +30,7 @@ func TestBasicMembershipChange(t *testing.T) {
 	// Submit some initial commands
 	for i := 0; i < 5; i++ {
 		cmd := fmt.Sprintf("initial-cmd-%d", i)
-		idx, _, err := cluster.SubmitCommand(cmd)
+		idx, _, err := cluster.SubmitToLeader(cmd)
 		if err != nil {
 			t.Fatalf("Failed to submit initial command: %v", err)
 		}
@@ -60,7 +60,7 @@ func TestBasicMembershipChange(t *testing.T) {
 
 	// Verify new server can participate
 	cmd := "after-add-server"
-	idx, _, err := cluster.SubmitCommand(cmd)
+	idx, _, err := cluster.SubmitToLeader(cmd)
 	if err != nil {
 		// Leader might have changed during reconfiguration
 		_, err = cluster.WaitForLeader(2 * time.Second)
@@ -68,7 +68,7 @@ func TestBasicMembershipChange(t *testing.T) {
 			t.Fatalf("Lost leader after adding server: %v", err)
 		}
 		// Retry with new leader
-		idx, _, err = cluster.SubmitCommand(cmd)
+		idx, _, err = cluster.SubmitToLeader(cmd)
 		if err != nil {
 			t.Fatalf("Failed to submit command after adding server: %v", err)
 		}
@@ -285,7 +285,7 @@ func TestRemoveLeaderNode(t *testing.T) {
 	}
 
 	// Verify cluster still functional
-	idx, _, err := cluster.SubmitCommand("after-leader-removal")
+	idx, _, err := cluster.SubmitToLeader("after-leader-removal")
 	if err != nil {
 		t.Fatalf("Failed to submit command after leader removal: %v", err)
 	}

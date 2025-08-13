@@ -35,7 +35,7 @@ func TestHighLoadSingleClient(t *testing.T) {
 
 	for i := 0; i < commandCount; i++ {
 		cmd := fmt.Sprintf("load-cmd-%d", i)
-		_, _, err := cluster.SubmitCommand(cmd)
+		_, _, err := cluster.SubmitToLeader(cmd)
 		if err == nil {
 			successCount++
 		}
@@ -90,7 +90,7 @@ func TestHighLoadMultipleClients(t *testing.T) {
 
 			for i := 0; i < commandsPerClient; i++ {
 				cmd := fmt.Sprintf("client-%d-cmd-%d", id, i)
-				_, _, err := cluster.SubmitCommand(cmd)
+				_, _, err := cluster.SubmitToLeader(cmd)
 				if err == nil {
 					atomic.AddInt64(&successCount, 1)
 				} else {
@@ -155,7 +155,7 @@ func TestSustainedLoad(t *testing.T) {
 				return
 			default:
 				cmd := fmt.Sprintf("sustained-cmd-%d", commandNum)
-				_, _, err := cluster.SubmitCommand(cmd)
+				_, _, err := cluster.SubmitToLeader(cmd)
 				if err == nil {
 					atomic.AddInt64(&successCount, 1)
 				} else {
@@ -250,7 +250,7 @@ func TestLoadWithNodeFailures(t *testing.T) {
 				return
 			default:
 				cmd := fmt.Sprintf("failure-test-cmd-%d", commandNum)
-				_, _, err := cluster.SubmitCommand(cmd)
+				_, _, err := cluster.SubmitToLeader(cmd)
 				if err == nil {
 					atomic.AddInt64(&successCount, 1)
 				} else {
@@ -335,7 +335,7 @@ func TestLoadWithNetworkPartitions(t *testing.T) {
 				return
 			default:
 				cmd := fmt.Sprintf("partition-load-cmd-%d", commandNum)
-				_, _, err := cluster.SubmitCommand(cmd)
+				_, _, err := cluster.SubmitToLeader(cmd)
 				if err == nil {
 					atomic.AddInt64(&successCount, 1)
 				} else {

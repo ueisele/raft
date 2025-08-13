@@ -184,7 +184,7 @@ func testSaferApproach(t *testing.T) {
 
 	// Submit some test data
 	for i := 0; i < 5; i++ {
-		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("safe-cmd-%d", i))
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("safe-cmd-%d", i))
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -340,7 +340,7 @@ func testDangerOfImmediateVoting(t *testing.T) {
 
 	lastIndex := 0
 	for _, data := range criticalData {
-		idx, _, err := cluster.SubmitCommand(data)
+		idx, _, err := cluster.SubmitToLeader(data)
 		if err != nil {
 			t.Fatalf("Failed to submit critical data: %v", err)
 		}
@@ -395,7 +395,7 @@ func testVoteDenialWithActiveLeader(t *testing.T) {
 	followerID := (leaderID + 1) % 3
 
 	// Submit a command to establish leadership
-	idx, _, err := cluster.SubmitCommand("test-command")
+	idx, _, err := cluster.SubmitToLeader("test-command")
 	if err != nil {
 		t.Fatalf("Failed to submit command: %v", err)
 	}
@@ -503,7 +503,7 @@ func testVoteDenialPreventsUnnecessaryElections(t *testing.T) {
 			case <-done:
 				return
 			case <-ticker.C:
-				cluster.SubmitCommand(fmt.Sprintf("heartbeat-%d", cmdIndex)) //nolint:errcheck // background heartbeat
+				cluster.SubmitToLeader(fmt.Sprintf("heartbeat-%d", cmdIndex)) //nolint:errcheck // background heartbeat
 				cmdIndex++
 			}
 		}

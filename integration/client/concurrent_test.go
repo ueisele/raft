@@ -46,7 +46,7 @@ func TestConcurrentClients(t *testing.T) {
 					cmd = fmt.Sprintf("SET client-%d-key-%d value-%d", id, op, op)
 				}
 
-				_, _, err := cluster.SubmitCommand(cmd)
+				_, _, err := cluster.SubmitToLeader(cmd)
 				if err != nil {
 					atomic.AddInt64(&errorCount, 1)
 				} else {
@@ -90,7 +90,7 @@ func TestConcurrentReadsAndWrites(t *testing.T) {
 
 	// Set up shared state
 	sharedKey := "shared-counter"
-	_, _, err = cluster.SubmitCommand(fmt.Sprintf("SET %s 0", sharedKey))
+	_, _, err = cluster.SubmitToLeader(fmt.Sprintf("SET %s 0", sharedKey))
 	if err != nil {
 		t.Fatalf("Failed to initialize shared state: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestConcurrentReadsAndWrites(t *testing.T) {
 
 			for j := 0; j < opsPerWorker; j++ {
 				cmd := fmt.Sprintf("INCREMENT %s", sharedKey)
-				_, _, err := cluster.SubmitCommand(cmd)
+				_, _, err := cluster.SubmitToLeader(cmd)
 				if err == nil {
 					atomic.AddInt64(&writeSuccess, 1)
 				}
@@ -129,7 +129,7 @@ func TestConcurrentReadsAndWrites(t *testing.T) {
 
 			for j := 0; j < opsPerWorker; j++ {
 				cmd := fmt.Sprintf("GET %s", sharedKey)
-				_, _, err := cluster.SubmitCommand(cmd)
+				_, _, err := cluster.SubmitToLeader(cmd)
 				if err == nil {
 					atomic.AddInt64(&readSuccess, 1)
 				}
@@ -174,7 +174,7 @@ func TestClientConnectionStress(t *testing.T) {
 			// Each "connection" submits a few commands then disconnects
 			for j := 0; j < 3; j++ {
 				cmd := fmt.Sprintf("conn-%d-cmd-%d", connID, j)
-				_, _, err := cluster.SubmitCommand(cmd)
+				_, _, err := cluster.SubmitToLeader(cmd)
 				if err == nil {
 					atomic.AddInt64(&successCount, 1)
 				}
@@ -229,7 +229,7 @@ func TestConcurrentConfigurationChanges(t *testing.T) {
 				return
 			default:
 				cmd := fmt.Sprintf("config-change-op-%d", opNum)
-				_, _, err := cluster.SubmitCommand(cmd)
+				_, _, err := cluster.SubmitToLeader(cmd)
 				if err != nil {
 					atomic.AddInt64(&clientErrors, 1)
 				} else {
@@ -270,7 +270,7 @@ func TestConcurrentConfigurationChanges(t *testing.T) {
 	t.Logf("  Error rate: %.2f%%", float64(finalErrors)/float64(finalSuccess+finalErrors)*100)
 
 	// Verify cluster is still functional
-	_, _, err = cluster.SubmitCommand("post-config-test")
+	_, _, err = cluster.SubmitToLeader("post-config-test")
 	if err != nil {
 		t.Errorf("Failed to submit command after config changes: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestConcurrentLeaderFailure(t *testing.T) {
 					return
 				default:
 					cmd := fmt.Sprintf("client-%d-op-%d", clientID, opNum)
-					_, _, err := cluster.SubmitCommand(cmd)
+					_, _, err := cluster.SubmitToLeader(cmd)
 
 					if atomic.LoadInt64(&leaderFailed) == 0 {
 						if err == nil {

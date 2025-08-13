@@ -27,7 +27,7 @@ func TestLeadershipTransfer(t *testing.T) {
 
 	// Submit some commands to establish leadership
 	for i := 0; i < 5; i++ {
-		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("initial-cmd-%d", i))
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("initial-cmd-%d", i))
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -124,7 +124,7 @@ func TestGracefulLeadershipHandoff(t *testing.T) {
 				mu.Unlock()
 
 				cmd := fmt.Sprintf("continuous-cmd-%d", count)
-				_, _, err := cluster.SubmitCommand(cmd)
+				_, _, err := cluster.SubmitToLeader(cmd)
 
 				mu.Lock()
 				if err != nil {
@@ -211,7 +211,7 @@ func TestLeadershipTransferToSpecificNode(t *testing.T) {
 
 	// Submit some data
 	for i := 0; i < 10; i++ {
-		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("data-%d", i))
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("data-%d", i))
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -309,7 +309,7 @@ func TestLeadershipTransferDuringLoad(t *testing.T) {
 					return
 				default:
 					cmd := fmt.Sprintf("client-%d-cmd-%d", clientID, cmdIndex)
-					idx, _, err := cluster.SubmitCommand(cmd)
+					idx, _, err := cluster.SubmitToLeader(cmd)
 
 					results <- Result{
 						success: err == nil,
@@ -409,7 +409,7 @@ func TestPreventedLeadershipTransfer(t *testing.T) {
 
 	// Submit many commands
 	for i := 0; i < 20; i++ {
-		cluster.SubmitCommand(fmt.Sprintf("cmd-%d", i)) //nolint:errcheck // background load in test
+		cluster.SubmitToLeader(fmt.Sprintf("cmd-%d", i)) //nolint:errcheck // background load in test
 	}
 
 	// Don't wait for full replication

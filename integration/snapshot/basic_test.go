@@ -92,7 +92,7 @@ func TestSnapshotInstallation(t *testing.T) {
 	lastIdx := 0
 	for i := 0; i < 20; i++ {
 		cmd := fmt.Sprintf("command-%d", i)
-		idx, _, err := cluster.SubmitCommand(cmd)
+		idx, _, err := cluster.SubmitToLeader(cmd)
 		if err != nil {
 			t.Logf("Failed to submit command %d: %v", i, err)
 			continue
@@ -291,7 +291,7 @@ func TestSnapshotFailure(t *testing.T) {
 
 	// Submit some commands
 	for i := 0; i < 7; i++ {
-		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("cmd%d", i))
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("cmd%d", i))
 		if err == nil && i == 6 {
 			// Wait for last command before setting up failure
 			cluster.WaitForCommitIndex(idx, time.Second) //nolint:errcheck // best effort
@@ -305,7 +305,7 @@ func TestSnapshotFailure(t *testing.T) {
 
 	// Submit more commands to trigger snapshot (log size > 5)
 	for i := 7; i < 10; i++ {
-		cluster.SubmitCommand(fmt.Sprintf("cmd%d", i)) //nolint:errcheck // background commands
+		cluster.SubmitToLeader(fmt.Sprintf("cmd%d", i)) //nolint:errcheck // background commands
 	}
 
 	// Wait for snapshot attempt or log growth

@@ -26,7 +26,7 @@ func TestCommitIndexBoundsWithConfigChange(t *testing.T) {
 
 	// Submit some commands to establish replication state
 	for i := 0; i < 10; i++ {
-		index, _, err := cluster.SubmitCommand(fmt.Sprintf("cmd-%d", i))
+		index, _, err := cluster.SubmitToLeader(fmt.Sprintf("cmd-%d", i))
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -71,7 +71,7 @@ func TestCommitIndexBoundsWithConfigChange(t *testing.T) {
 
 	// Submit more commands to test commit index updates with reduced cluster
 	for i := 10; i < 15; i++ {
-		_, _, err := cluster.SubmitCommand(fmt.Sprintf("post-config-cmd-%d", i))
+		_, _, err := cluster.SubmitToLeader(fmt.Sprintf("post-config-cmd-%d", i))
 		if err != nil {
 			t.Logf("Command %d failed: %v", i, err)
 		}
@@ -127,7 +127,7 @@ func TestMatchIndexBoundsAfterConfigChange(t *testing.T) {
 
 	// Submit commands to establish matchIndex state
 	for i := 0; i < 5; i++ {
-		_, _, err := cluster.SubmitCommand(fmt.Sprintf("init-cmd-%d", i))
+		_, _, err := cluster.SubmitToLeader(fmt.Sprintf("init-cmd-%d", i))
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -144,7 +144,7 @@ func TestMatchIndexBoundsAfterConfigChange(t *testing.T) {
 	// Submit more commands to ensure leader continues to work
 	// This verifies matchIndex bounds are checked correctly
 	for i := 5; i < 10; i++ {
-		_, _, err := cluster.SubmitCommand(fmt.Sprintf("post-add-cmd-%d", i))
+		_, _, err := cluster.SubmitToLeader(fmt.Sprintf("post-add-cmd-%d", i))
 		if err != nil {
 			t.Logf("Command %d failed: %v", i, err)
 		}

@@ -12,18 +12,22 @@ import (
 
 // TestBasicNodeCreation tests creating a single node
 func TestBasicNodeCreation(t *testing.T) {
-	// Create a standalone node using TestNode helper - automatic cleanup!
-	node := helpers.CreateStandaloneTestNode(t, helpers.WithAutoStart())
+	// Create a single-node cluster - automatic cleanup!
+	cluster := helpers.NewTestCluster(t, []int{0}, helpers.WithClusterAutoStart())
 
 	// Wait for the single node to become leader
 	// Single node should become leader quickly (within a few election timeouts)
-	node.WaitForLeader(400 * time.Millisecond)
+	leaderID, err := cluster.WaitForLeader(400 * time.Millisecond)
+	if err != nil {
+		t.Fatalf("Failed to elect leader: %v", err)
+	}
 
 	// Verify it became leader
-	term, isLeader := node.Node.GetState()
+	node, _ := cluster.GetNode(leaderID)
+	term, isLeader := node.GetState()
 	t.Logf("Node is leader: term=%d, isLeader=%v", term, isLeader)
 
-	// Node will automatically stop when test ends - no manual cleanup needed!
+	// Cluster will automatically stop when test ends - no manual cleanup needed!
 }
 
 // TestBasicNodeCreationOldWay shows the old manual approach for comparison

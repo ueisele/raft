@@ -25,7 +25,7 @@ func TestLogReplication(t *testing.T) {
 	var indices []int
 
 	for _, cmd := range commands {
-		idx, term, err := cluster.SubmitCommand(cmd)
+		idx, term, err := cluster.SubmitToLeader(cmd)
 		if err != nil {
 			t.Fatalf("Failed to submit command %s: %v", cmd, err)
 		}
@@ -83,7 +83,7 @@ func TestReplicationWithFollowerFailure(t *testing.T) {
 	// Submit commands (should still succeed with 4 out of 5 nodes)
 	for i := 0; i < 10; i++ {
 		cmd := fmt.Sprintf("cmd-%d", i)
-		idx, _, err := cluster.SubmitCommand(cmd)
+		idx, _, err := cluster.SubmitToLeader(cmd)
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -136,7 +136,7 @@ func TestReplicationConsistency(t *testing.T) {
 	numCommands := 20
 	for i := 0; i < numCommands; i++ {
 		cmd := fmt.Sprintf("consistent-cmd-%d", i)
-		idx, _, err := cluster.SubmitCommand(cmd)
+		idx, _, err := cluster.SubmitToLeader(cmd)
 		if err != nil {
 			t.Fatalf("Failed to submit command %d: %v", i, err)
 		}

@@ -310,7 +310,7 @@ func TestRapidPartitionChanges(t *testing.T) {
 	}
 
 	// Verify cluster is functional
-	idx, _, err := cluster.SubmitCommand("post-partition-test")
+	idx, _, err := cluster.SubmitToLeader("post-partition-test")
 	if err != nil {
 		t.Fatalf("Failed to submit command after partitions: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestPartitionDuringConfigChange(t *testing.T) {
 
 	// Submit some initial data
 	for i := 0; i < 5; i++ {
-		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("initial-%d", i))
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("initial-%d", i))
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -416,7 +416,7 @@ func TestCascadingPartitions(t *testing.T) {
 
 	// Submit initial data
 	for i := 0; i < 10; i++ {
-		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("initial-%d", i))
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("initial-%d", i))
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -544,7 +544,7 @@ func TestCascadingPartitions(t *testing.T) {
 	t.Logf("✓ Cluster recovered with leader at node %d", finalLeader)
 
 	// Verify functionality
-	idx, _, err := cluster.SubmitCommand("post-cascade-test")
+	idx, _, err := cluster.SubmitToLeader("post-cascade-test")
 	if err != nil {
 		t.Fatalf("Failed to submit after cascade: %v", err)
 	}

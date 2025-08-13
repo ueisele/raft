@@ -142,7 +142,7 @@ func TestDecoratorOrdering(t *testing.T) {
 	// Submit commands to generate traffic
 	var lastIdx int
 	for i := 0; i < 5; i++ {
-		idx, _, err := cluster2.SubmitCommand(i)
+		idx, _, err := cluster2.SubmitToLeader(i)
 		if err == nil && idx > lastIdx {
 			lastIdx = idx
 		}

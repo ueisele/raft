@@ -25,7 +25,7 @@ func TestLeaderCommitIndexPreservation(t *testing.T) {
 
 	// Submit and commit some entries
 	for i := 0; i < 10; i++ {
-		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("cmd-%d", i))
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("cmd-%d", i))
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -187,7 +187,7 @@ func TestLeaderRecoveryAfterBriefPartition(t *testing.T) {
 
 	// Submit some commands
 	for i := 0; i < 5; i++ {
-		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("before-partition-%d", i))
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("before-partition-%d", i))
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -222,7 +222,7 @@ func TestLeaderRecoveryAfterBriefPartition(t *testing.T) {
 	}
 
 	// Verify cluster is functional
-	idx, _, err := cluster.SubmitCommand("after-partition")
+	idx, _, err := cluster.SubmitToLeader("after-partition")
 	if err != nil {
 		t.Fatalf("Failed to submit command after partition: %v", err)
 	}
@@ -420,7 +420,7 @@ func TestLeadershipWithHighLoad(t *testing.T) {
 
 			for cmd := 0; cmd < commandsPerClient; cmd++ {
 				command := fmt.Sprintf("client-%d-cmd-%d", clientID, cmd)
-				_, _, err := cluster.SubmitCommand(command)
+				_, _, err := cluster.SubmitToLeader(command)
 				if err == nil {
 					successMu.Lock()
 					successCount++
@@ -456,7 +456,7 @@ func TestLeadershipWithHighLoad(t *testing.T) {
 	}
 
 	// Verify cluster still functional
-	idx, _, err := cluster.SubmitCommand("post-load-check")
+	idx, _, err := cluster.SubmitToLeader("post-load-check")
 	if err != nil {
 		t.Fatalf("Failed to submit command after high load: %v", err)
 	}

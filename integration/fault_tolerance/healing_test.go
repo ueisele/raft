@@ -25,7 +25,7 @@ func TestClusterHealing(t *testing.T) {
 
 	// Submit initial commands
 	for i := 0; i < 5; i++ {
-		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("initial-%d", i))
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("initial-%d", i))
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -317,7 +317,7 @@ func TestHealingWithDivergentLogs(t *testing.T) {
 
 	// Submit initial commands
 	for i := 0; i < 5; i++ {
-		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("common-%d", i))
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("common-%d", i))
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -476,7 +476,7 @@ func TestHealingUnderLoad(t *testing.T) {
 					return
 				case <-ticker.C:
 					cmd := fmt.Sprintf("client-%d-cmd-%d", clientID, cmdIndex)
-					_, _, err := cluster.SubmitCommand(cmd)
+					_, _, err := cluster.SubmitToLeader(cmd)
 
 					mu.Lock()
 					if err != nil {
@@ -557,7 +557,7 @@ func TestHealingUnderLoad(t *testing.T) {
 	}
 
 	// Verify cluster is functional
-	idx, _, err := cluster.SubmitCommand("post-healing-test")
+	idx, _, err := cluster.SubmitToLeader("post-healing-test")
 	if err != nil {
 		t.Fatalf("Failed to submit after healing: %v", err)
 	}

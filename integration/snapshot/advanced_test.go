@@ -39,7 +39,7 @@ func TestSnapshotDuringPartition(t *testing.T) {
 	// Submit commands to trigger snapshot in majority
 	for i := 0; i < 15; i++ {
 		cmd := fmt.Sprintf("cmd-%d", i)
-		_, _, err := cluster.SubmitCommand(cmd)
+		_, _, err := cluster.SubmitToLeader(cmd)
 		if err != nil {
 			t.Logf("Failed to submit command: %v", err)
 			continue
@@ -122,7 +122,7 @@ func TestSnapshotDuringLeadershipChange(t *testing.T) {
 
 	// Submit commands
 	for i := 0; i < 10; i++ {
-		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("cmd-%d", i))
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("cmd-%d", i))
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -268,7 +268,7 @@ func TestConcurrentSnapshotAndReplication(t *testing.T) {
 				return
 			default:
 				cmd := fmt.Sprintf("concurrent-cmd-%d", i)
-				if _, _, err := cluster.SubmitCommand(cmd); err != nil {
+				if _, _, err := cluster.SubmitToLeader(cmd); err != nil {
 					// Log but don't fail - expected during snapshots
 					t.Logf("Failed to submit command during snapshot: %v", err)
 				}
@@ -371,7 +371,7 @@ func TestSnapshotInstallationRaceConditions(t *testing.T) {
 	// Submit many commands to majority
 	successCount := 0
 	for i := 0; i < 50; i++ {
-		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("race-cmd-%d", i))
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("race-cmd-%d", i))
 		if err != nil {
 			t.Logf("Failed to submit command %d: %v", i, err)
 			continue
@@ -412,7 +412,7 @@ func TestSnapshotInstallationRaceConditions(t *testing.T) {
 
 	// Submit more commands while first node is catching up
 	for i := 50; i < 60; i++ {
-		cluster.SubmitCommand(fmt.Sprintf("race-cmd-%d", i)) //nolint:errcheck // background load generation
+		cluster.SubmitToLeader(fmt.Sprintf("race-cmd-%d", i)) //nolint:errcheck // background load generation
 	}
 
 	// Heal second partitioned node
@@ -573,7 +573,7 @@ func TestSnapshotTransmissionFailure(t *testing.T) {
 
 	// Submit commands
 	for i := 0; i < 20; i++ {
-		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("cmd-%d", i))
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("cmd-%d", i))
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -590,7 +590,7 @@ func TestSnapshotTransmissionFailure(t *testing.T) {
 
 	// Submit more commands and create snapshot
 	for i := 20; i < 40; i++ {
-		cluster.SubmitCommand(fmt.Sprintf("cmd-%d", i)) //nolint:errcheck // background commands
+		cluster.SubmitToLeader(fmt.Sprintf("cmd-%d", i)) //nolint:errcheck // background commands
 	}
 
 	// Wait for automatic snapshot creation

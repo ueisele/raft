@@ -32,7 +32,7 @@ func TestDelayDecorator(t *testing.T) {
 
 	// Submit a command and measure time
 	start := time.Now()
-	idx, _, err := cluster.SubmitCommand("test")
+	idx, _, err := cluster.SubmitToLeader("test")
 	if err != nil {
 		t.Fatalf("Failed to submit command: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestDelayDecorator(t *testing.T) {
 
 	// Submit another command without delay
 	start = time.Now()
-	idx, _, err = cluster.SubmitCommand("test2")
+	idx, _, err = cluster.SubmitToLeader("test2")
 	if err != nil {
 		t.Fatalf("Failed to submit command: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestDelayBetweenNodes(t *testing.T) {
 
 	// Submit commands and verify they still work
 	for i := 0; i < 5; i++ {
-		idx, _, err := cluster.SubmitCommand(i)
+		idx, _, err := cluster.SubmitToLeader(i)
 		if err == nil {
 			cluster.WaitForCommitIndex(idx, 1*time.Second) //nolint:errcheck
 		}
@@ -209,7 +209,7 @@ func TestAsymmetricDelay(t *testing.T) {
 
 	// Submit some commands
 	for i := 0; i < 3; i++ {
-		idx, _, err := cluster.SubmitCommand(i)
+		idx, _, err := cluster.SubmitToLeader(i)
 		if err == nil {
 			cluster.WaitForCommitIndex(idx, 2*time.Second) //nolint:errcheck
 		}

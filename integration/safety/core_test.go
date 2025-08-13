@@ -86,7 +86,7 @@ func TestLogMatching(t *testing.T) {
 	// Submit commands
 	numCommands := 10
 	for i := 0; i < numCommands; i++ {
-		idx, _, err := cluster.SubmitCommand(fmt.Sprintf("cmd-%d", i))
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("cmd-%d", i))
 		if err != nil {
 			t.Fatalf("Failed to submit command %d: %v", i, err)
 		}
@@ -148,7 +148,7 @@ func TestLeaderCompleteness(t *testing.T) {
 	committedEntries := make(map[int]string) // index -> command
 	for i := 0; i < 5; i++ {
 		cmd := fmt.Sprintf("committed-cmd-%d", i)
-		idx, _, err := cluster.SubmitCommand(cmd)
+		idx, _, err := cluster.SubmitToLeader(cmd)
 		if err != nil {
 			t.Fatalf("Failed to submit command: %v", err)
 		}
@@ -243,7 +243,7 @@ func TestStateMachineSafety(t *testing.T) {
 
 	lastIndex := 0
 	for _, cmd := range commands {
-		idx, _, err := cluster.SubmitCommand(cmd)
+		idx, _, err := cluster.SubmitToLeader(cmd)
 		if err != nil {
 			t.Fatalf("Failed to submit command '%s': %v", cmd, err)
 		}

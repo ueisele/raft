@@ -465,8 +465,81 @@ func (c *TestCluster) RemoveNode(nodeID int) error {
 	return nil
 }
 
-// SubmitCommand submits a command to the leader
-func (c *TestCluster) SubmitCommand(command interface{}) (int, int, error) {
+// StartNode starts a specific node
+func (c *TestCluster) StartNode(nodeID int) error {
+	c.mu.RLock()
+	node, ok := c.nodes[nodeID]
+	c.mu.RUnlock()
+	
+	if !ok {
+		return fmt.Errorf("node %d not found", nodeID)
+	}
+	
+	return node.Start(c.ctx)
+}
+
+// StopNode stops a specific node
+func (c *TestCluster) StopNode(nodeID int) error {
+	c.mu.RLock()
+	node, ok := c.nodes[nodeID]
+	c.mu.RUnlock()
+	
+	if !ok {
+		return fmt.Errorf("node %d not found", nodeID)
+	}
+	
+	// Use a timeout context for stopping
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	
+	return node.Stop(ctx)
+}
+
+// RestartNode stops and restarts a specific node with the same configuration
+func (c *TestCluster) RestartNode(nodeID int) error {
+	// Stop the node first
+	if err := c.StopNode(nodeID); err != nil {
+		return fmt.Errorf("failed to stop node %d: %w", nodeID, err)
+	}
+	
+	// Get current peers
+	peers := c.NodeIDs()
+	
+	// Remove old node from maps
+	c.mu.Lock()
+	c.Registry.Unregister(nodeID)
+	delete(c.nodes, nodeID)
+	delete(c.transports, nodeID)
+	delete(c.persistences, nodeID)
+	delete(c.stateMachines, nodeID)
+	c.mu.Unlock()
+	
+	// Recreate the node with same configuration
+	_, err := c.addNode(nodeID, peers, true)
+	if err != nil {
+		return fmt.Errorf("failed to restart node %d: %w", nodeID, err)
+	}
+	
+	return nil
+}
+
+// SubmitToNode submits a command to a specific node
+func (c *TestCluster) SubmitToNode(command interface{}, nodeID int) (int, int, error) {
+	node, ok := c.GetNode(nodeID)
+	if !ok {
+		return 0, 0, fmt.Errorf("node %d not found", nodeID)
+	}
+	
+	index, term, isLeader := node.Submit(command)
+	if !isLeader {
+		return 0, 0, fmt.Errorf("node %d is not leader", nodeID)
+	}
+	
+	return index, term, nil
+}
+
+// SubmitToLeader submits a command to the current leader (renamed from SubmitCommand)
+func (c *TestCluster) SubmitToLeader(command interface{}) (int, int, error) {
 	leader, leaderID := c.GetLeader()
 	if leader == nil {
 		return 0, -1, fmt.Errorf("no leader available")
@@ -478,6 +551,12 @@ func (c *TestCluster) SubmitCommand(command interface{}) (int, int, error) {
 	}
 
 	return index, term, nil
+}
+
+// SubmitCommand is deprecated, use SubmitToLeader instead
+// Deprecated: Use SubmitToLeader
+func (c *TestCluster) SubmitCommand(command interface{}) (int, int, error) {
+	return c.SubmitToLeader(command)
 }
 
 // WaitForLeader waits for a leader to be elected
