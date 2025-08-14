@@ -529,10 +529,10 @@ func TestPersistenceWithSnapshots(t *testing.T) {
 		t.Fatalf("Failed to elect leader: %v", err)
 	}
 
-	// Submit enough commands
+	// Submit enough commands to trigger snapshots (MaxLogSize is 50)
 	successfulCommands := 0
 	lastIdx := 0
-	for i := 0; i < 20; i++ { // Reduced from 100 to 20 for reliability
+	for i := 0; i < 60; i++ { // Submit 60 commands to exceed MaxLogSize of 50
 		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("snap-cmd-%d", i))
 		if err != nil {
 			continue // Leader might have changed
@@ -547,8 +547,40 @@ func TestPersistenceWithSnapshots(t *testing.T) {
 	}
 	t.Logf("Successfully submitted %d commands", successfulCommands)
 
-	// Force snapshot creation (in real implementation)
-	t.Log("Assuming snapshots were created...")
+	// Wait for snapshots to be created (MaxLogSize is 50, we submitted enough commands)
+	helpers.WaitForCondition(t, func() bool {
+		// Check if any node has created a snapshot
+		for nodeID := range cluster.GetNodes() {
+			nodeDir := filepath.Join(tempDir, fmt.Sprintf("node-%d", nodeID))
+			persistence := newFilePersistence(nodeDir)
+			if persistence.HasSnapshot() {
+				t.Logf("Node %d has created a snapshot", nodeID)
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, "snapshot creation")
+
+	// Verify that at least one node has a snapshot
+	snapshotCount := 0
+	for nodeID := range cluster.GetNodes() {
+		nodeDir := filepath.Join(tempDir, fmt.Sprintf("node-%d", nodeID))
+		persistence := newFilePersistence(nodeDir)
+		if persistence.HasSnapshot() {
+			snap, err := persistence.LoadSnapshot()
+			if err == nil && snap != nil {
+				t.Logf("Node %d has snapshot with LastIncludedIndex=%d, LastIncludedTerm=%d",
+					nodeID, snap.LastIncludedIndex, snap.LastIncludedTerm)
+				snapshotCount++
+			}
+		}
+	}
+
+	if snapshotCount == 0 {
+		t.Fatal("No snapshots were created despite submitting many commands with small MaxLogSize")
+	}
+
+	t.Logf("✓ Found %d nodes with snapshots", snapshotCount)
 
 	// Stop all nodes
 	cluster.Stop()
@@ -574,21 +606,42 @@ func TestPersistenceWithSnapshots(t *testing.T) {
 		return false
 	}, 3*time.Second, "leader election after restart")
 
-	// Check that nodes have recovered some data
+	// Check that nodes have recovered from snapshots
+	recoveredFromSnapshot := 0
 	minCommitIndex := 0
 	for nodeID, node := range newCluster.GetNodes() {
 		commitIndex := node.GetCommitIndex()
 		t.Logf("Node %d recovered with commit index: %d", nodeID, commitIndex)
+		
+		// Check if this node had a snapshot
+		nodeDir := filepath.Join(tempDir, fmt.Sprintf("node-%d", nodeID))
+		persistence := newFilePersistence(nodeDir)
+		if persistence.HasSnapshot() {
+			snap, err := persistence.LoadSnapshot()
+			if err == nil && snap != nil {
+				t.Logf("  - Node %d loaded snapshot with LastIncludedIndex=%d", 
+					nodeID, snap.LastIncludedIndex)
+				recoveredFromSnapshot++
+				
+				// The commit index should be at least the snapshot's last included index
+				if commitIndex < snap.LastIncludedIndex {
+					t.Errorf("Node %d commit index %d is less than snapshot LastIncludedIndex %d",
+						nodeID, commitIndex, snap.LastIncludedIndex)
+				}
+			}
+		}
+		
 		if minCommitIndex == 0 || commitIndex < minCommitIndex {
 			minCommitIndex = commitIndex
 		}
 	}
 
-	// Since our simple persistence doesn't implement snapshots,
-	// we just verify that nodes recovered with some state
-	if minCommitIndex > 0 {
-		t.Logf("✓ Nodes recovered state with minimum commit index: %d", minCommitIndex)
+	if recoveredFromSnapshot == 0 {
+		t.Fatal("No nodes recovered from snapshots")
 	}
+
+	t.Logf("✓ %d nodes recovered from snapshots with minimum commit index: %d", 
+		recoveredFromSnapshot, minCommitIndex)
 
 	// Verify cluster is functional
 	_, err = newCluster.WaitForLeader(2 * time.Second)
