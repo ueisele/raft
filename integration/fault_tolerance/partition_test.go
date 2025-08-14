@@ -140,10 +140,17 @@ func TestAsymmetricPartition(t *testing.T) {
 		}
 	}
 
-	// This creates an interesting scenario where each node can reach some but not all peers
+	// Wait for partition effects to become observable - terms should increase due to failed elections
 	helpers.WaitForCondition(t, func() bool {
-		return true
-	}, 500*time.Millisecond, "observing circular partition")
+		// Check if any node has increased its term (indicating election attempts)
+		for _, node := range cluster.GetNodes() {
+			term, _ := node.GetState()
+			if term > 1 {
+				return true // Partition effects are observable
+			}
+		}
+		return false
+	}, 500*time.Millisecond, "partition effects to become observable")
 
 	// Check cluster state
 	nodes := cluster.GetNodes()
@@ -254,9 +261,7 @@ func TestRapidPartitionChanges(t *testing.T) {
 				go func() {
 					for i := 0; i < 5; i++ {
 						transporttest.PartitionNode(cluster, i) //nolint:errcheck // test partition setup
-						helpers.WaitForCondition(t, func() bool {
-							return true // Just wait briefly between operations
-						}, 50*time.Millisecond, "rolling isolation pause")
+						time.Sleep(50 * time.Millisecond) // Space out the partition changes
 						transporttest.HealPartition(cluster)
 					}
 				}()
@@ -281,9 +286,7 @@ func TestRapidPartitionChanges(t *testing.T) {
 		pattern.partition()
 		recordEvent(fmt.Sprintf("After %s", pattern.name))
 
-		helpers.WaitForCondition(t, func() bool {
-			return true // Wait for pattern duration
-		}, pattern.duration, fmt.Sprintf("partition pattern: %s", pattern.name))
+		time.Sleep(pattern.duration) // Let the partition pattern have its effect
 
 		transporttest.HealPartition(cluster)
 		recordEvent("After heal")

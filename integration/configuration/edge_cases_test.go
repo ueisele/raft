@@ -253,11 +253,16 @@ func TestConfigChangeWithNodeFailures(t *testing.T) {
 		} else {
 			t.Log("AddServer for stopped node succeeded")
 
-			// This might succeed but the node won't catch up until restarted
-			// Give a moment for the configuration to be processed
+			// Wait for configuration change to be replicated to majority
 			helpers.WaitForCondition(t, func() bool {
-				return true // Just a brief pause
-			}, 100*time.Millisecond, "config processing")
+				config := cluster.Nodes[leaderID].GetConfiguration()
+				for _, srv := range config.Servers {
+					if srv.ID == followerToStop {
+						return true // Configuration change has been processed
+					}
+				}
+				return false
+			}, 500*time.Millisecond, "configuration change to be processed")
 
 			// Restart the node
 			customConfig := func(config *raft.Config) {

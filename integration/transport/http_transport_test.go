@@ -226,11 +226,6 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 		t.Logf("Warning: error stopping transport: %v", err)
 	}
 
-	// Give OS time to release the port
-	helpers.WaitForCondition(t, func() bool {
-		return true // Just a brief pause for OS cleanup
-	}, 100*time.Millisecond, "OS port cleanup")
-
 	// Submit a command - should still work with 2 nodes
 	command := "command-during-failure"
 	index, _, isLeader := nodes[leaderID].Submit(command)
