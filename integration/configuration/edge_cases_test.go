@@ -3,6 +3,8 @@ package configuration
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -10,6 +12,8 @@ import (
 	"github.com/ueisele/raft"
 	"github.com/ueisele/raft/integration/helpers"
 	"github.com/ueisele/raft/integration/helpers/transporttest"
+	"github.com/ueisele/raft/persistence"
+	"github.com/ueisele/raft/persistence/json"
 )
 
 // TestSimultaneousConfigChanges tests handling of concurrent configuration changes
@@ -349,8 +353,102 @@ func TestJointConsensusEdgeCases(t *testing.T) {
 
 // TestConfigurationPersistence tests that configuration changes are persistent
 func TestConfigurationPersistence(t *testing.T) {
-	// This test would require persistence support
-	t.Skip("Requires persistence implementation")
+	// Create temp directory for persistence
+	tempDir, err := os.MkdirTemp("", "raft-config-persist-")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(tempDir) }) //nolint:errcheck // test cleanup
+
+	// Create cluster with persistence
+	cluster := helpers.NewTestClusterOfSize(t, 3,
+		helpers.WithPersistenceFactory(func(nodeID int) (raft.Persistence, error) {
+			nodeDir := filepath.Join(tempDir, fmt.Sprintf("node-%d", nodeID))
+			config := &persistence.Config{
+				DataDir:  nodeDir,
+				ServerID: nodeID,
+			}
+			return json.NewJSONPersistence(config)
+		}),
+		helpers.WithClusterAutoStart())
+
+	// Wait for leader
+	leaderID, err := cluster.WaitForLeader(2 * time.Second)
+	if err != nil {
+		t.Fatalf("No leader elected: %v", err)
+	}
+
+	// Add a new server to the configuration
+	err = cluster.Nodes[leaderID].AddServer(3, "server-3", true)
+	if err != nil {
+		t.Fatalf("Failed to add server: %v", err)
+	}
+
+	// Wait for configuration change to be committed
+	helpers.WaitForCondition(t, func() bool {
+		config := cluster.Nodes[leaderID].GetConfiguration()
+		for _, srv := range config.Servers {
+			if srv.ID == 3 {
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, "configuration change commit")
+
+	// Verify all nodes have the new configuration
+	for nodeID, node := range cluster.GetNodes() {
+		config := node.GetConfiguration()
+		found := false
+		for _, srv := range config.Servers {
+			if srv.ID == 3 {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Node %d doesn't have server 3 in configuration", nodeID)
+		}
+	}
+
+	// Stop cluster
+	cluster.Stop()
+
+	// Restart cluster with same persistence
+	newCluster := helpers.NewTestClusterOfSize(t, 3,
+		helpers.WithPersistenceFactory(func(nodeID int) (raft.Persistence, error) {
+			nodeDir := filepath.Join(tempDir, fmt.Sprintf("node-%d", nodeID))
+			config := &persistence.Config{
+				DataDir:  nodeDir,
+				ServerID: nodeID,
+			}
+			return json.NewJSONPersistence(config)
+		}),
+		helpers.WithClusterAutoStart())
+
+	// Wait for new leader
+	_, err = newCluster.WaitForLeader(2 * time.Second)
+	if err != nil {
+		t.Fatalf("No leader elected after restart: %v", err)
+	}
+
+	// Verify configuration was persisted and restored
+	for nodeID, node := range newCluster.GetNodes() {
+		config := node.GetConfiguration()
+		found := false
+		for _, srv := range config.Servers {
+			if srv.ID == 3 {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Node %d lost server 3 from configuration after restart", nodeID)
+		} else {
+			t.Logf("Node %d correctly restored configuration with server 3", nodeID)
+		}
+	}
+
+	t.Log("✓ Configuration changes are properly persisted and restored")
 }
 
 // TestMaximumClusterSize tests behavior at maximum cluster size
