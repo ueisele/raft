@@ -517,6 +517,31 @@ golangci-lint run ./...
 
 Never leave the codebase in a state where it doesn't compile.
 
+## Critical Testing Lessons (MUST READ)
+
+**Tests that skip verification or make assumptions hide real bugs!**
+
+When reviewing or writing tests, ALWAYS ensure:
+1. **Never skip tests without valid reason** - Skipped tests hide bugs (we found configuration persistence was broken when we unskipped a test)
+2. **Always verify actual behavior** - Tests must check what actually happened, not assume it worked
+3. **Tests must fail properly** - A test claiming success without verification is worse than no test
+4. **"Would work in real implementation" is not a test** - Test the current code, not hypothetical implementations
+5. **Document bugs found when fixing tests** - Add them to the todo list immediately
+
+**Key Lesson**: Properly written tests that actually verify behavior are essential for finding and preventing bugs. Tests that skip verification or make assumptions are worse than no tests at all because they provide false confidence.
+
+Example of what NOT to do:
+```go
+// BAD - Just assumes without testing
+t.Log("✓ Configuration changes would be persisted in real implementation")
+
+// GOOD - Actually verifies
+config := node.GetConfiguration()
+if !containsServer(config, expectedServer) {
+    t.Errorf("Configuration missing expected server after restart")
+}
+```
+
 ## References
 
 - Raft Paper: "In Search of an Understandable Consensus Algorithm" by Diego Ongaro and John Ousterhout
