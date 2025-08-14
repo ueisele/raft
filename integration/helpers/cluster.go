@@ -186,7 +186,10 @@ func NewTestCluster(t *testing.T, nodeIDs []int, opts ...ClusterOption) *TestClu
 
 	// Create nodes with specified IDs
 	for _, nodeID := range nodeIDs {
-		_, err := cluster.addNode(nodeID, nodeIDs, false)
+		customConfig := func(config *raft.Config) {
+			config.Peers = nodeIDs
+		}
+		_, err := cluster.AddNodeWithConfig(nodeID, customConfig, false)
 		if err != nil {
 			t.Fatalf("Failed to create node %d: %v", nodeID, err)
 		}
@@ -411,13 +414,19 @@ func (c *TestCluster) GetLeader() (raft.Node, int) {
 	return nil, -1
 }
 
-// AddNode dynamically adds a new node to the cluster
+// AddNode dynamically adds a new node to the cluster with default peers
 func (c *TestCluster) AddNode(nodeID int, peers []int) (raft.Node, error) {
-	return c.addNode(nodeID, peers, c.config.autoStart)
+	// Create a config customizer that sets the peers
+	customConfig := func(config *raft.Config) {
+		config.Peers = peers
+	}
+	return c.AddNodeWithConfig(nodeID, customConfig, c.config.autoStart)
 }
 
-// addNode is the internal implementation
-func (c *TestCluster) addNode(nodeID int, peers []int, autoStart bool) (raft.Node, error) {
+// AddNodeWithConfig dynamically adds a new node to the cluster with custom configuration
+// The customConfig function can modify any aspect of the node's configuration.
+// If customConfig is nil, default configuration will be used.
+func (c *TestCluster) AddNodeWithConfig(nodeID int, customConfig func(*raft.Config), autoStart bool) (raft.Node, error) {
 	// Check if node already exists
 	c.mu.RLock()
 	if _, exists := c.nodes[nodeID]; exists {
@@ -426,21 +435,23 @@ func (c *TestCluster) addNode(nodeID int, peers []int, autoStart bool) (raft.Nod
 	}
 	c.mu.RUnlock()
 
-	// Create node config
+	// Create node config with defaults
 	nodeConfig := &raft.Config{
 		ID:                 nodeID,
-		Peers:              peers,
+		Peers:              c.NodeIDs(), // Default to current cluster members
 		ElectionTimeoutMin: c.config.electionTimeoutMin,
 		ElectionTimeoutMax: c.config.electionTimeoutMax,
 		HeartbeatInterval:  c.config.heartbeatInterval,
-	}
-
-	if c.config.logger != nil {
-		nodeConfig.Logger = c.config.logger
+		Logger:             c.config.logger,
 	}
 
 	if c.config.maxLogSize > 0 {
 		nodeConfig.MaxLogSize = c.config.maxLogSize
+	}
+
+	// Apply custom configuration if provided
+	if customConfig != nil {
+		customConfig(nodeConfig)
 	}
 
 	// Create transport
@@ -583,7 +594,10 @@ func (c *TestCluster) RestartNode(nodeID int) error {
 	c.mu.Unlock()
 
 	// Recreate the node with same configuration
-	_, err := c.addNode(nodeID, peers, true)
+	customConfig := func(config *raft.Config) {
+		config.Peers = peers
+	}
+	_, err := c.AddNodeWithConfig(nodeID, customConfig, true)
 	if err != nil {
 		return fmt.Errorf("failed to restart node %d: %w", nodeID, err)
 	}

@@ -8,13 +8,14 @@ import (
 
 	"github.com/ueisele/raft"
 	"github.com/ueisele/raft/integration/helpers"
+	"github.com/ueisele/raft/integration/helpers/transporttest"
 )
 
 // TestBasicConfigurationChange tests adding and removing servers
 func TestBasicConfigurationChange(t *testing.T) {
 	// Create 4 nodes but only include 3 in initial configuration
 	nodes := make([]raft.Node, 4)
-	registry := helpers.NewDebugNodeRegistry(raft.NewTestLogger(t))
+	registry := transporttest.NewNodeRegistryWithLogger(raft.NewTestLogger(t))
 
 	for i := 0; i < 4; i++ {
 		// Initial configuration only includes nodes 0, 1, 2
@@ -29,7 +30,7 @@ func TestBasicConfigurationChange(t *testing.T) {
 			Logger:             raft.NewTestLogger(t),
 		}
 
-		transport := helpers.NewDebugTransport(i, registry, raft.NewTestLogger(t))
+		transport := transporttest.NewMultiNodeTransport(i, registry)
 
 		stateMachine := raft.NewMockStateMachine()
 

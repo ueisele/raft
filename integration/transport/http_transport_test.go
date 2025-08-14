@@ -111,17 +111,7 @@ func TestHTTPTransportBasicCluster(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(1 * time.Second)
-
-	// Find the leader
-	var leaderID = -1
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leaderID = i
-			break
-		}
-	}
-
+	leaderID := helpers.WaitForLeader(t, nodes, 2*time.Second)
 	if leaderID == -1 {
 		t.Fatal("No leader elected")
 	}
@@ -136,7 +126,7 @@ func TestHTTPTransportBasicCluster(t *testing.T) {
 	t.Logf("Submitted command at index %d, term %d", index, term)
 
 	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
+	helpers.WaitForCommitIndex(t, nodes, index, time.Second)
 
 	// Verify all nodes have the command
 	for i, node := range nodes {
@@ -221,17 +211,7 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(1 * time.Second)
-
-	// Find the leader
-	var leaderID = -1
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leaderID = i
-			break
-		}
-	}
-
+	leaderID := helpers.WaitForLeader(t, nodes, 2*time.Second)
 	if leaderID == -1 {
 		t.Fatal("No leader elected")
 	}
@@ -247,7 +227,9 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 	}
 
 	// Give OS time to release the port
-	time.Sleep(100 * time.Millisecond)
+	helpers.WaitForCondition(t, func() bool {
+		return true // Just a brief pause for OS cleanup
+	}, 100*time.Millisecond, "OS port cleanup")
 
 	// Submit a command - should still work with 2 nodes
 	command := "command-during-failure"
@@ -257,10 +239,13 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 	}
 
 	// Wait for replication to working node
-	time.Sleep(500 * time.Millisecond)
+	workingFollowerID := (leaderID + 2) % 3
+	helpers.WaitForCondition(t, func() bool {
+		entry := nodes[workingFollowerID].GetLogEntry(index)
+		return entry != nil && entry.Command == command
+	}, time.Second, "replication to working follower")
 
 	// Check that the working follower has the command
-	workingFollowerID := (leaderID + 2) % 3
 	entry := nodes[workingFollowerID].GetLogEntry(index)
 	if entry == nil || entry.Command != command {
 		t.Error("Working follower doesn't have the command")
@@ -279,7 +264,10 @@ func TestHTTPTransportNetworkFailure(t *testing.T) {
 	}
 
 	// Wait for the follower to catch up
-	time.Sleep(1 * time.Second)
+	helpers.WaitForCondition(t, func() bool {
+		entry := nodes[followerID].GetLogEntry(index)
+		return entry != nil && entry.Command == command
+	}, 2*time.Second, "follower catch up after reconnection")
 
 	// Now the follower should have caught up
 	entry = nodes[followerID].GetLogEntry(index)
@@ -358,17 +346,7 @@ func TestHTTPTransportHighLoad(t *testing.T) {
 	}
 
 	// Wait for leader election
-	time.Sleep(1 * time.Second)
-
-	// Find the leader
-	var leaderID = -1
-	for i, node := range nodes {
-		if node.IsLeader() {
-			leaderID = i
-			break
-		}
-	}
-
+	leaderID := helpers.WaitForLeader(t, nodes, 2*time.Second)
 	if leaderID == -1 {
 		t.Fatal("No leader elected")
 	}
@@ -388,8 +366,8 @@ func TestHTTPTransportHighLoad(t *testing.T) {
 	submitDuration := time.Since(startTime)
 	t.Logf("Submitted %d commands in %v", numCommands, submitDuration)
 
-	// Wait for replication
-	time.Sleep(2 * time.Second)
+	// Wait for replication of last command
+	helpers.WaitForCommitIndex(t, nodes, numCommands, 3*time.Second)
 
 	// Verify all nodes have all commands
 	for nodeID, node := range nodes {
@@ -466,8 +444,15 @@ func TestHTTPTransport_StartStop(t *testing.T) {
 		t.Fatalf("failed to start transport: %v", err)
 	}
 
-	// Give server time to start
-	time.Sleep(100 * time.Millisecond)
+	// Wait for server to start
+	helpers.WaitForCondition(t, func() bool {
+		resp, err := http.Get("http://" + transport.GetAddress() + "/health")
+		if err == nil {
+			resp.Body.Close()
+			return true
+		}
+		return false
+	}, 500*time.Millisecond, "HTTP server startup")
 
 	// Test that server is listening
 	resp, err := http.Get("http://" + transport.GetAddress() + "/raft/requestvote")
@@ -526,8 +511,15 @@ func TestHTTPTransport_HandleRequestVote(t *testing.T) {
 	}
 	t.Cleanup(func() { transport.Stop() }) //nolint:errcheck // test cleanup
 
-	// Give server time to start
-	time.Sleep(100 * time.Millisecond)
+	// Wait for server to start
+	helpers.WaitForCondition(t, func() bool {
+		resp, err := http.Get("http://" + transport.GetAddress() + "/health")
+		if err == nil {
+			resp.Body.Close()
+			return true
+		}
+		return false
+	}, 500*time.Millisecond, "HTTP server startup")
 
 	// Send request
 	args := raft.RequestVoteArgs{
@@ -593,8 +585,15 @@ func TestHTTPTransport_HandleAppendEntries(t *testing.T) {
 	}
 	t.Cleanup(func() { transport.Stop() }) //nolint:errcheck // test cleanup
 
-	// Give server time to start
-	time.Sleep(100 * time.Millisecond)
+	// Wait for server to start
+	helpers.WaitForCondition(t, func() bool {
+		resp, err := http.Get("http://" + transport.GetAddress() + "/health")
+		if err == nil {
+			resp.Body.Close()
+			return true
+		}
+		return false
+	}, 500*time.Millisecond, "HTTP server startup")
 
 	// Send request
 	args := raft.AppendEntriesArgs{
@@ -659,8 +658,15 @@ func TestHTTPTransport_HandleInstallSnapshot(t *testing.T) {
 	}
 	t.Cleanup(func() { transport.Stop() }) //nolint:errcheck // test cleanup
 
-	// Give server time to start
-	time.Sleep(100 * time.Millisecond)
+	// Wait for server to start
+	helpers.WaitForCondition(t, func() bool {
+		resp, err := http.Get("http://" + transport.GetAddress() + "/health")
+		if err == nil {
+			resp.Body.Close()
+			return true
+		}
+		return false
+	}, 500*time.Millisecond, "HTTP server startup")
 
 	// Send request
 	args := raft.InstallSnapshotArgs{
@@ -716,8 +722,15 @@ func TestHTTPTransport_HandleInvalidMethod(t *testing.T) {
 	}
 	t.Cleanup(func() { transport.Stop() }) //nolint:errcheck // test cleanup
 
-	// Give server time to start
-	time.Sleep(100 * time.Millisecond)
+	// Wait for server to start
+	helpers.WaitForCondition(t, func() bool {
+		resp, err := http.Get("http://" + transport.GetAddress() + "/health")
+		if err == nil {
+			resp.Body.Close()
+			return true
+		}
+		return false
+	}, 500*time.Millisecond, "HTTP server startup")
 
 	// Test GET request (should fail)
 	resp, err := http.Get("http://" + transport.GetAddress() + "/raft/requestvote")
@@ -757,8 +770,15 @@ func TestHTTPTransport_HandleInvalidJSON(t *testing.T) {
 	}
 	t.Cleanup(func() { transport.Stop() }) //nolint:errcheck // test cleanup
 
-	// Give server time to start
-	time.Sleep(100 * time.Millisecond)
+	// Wait for server to start
+	helpers.WaitForCondition(t, func() bool {
+		resp, err := http.Get("http://" + transport.GetAddress() + "/health")
+		if err == nil {
+			resp.Body.Close()
+			return true
+		}
+		return false
+	}, 500*time.Millisecond, "HTTP server startup")
 
 	// Send invalid JSON
 	resp, err := http.Post("http://"+transport.GetAddress()+"/raft/requestvote", "application/json", bytes.NewBufferString("invalid json"))
@@ -804,8 +824,15 @@ func TestHTTPTransport_HandleRPCError(t *testing.T) {
 	}
 	t.Cleanup(func() { transport.Stop() }) //nolint:errcheck // test cleanup
 
-	// Give server time to start
-	time.Sleep(100 * time.Millisecond)
+	// Wait for server to start
+	helpers.WaitForCondition(t, func() bool {
+		resp, err := http.Get("http://" + transport.GetAddress() + "/health")
+		if err == nil {
+			resp.Body.Close()
+			return true
+		}
+		return false
+	}, 500*time.Millisecond, "HTTP server startup")
 
 	// Send request
 	args := raft.RequestVoteArgs{Term: 5}

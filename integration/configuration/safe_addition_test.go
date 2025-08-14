@@ -10,7 +10,6 @@ import (
 
 	"github.com/ueisele/raft"
 	"github.com/ueisele/raft/integration/helpers"
-	"github.com/ueisele/raft/integration/helpers/transporttest"
 )
 
 // localTransport is a simple in-memory transport for testing
@@ -349,34 +348,18 @@ func TestSafeConfigurationMetrics(t *testing.T) {
 		t.Logf("Command %d replicated in %v", i, duration)
 	}
 
-	// Create a new node
-	newConfig := &raft.Config{
-		ID:                 3,
-		Peers:              []int{},
-		ElectionTimeoutMin: 150 * time.Millisecond,
-		ElectionTimeoutMax: 300 * time.Millisecond,
-		HeartbeatInterval:  50 * time.Millisecond,
+	// Create a new node with empty peers (non-voting member)
+	customConfig := func(config *raft.Config) {
+		config.Peers = []int{} // Empty peers for non-voting member
 	}
-
-	transport := transporttest.NewMultiNodeTransport(3, cluster.Registry.(*transporttest.NodeRegistry))
-	newNode, err := raft.NewNode(newConfig, transport, nil, raft.NewMockStateMachine())
+	
+	_, err = cluster.AddNodeWithConfig(3, customConfig, true)
 	if err != nil {
 		t.Fatalf("Failed to create new node: %v", err)
 	}
-
-	// Register new node
-	cluster.Registry.(*transporttest.NodeRegistry).Register(3, newNode.(raft.RPCHandler))
-
-	// Start new node
-	ctx := context.Background()
-	if err := newNode.Start(ctx); err != nil {
-		t.Fatalf("Failed to start new node: %v", err)
-	}
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		newNode.Stop(ctx) //nolint:errcheck // test cleanup
-	})
+	
+	// The node is already started and registered by AddNodeWithConfig
+	// Cleanup is handled by the cluster
 
 	// Measure configuration change time
 	configStart := time.Now()
