@@ -54,115 +54,124 @@ func TestVotingSafety(t *testing.T) {
 // testNewVotingServerSafety shows potential issue when newly added server becomes voting immediately
 func testNewVotingServerSafety(t *testing.T) {
 	// Create a 3-node cluster with partitionable transport
-	numNodes := 3
-	nodes := make([]raft.Node, numNodes)
-	transports := make([]*helpers.PartitionableTransport, numNodes)
-	registry := helpers.NewPartitionRegistry()
-
-	for i := 0; i < numNodes; i++ {
-		config := &raft.Config{
-			ID:                 i,
-			Peers:              []int{0, 1, 2},
-			ElectionTimeoutMin: 100 * time.Millisecond,
-			ElectionTimeoutMax: 200 * time.Millisecond,
-			HeartbeatInterval:  30 * time.Millisecond,
-			Logger:             raft.NewTestLogger(t),
-		}
-
-		transport := helpers.NewPartitionableTransport(i, registry)
-		transports[i] = transport
-
-		stateMachine := raft.NewMockStateMachine()
-
-		node, err := raft.NewNode(config, transport, nil, stateMachine)
-		if err != nil {
-			t.Fatalf("Failed to create node %d: %v", i, err)
-		}
-
-		nodes[i] = node
-		registry.Register(i, node.(raft.RPCHandler))
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Start all nodes
-	for i, node := range nodes {
-		if err := node.Start(ctx); err != nil {
-			t.Fatalf("Failed to start node %d: %v", i, err)
-		}
-	}
-
-	// Ensure cleanup
-	t.Cleanup(func() {
-		for _, node := range nodes {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			node.Stop(ctx) //nolint:errcheck // test cleanup
-		}
-	})
+	cluster := helpers.NewTestClusterOfSize(t, 3, 
+		helpers.WithPartitionableTransport(),
+		helpers.WithClusterAutoStart())
 
 	// Wait for initial leader election
-	leaderID := helpers.WaitForLeader(t, nodes, 2*time.Second)
+	leaderID, err := cluster.WaitForLeader(2 * time.Second)
+	if err != nil {
+		t.Fatalf("No leader elected: %v", err)
+	}
 	t.Logf("Initial leader: Node %d", leaderID)
 
 	// Submit some commands
 	for i := 0; i < 3; i++ {
-		_, _, isLeader := nodes[leaderID].Submit(fmt.Sprintf("cmd%d", i))
-		if !isLeader {
-			t.Fatalf("Failed to submit command: not leader")
+		idx, _, err := cluster.SubmitToLeader(fmt.Sprintf("cmd%d", i))
+		if err != nil {
+			t.Fatalf("Failed to submit command: %v", err)
+		}
+		if i == 2 {
+			// Wait for last command to replicate
+			cluster.WaitForCommitIndex(idx, 2*time.Second)
 		}
 	}
 
-	// Wait for commands to replicate
-	helpers.WaitForCommitIndex(t, nodes, 3, 2*time.Second)
+	// Now simulate the problematic scenario: 
+	// Partition the current leader to simulate split-brain potential
+	if leaderID != 0 {
+		t.Logf("Leader is not node 0, adjusting test to partition node %d", leaderID)
+	}
+	
+	// Partition the leader from the other nodes
+	for i := 0; i < 3; i++ {
+		if i != leaderID {
+			if partition, ok := transporttest.GetCapability[transporttest.PartitionCapable](cluster, i); ok {
+				partition.Block(leaderID)
+			}
+			if partition, ok := transporttest.GetCapability[transporttest.PartitionCapable](cluster, leaderID); ok {
+				partition.Block(i)
+			}
+		}
+	}
+	t.Logf("Partitioned leader %d from other nodes", leaderID)
 
-	// Simulate adding a new server (node 3)
-	// In real implementation, this would be done through configuration change
-	// For demonstration, we'll partition the network
-
-	// Actually partition node 0 from the rest
-	// Block communication from node 0 to others
-	transports[0].Block(1)
-	transports[0].Block(2)
-	// Block communication from others to node 0
-	transports[1].Block(0)
-	transports[2].Block(0)
-	t.Log("Partitioned node 0 from nodes 1 and 2")
-
-	// Wait for new leader election among nodes 1 and 2
-	var newLeaderID int
+	// Wait for new leader election among non-partitioned nodes
+	var newLeaderID = -1
 	helpers.WaitForCondition(t, func() bool {
 		// Check if old leader has stepped down
-		_, oldIsLeader := nodes[0].GetState()
-		if oldIsLeader {
-			return false // Wait for old leader to step down first
+		if node, ok := cluster.GetNode(leaderID); ok {
+			_, oldIsLeader := node.GetState()
+			if oldIsLeader {
+				return false // Wait for old leader to step down first
+			}
 		}
 
-		// Now check for new leader among nodes 1 and 2
-		for i := 1; i <= 2; i++ {
-			_, isLeader := nodes[i].GetState()
-			if isLeader {
-				newLeaderID = i
-				return true
+		// Now check for new leader among other nodes
+		for nodeID, node := range cluster.GetNodes() {
+			if nodeID != leaderID {
+				_, isLeader := node.GetState()
+				if isLeader {
+					newLeaderID = nodeID
+					return true
+				}
 			}
 		}
 		return false
 	}, 3*time.Second, "new leader election after partition")
 
-	if newLeaderID == 0 {
-		t.Fatal("No new leader elected among nodes 1 and 2")
+	if newLeaderID == -1 {
+		t.Fatal("No new leader elected among non-partitioned nodes")
 	}
 
 	t.Logf("New leader: Node %d", newLeaderID)
 
-	// At this point, we have:
-	// - Node 0: isolated, might still think it's leader
-	// - Node 1 or 2: new leader
-	// - A newly added server could disrupt this if it votes immediately
+	// Now let's actually test the safety issue:
+	// Add a new node that could vote immediately (simulating unsafe addition)
+	customConfig := func(config *raft.Config) {
+		// Start with all nodes as peers (immediate voting member)
+		config.Peers = []int{0, 1, 2, 3}
+	}
+	
+	_, err = cluster.AddNodeWithConfig(3, customConfig, true)
+	if err != nil {
+		t.Fatalf("Failed to add new node: %v", err)
+	}
 
-	// This test demonstrates the concept rather than testing implementation
-	t.Log("✓ Demonstration complete: Immediate voting can disrupt cluster safety")
+	// The safety issue: If the new node votes for the old partitioned leader,
+	// it could help the old leader maintain/regain leadership despite being partitioned
+	
+	// Check if the old leader regained leadership (which would be bad)
+	time.Sleep(500 * time.Millisecond) // Give time for potential disruption
+	
+	if node, ok := cluster.GetNode(leaderID); ok {
+		term, isLeader := node.GetState()
+		if isLeader {
+			t.Errorf("SAFETY ISSUE: Partitioned leader %d regained/maintained leadership (term %d) after new node added!", 
+				leaderID, term)
+			t.Log("This demonstrates that immediate voting by new servers can disrupt cluster safety")
+		} else {
+			t.Logf("✓ Partitioned leader %d correctly lost leadership", leaderID)
+		}
+	}
+
+	// Verify the cluster still has a functioning leader
+	currentLeaders := 0
+	for nodeID, node := range cluster.GetNodes() {
+		_, isLeader := node.GetState()
+		if isLeader {
+			currentLeaders++
+			t.Logf("Node %d is currently leader", nodeID)
+		}
+	}
+
+	if currentLeaders > 1 {
+		t.Errorf("SAFETY VIOLATION: Multiple leaders detected (%d leaders)!", currentLeaders)
+	} else if currentLeaders == 0 {
+		t.Error("No leader in cluster - availability compromised")
+	} else {
+		t.Log("✓ Cluster maintains single leader despite new node addition")
+	}
 }
 
 // testSaferApproach shows how non-voting members prevent the safety issue

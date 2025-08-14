@@ -242,34 +242,48 @@ func TestLeadershipTransferToSpecificNode(t *testing.T) {
 	// 3. Current leader sends TimeoutNow RPC to target
 	// 4. Target immediately starts election with pre-vote
 
-	// For this test, we simulate by stopping current leader
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	cluster.Nodes[currentLeader].Stop(ctx) //nolint:errcheck // intentional stop for test
-	cancel()
+	// For this test, we simulate transfer by having current leader step down
+	// In a proper implementation, the leader would ensure target is caught up first
+	
+	// First ensure target is up to date
+	helpers.WaitForCondition(t, func() bool {
+		if node, ok := cluster.GetNode(targetNode); ok {
+			return node.GetCommitIndex() >= highestIndex
+		}
+		return false
+	}, 2*time.Second, "target node to catch up")
 
-	// Wait for election
-	time.Sleep(500 * time.Millisecond)
+	// Now stop current leader to trigger new election
+	if err := cluster.StopNode(currentLeader); err != nil {
+		t.Fatalf("Failed to stop leader: %v", err)
+	}
 
-	// Check if target became leader (not guaranteed without proper implementation)
-	targetTerm, targetIsLeader := cluster.Nodes[targetNode].GetState()
-
-	if targetIsLeader {
-		t.Logf("✓ Target node %d became leader (term %d)", targetNode, targetTerm)
-	} else {
-		// Find actual new leader
-		for i, node := range cluster.Nodes {
-			if i == currentLeader {
-				continue
+	// Wait for new leader election
+	var newLeaderID = -1
+	helpers.WaitForCondition(t, func() bool {
+		for nodeID, node := range cluster.GetNodes() {
+			if nodeID == currentLeader {
+				continue // Skip stopped node
 			}
 			_, isLeader := node.GetState()
 			if isLeader {
-				t.Logf("Node %d became leader instead of target %d", i, targetNode)
-				break
+				newLeaderID = nodeID
+				return true
 			}
 		}
-	}
+		return false
+	}, 3*time.Second, "new leader election after transfer")
 
-	t.Log("✓ Leadership transfer completed (specific target requires full implementation)")
+	// Verify transfer result
+	if newLeaderID == targetNode {
+		t.Logf("✓ Successfully transferred leadership to target node %d", targetNode)
+	} else if newLeaderID != -1 {
+		t.Errorf("Leadership transfer failed: Node %d became leader instead of target %d", 
+			newLeaderID, targetNode)
+		t.Log("Note: Without proper TimeoutNow RPC implementation, specific target transfer is not guaranteed")
+	} else {
+		t.Fatal("No new leader elected after leadership transfer attempt")
+	}
 }
 
 // TestLeadershipTransferDuringLoad tests transfer while handling client requests
@@ -436,12 +450,95 @@ func TestPreventedLeadershipTransfer(t *testing.T) {
 	if mostBehindNode != -1 && lowestCommit < leaderCommit {
 		t.Logf("Node %d is behind (commit index %d vs leader's %d)",
 			mostBehindNode, lowestCommit, leaderCommit)
-		t.Log("✓ In a real implementation, transfer to this node would be prevented")
+		
+		// Try to transfer to the behind node - it should either fail or catch up first
+		if err := cluster.StopNode(leaderID); err != nil {
+			t.Fatalf("Failed to stop leader: %v", err)
+		}
+		
+		// Wait for new election
+		time.Sleep(time.Second)
+		
+		// Check who became leader
+		newLeader := -1
+		for i, node := range cluster.Nodes {
+			if i == leaderID {
+				continue
+			}
+			_, isLeader := node.GetState()
+			if isLeader {
+				newLeader = i
+				break
+			}
+		}
+		
+		if newLeader == mostBehindNode {
+			// Check if it caught up
+			newCommit := cluster.Nodes[mostBehindNode].GetCommitIndex()
+			if newCommit >= leaderCommit {
+				t.Logf("✓ Behind node %d caught up before becoming leader (commit: %d)", 
+					mostBehindNode, newCommit)
+			} else {
+				t.Errorf("Behind node %d became leader without catching up (commit: %d vs %d)",
+					mostBehindNode, newCommit, leaderCommit)
+			}
+		} else {
+			t.Logf("✓ Behind node %d did not become leader (node %d did)", mostBehindNode, newLeader)
+		}
+		
+		// Restart the stopped leader for next test
+		cluster.RestartNode(leaderID)
+		time.Sleep(500 * time.Millisecond)
 	}
 
-	// Scenario 2: Transfer should not happen during configuration change
-	// (This would be checked in a real implementation)
-	t.Log("✓ Configuration change scenario would prevent transfer in real implementation")
+	// Scenario 2: Transfer during configuration change
+	t.Log("Testing transfer during configuration change...")
+	
+	// Find current leader again
+	leaderID = -1
+	for i, node := range cluster.Nodes {
+		_, isLeader := node.GetState()
+		if isLeader {
+			leaderID = i
+			break
+		}
+	}
+	
+	if leaderID == -1 {
+		t.Skip("No leader found, skipping configuration change test")
+		return
+	}
+	
+	// Start a configuration change
+	configErr := cluster.Nodes[leaderID].AddServer(5, "server-5", true)
+	configChangeStarted := configErr == nil
+	
+	if configChangeStarted {
+		// Try to transfer leadership during config change
+		if err := cluster.StopNode(leaderID); err != nil {
+			t.Logf("Leader refused to stop during config change: %v", err)
+		} else {
+			// Check if leadership transferred
+			time.Sleep(time.Second)
+			newLeaderFound := false
+			for i, node := range cluster.Nodes {
+				if i != leaderID {
+					_, isLeader := node.GetState()
+					if isLeader {
+						newLeaderFound = true
+						t.Logf("Leadership transferred to node %d during config change", i)
+						break
+					}
+				}
+			}
+			
+			if !newLeaderFound {
+				t.Log("✓ No leadership transfer during configuration change")
+			}
+		}
+	} else {
+		t.Logf("Could not start configuration change: %v", configErr)
+	}
 
 	// Scenario 3: No transfer if no suitable target
 	// Stop all followers
