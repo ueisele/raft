@@ -339,10 +339,29 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 		t.Fatalf("Failed to elect leader: %v", err)
 	}
 
-	// Submit command but crash leader immediately
+	// First submit some commands that WILL be committed
+	committedCommands := []string{}
+	for i := 0; i < 3; i++ {
+		cmd := fmt.Sprintf("committed-cmd-%d", i)
+		idx, _, err := cluster.SubmitToLeader(cmd)
+		if err != nil {
+			t.Fatalf("Failed to submit command: %v", err)
+		}
+		cluster.WaitForCommitIndex(idx, time.Second)
+		committedCommands = append(committedCommands, cmd)
+	}
+	
+	// Record commit indices before crash
+	commitIndicesBeforeCrash := make(map[int]int)
+	for nodeID, node := range cluster.GetNodes() {
+		commitIndicesBeforeCrash[nodeID] = node.GetCommitIndex()
+		t.Logf("Node %d commit index before crash: %d", nodeID, commitIndicesBeforeCrash[nodeID])
+	}
+
+	// Submit command but crash leader immediately (this one may or may not commit)
 	cluster.SubmitToNode("uncommitted-cmd", leaderID)
 	cluster.StopNode(leaderID)
-	t.Logf("Crashed leader %d after accepting command", leaderID)
+	t.Logf("Crashed leader %d after accepting uncommitted command", leaderID)
 
 	// Wait for new leader
 	helpers.WaitForCondition(t, func() bool {
@@ -358,21 +377,41 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 	// Restart crashed node
 	cluster.RestartNode(leaderID)
 
-	// Wait for cluster to stabilize
-	// Note: The uncommitted command may or may not be committed depending on replication timing
-	// We just need to ensure the cluster is functional and consistent
+	// Wait for cluster to stabilize with a leader
 	helpers.WaitForCondition(t, func() bool {
 		nodes := cluster.GetNodes()
-		// Check if there's a leader
-		hasLeader := false
 		for _, node := range nodes {
 			if node.IsLeader() {
-				hasLeader = true
-				break
+				return true
 			}
 		}
-		return hasLeader
-	}, 3*time.Second, "cluster stabilization after leader crash")
+		return false
+	}, 3*time.Second, "leader election after restart")
+
+	// CRITICAL: Verify that committed entries were NOT lost
+	for nodeID, node := range cluster.GetNodes() {
+		currentCommitIndex := node.GetCommitIndex()
+		beforeCrashIndex := commitIndicesBeforeCrash[nodeID]
+		
+		if currentCommitIndex < beforeCrashIndex {
+			t.Errorf("Node %d LOST committed entries! Commit index before crash: %d, after recovery: %d",
+				nodeID, beforeCrashIndex, currentCommitIndex)
+		} else {
+			t.Logf("Node %d preserved commit index: before=%d, after=%d", 
+				nodeID, beforeCrashIndex, currentCommitIndex)
+		}
+		
+		// Verify the actual committed commands are still there
+		for i, cmd := range committedCommands {
+			entry := node.GetLogEntry(i + 1) // Log indices start at 1
+			if entry == nil {
+				t.Errorf("Node %d lost committed entry at index %d", nodeID, i+1)
+			} else if entry.Command != cmd {
+				t.Errorf("Node %d has wrong command at index %d: got %v, want %s",
+					nodeID, i+1, entry.Command, cmd)
+			}
+		}
+	}
 
 	// Verify cluster consistency
 	nodesList := make([]raft.Node, 0)
@@ -458,30 +497,60 @@ func TestCrashRecoveryScenarios(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to elect leader: %v", err)
 	}
+	
+	// Submit and commit data that MUST be preserved
+	rollingCommands := []string{}
 	for i := 0; i < 5; i++ {
-		idx, _, err := cluster3.SubmitToLeader(fmt.Sprintf("rolling-%d", i))
+		cmd := fmt.Sprintf("rolling-%d", i)
+		idx, _, err := cluster3.SubmitToLeader(cmd)
 		if err != nil {
 			t.Fatalf("Failed to submit: %v", err)
 		}
 		cluster3.WaitForCommitIndex(idx, time.Second)
+		rollingCommands = append(rollingCommands, cmd)
+	}
+	
+	// Record initial commit indices
+	initialCommitIndices := make(map[int]int)
+	for nodeID, node := range cluster3.GetNodes() {
+		initialCommitIndices[nodeID] = node.GetCommitIndex()
+		t.Logf("Node %d initial commit index: %d", nodeID, initialCommitIndices[nodeID])
 	}
 
 	// Rolling restart each node
 	for i := 0; i < 5; i++ {
-		t.Logf("Rolling restart of node %d", i)
+		node, _ := cluster3.GetNode(i)
+		commitIndexBeforeRestart := node.GetCommitIndex()
+		t.Logf("Rolling restart of node %d (commit index: %d)", i, commitIndexBeforeRestart)
+		
 		cluster3.StopNode(i)
-		helpers.WaitForCondition(t, func() bool {
-			// Wait a moment for cluster to stabilize
-			return true
-		}, 200*time.Millisecond, "stabilization")
+		time.Sleep(200 * time.Millisecond) // Brief pause for cluster adjustment
 		cluster3.RestartNode(i)
+		
+		// Wait for node to rejoin and verify it didn't lose data
 		helpers.WaitForCondition(t, func() bool {
-			// Wait for node to rejoin
 			if node, ok := cluster3.GetNode(i); ok {
-				return node.GetCommitIndex() > 0
+				return node.GetCommitIndex() >= commitIndexBeforeRestart
 			}
 			return false
-		}, 2*time.Second, fmt.Sprintf("node %d rejoin", i))
+		}, 2*time.Second, fmt.Sprintf("node %d rejoin with data", i))
+		
+		// Verify the node preserved its committed entries
+		if node, ok := cluster3.GetNode(i); ok {
+			currentCommit := node.GetCommitIndex()
+			if currentCommit < commitIndexBeforeRestart {
+				t.Errorf("Node %d lost data during restart! Before: %d, After: %d",
+					i, commitIndexBeforeRestart, currentCommit)
+			}
+			
+			// Verify actual commands are still there
+			for j, cmd := range rollingCommands[:commitIndexBeforeRestart] {
+				entry := node.GetLogEntry(j + 1)
+				if entry == nil || entry.Command != cmd {
+					t.Errorf("Node %d lost command at index %d during restart", i, j+1)
+				}
+			}
+		}
 	}
 
 	// Verify cluster still functional
